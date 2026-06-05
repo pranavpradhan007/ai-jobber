@@ -47,8 +47,9 @@ def run_tailoring(
     job_title: str = "",
     candidate_name: str = "Candidate",
     rephraser: Optional[RephraserFn] = None,
-    extractor=None,   # verifier claim extractor (injected in tests)
+    extractor=None,           # verifier claim extractor (injected in tests)
     surface: str = "resume",
+    edit_instruction: Optional[str] = None,  # from APP-N EDIT "..." reply
 ) -> TailoringResult:
     """
     Execute the full tailoring pipeline for one application.
@@ -64,9 +65,11 @@ def run_tailoring(
         b for blist in bullets_by_type.values() for b in blist
     ]
 
-    # 3. Bounded rephrase
+    # 3. Bounded rephrase (pass edit_instruction for user-directed re-tailoring)
     rephrased = rephrase_bullets(
-        all_bullets, hot_keywords, job_title, rephraser=rephraser
+        all_bullets, hot_keywords, job_title,
+        rephraser=rephraser,
+        edit_instruction=edit_instruction,
     )
 
     # 4. Render DOCX + PDF

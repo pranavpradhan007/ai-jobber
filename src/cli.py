@@ -280,30 +280,143 @@ def prep_batch_cmd(ctx, recipient, dry_run):
 
 @main.command("check-approvals")
 @click.option("--reply-file", default=None,
-              help="Path to a file containing the reply text. "
-                   "Reads from stdin if not specified.")
+              help="Path to a file containing the reply text.")
+@click.option("--from-gmail", is_flag=True, default=False,
+              help="Read replies from Gmail via MCP (requires Claude Code).")
+@click.option("--digest-id", default=None,
+              help="Only process replies for this specific DIGEST-* ID.")
 @click.pass_context
-def check_approvals_cmd(ctx, reply_file):
-    """Parse and apply approval reply commands from stdin or a file."""
+def check_approvals_cmd(ctx, reply_file, from_gmail, digest_id):
+    """Parse and apply approval reply commands.
+
+    Sources (in priority order):
+      --from-gmail   Search Gmail for replies to digest threads (MCP-bridged)
+      --reply-file   Read from a local file
+      stdin          Pipe reply text directly
+    """
     import sys
     from src.db.connection import get_connection as _gc
     from src.approvals.parser import parse_reply, apply_commands
 
+    conn = _gc(ctx.obj["db"])
+
+    if from_gmail:
+        from src.gmail.reply_watcher import watch_for_replies, mark_digest_processed
+        from src.gmail.client import MCPGmailClient
+
+        client = MCPGmailClient()
+        cached = watch_for_replies(conn, gmail_client=client, digest_id=digest_id)
+
+        if not cached:
+            pending_dir = client._dir / "pending"
+            pending = list(pending_dir.glob("search_digest_*.json"))
+            click.echo(
+                f"No cached replies yet. Queued {len(pending)} Gmail search request(s).\n"
+                "Claude Code will execute the search via MCP — then re-run this command."
+            )
+            conn.close()
+            return
+
+        all_results = []
+        for did, reply_text in cached.items():
+            click.echo(f"\nProcessing replies for {did}:")
+            commands = parse_reply(reply_text)
+            if not commands:
+                click.echo("  (no commands found in reply)")
+                continue
+            results = apply_commands(conn, commands)
+            for r in results:
+                status = "OK" if r.success else f"ERROR: {r.error}"
+                detail = f" — {r.detail}" if r.detail else ""
+                click.echo(f"  APP-{r.app_id or 'N/A'} {r.command}: {status}{detail}")
+            all_results.extend(results)
+            mark_digest_processed(conn, did)
+
+        conn.close()
+        return
+
+    # File or stdin path
     if reply_file:
         with open(reply_file, encoding="utf-8") as fh:
             text = fh.read()
     else:
+        click.echo("Paste reply text (Ctrl-D when done):")
         text = sys.stdin.read()
 
     commands = parse_reply(text)
     if not commands:
         click.echo("No valid commands found in reply.")
+        conn.close()
         return
 
-    conn = _gc(ctx.obj["db"])
     results = apply_commands(conn, commands)
     conn.close()
 
     for r in results:
         status = "OK" if r.success else f"ERROR: {r.error}"
-        click.echo(f"  APP-{r.app_id or 'N/A'} {r.command}: {status}")
+        detail = f" — {r.detail}" if r.detail else ""
+        click.echo(f"  APP-{r.app_id or 'N/A'} {r.command}: {status}{detail}")
+
+
+# ---------------------------------------------------------------------------
+# discover
+# ---------------------------------------------------------------------------
+
+@main.command("discover")
+@click.option("--role", default=None,
+              help="Job title / keywords to search (overrides profile defaults).")
+@click.option("--location", default="New York, NY", show_default=True)
+@click.option("--remote", is_flag=True, default=False,
+              help="Search remote positions only.")
+@click.option("--limit", default=5, show_default=True,
+              help="Max results per search term.")
+@click.pass_context
+def discover_cmd(ctx, role, location, remote, limit):
+    """Discover new jobs from Indeed via Claude Code MCP and import to DB.
+
+    This command queues the searches. Claude Code executes them via MCP
+    search_jobs, then calls the import endpoint with the results.
+
+    To run a discovery cycle:
+      1. job-agent discover                  ← queue searches
+      2. Claude Code executes MCP searches   ← automatic when Claude Code runs
+      3. job-agent run-overnight             ← process newly DISCOVERED jobs
+    """
+    from src.discovery.indeed import discover_searches_for_profile, import_jobs
+    from src.db.connection import get_connection as _gc
+    import json
+    from pathlib import Path
+
+    searches = discover_searches_for_profile()
+    if role:
+        searches = [{"search": role, "location": "remote" if remote else location}]
+    elif remote:
+        searches = [dict(s, location="remote") for s in searches]
+
+    # Write a discovery request manifest for Claude Code
+    manifest = {
+        "action":    "discover_jobs",
+        "searches":  searches,
+        "limit":     limit,
+        "created_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "status":    "pending",
+        "instruction": (
+            "For each search, call MCP search_jobs (country_code='US'). "
+            "For each result, call MCP get_job_details to get the full description. "
+            "Then call: from src.discovery.indeed import import_jobs; "
+            "import_jobs(conn, job_dicts) where job_dicts is a list of dicts "
+            "with keys: url, company, title, location, description."
+        ),
+    }
+
+    actions_dir = Path("gmail_actions") / "pending"
+    actions_dir.mkdir(parents=True, exist_ok=True)
+    req_path = actions_dir / "discover_jobs_request.json"
+    req_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    click.echo(f"Discovery request queued ({len(searches)} search(es)).")
+    click.echo("Claude Code will execute the Indeed searches via MCP.")
+    click.echo("Re-run 'job-agent run-overnight' after Claude Code completes the search.")
+    click.echo("\nSearches queued:")
+    for s in searches:
+        click.echo(f"  {s['search']!r}  in  {s['location']!r}")

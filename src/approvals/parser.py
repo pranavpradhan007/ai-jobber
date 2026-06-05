@@ -1,23 +1,31 @@
 """
 Approval reply parser.
-Parses Gmail reply text into structured commands and applies them to applications.
 
-Expected format (one command per line):
+Parses Gmail reply text into structured commands and applies them to applications.
+Designed to be sent as a plain-text email reply from a phone.
+
+Supported formats (one command per line, case-insensitive):
   APP-{id} APPROVE
   APP-{id} REJECT
   APP-{id} SKIP
-  APP-{id} EDIT
+  APP-{id} EDIT "re-write the opening to emphasise RL research"
   APP-{id} SNOOZE
+  APP-{id} SNOOZE 3          ← snooze for N days
   DONE
   MANUAL
 
-'DONE' and 'MANUAL' are digest-level commands (no app ID required).
+Rules:
+  - APP-id is the numeric application ID shown in the digest.
+  - EDIT must have a quoted string with your tailoring instruction.
+  - SNOOZE without a number defaults to 1 day.
+  - Lines that don't match are silently ignored.
+  - Commands are applied top-to-bottom; duplicates overwrite.
 """
 from __future__ import annotations
 import logging
 import re
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from src.db.applications import get_application, update_application
@@ -27,8 +35,15 @@ logger = logging.getLogger(__name__)
 
 VALID_COMMANDS = {"APPROVE", "REJECT", "SKIP", "EDIT", "SNOOZE", "DONE", "MANUAL"}
 
-_LINE_RE = re.compile(
-    r"(?i)(?:APP-(\d+)\s+)?(" + "|".join(VALID_COMMANDS) + r")\b"
+# APP-3 APPROVE
+# APP-3 EDIT "some quoted text"
+# APP-3 SNOOZE 2
+_CMD_RE = re.compile(
+    r'(?i)'
+    r'(?:APP-(\d+)\s+)?'                           # optional APP-N prefix
+    r'(APPROVE|REJECT|SKIP|EDIT|SNOOZE|DONE|MANUAL)'  # command
+    r'(?:\s+"([^"]*)")?'                           # optional "quoted instruction"
+    r'(?:\s+(\d+))?'                               # optional numeric arg (snooze days)
 )
 
 
@@ -37,6 +52,8 @@ class ParsedCommand:
     app_id: Optional[int]
     command: str
     raw_line: str
+    edit_instruction: Optional[str] = None   # text from EDIT "..."
+    snooze_days: int = 1
 
 
 @dataclass
@@ -45,6 +62,7 @@ class ApplyResult:
     command: str
     success: bool
     error: Optional[str] = None
+    detail: Optional[str] = None
 
 
 def parse_reply(text: str) -> list[ParsedCommand]:
@@ -52,17 +70,20 @@ def parse_reply(text: str) -> list[ParsedCommand]:
     commands = []
     for line in text.splitlines():
         line = line.strip()
-        if not line:
+        if not line or line.startswith(">"):   # skip quoted-reply lines (>>)
             continue
-        m = _LINE_RE.search(line)
-        if m:
-            app_id_str, cmd = m.group(1), m.group(2).upper()
-            app_id = int(app_id_str) if app_id_str else None
-            commands.append(ParsedCommand(
-                app_id=app_id,
-                command=cmd,
-                raw_line=line,
-            ))
+        m = _CMD_RE.search(line)
+        if not m:
+            continue
+        app_id_str, cmd, quoted, num = m.group(1), m.group(2), m.group(3), m.group(4)
+        cmd = cmd.upper()
+        commands.append(ParsedCommand(
+            app_id=int(app_id_str) if app_id_str else None,
+            command=cmd,
+            raw_line=line,
+            edit_instruction=quoted.strip() if quoted else None,
+            snooze_days=int(num) if num else 1,
+        ))
     return commands
 
 
@@ -73,7 +94,6 @@ def apply_commands(
     """
     Apply parsed commands to the database.
     Returns a list of ApplyResult for each command.
-    No command may set approved_by_user=1 without being APPROVE.
     """
     results = []
     for cmd in commands:
@@ -93,6 +113,7 @@ def apply_commands(
 
 
 def _apply_one(conn: sqlite3.Connection, cmd: ParsedCommand) -> ApplyResult:
+    # Digest-level commands need no app_id
     if cmd.command in ("DONE", "MANUAL") and cmd.app_id is None:
         logger.info("digest-level command: %s", cmd.command)
         return ApplyResult(app_id=None, command=cmd.command, success=True)
@@ -106,13 +127,11 @@ def _apply_one(conn: sqlite3.Connection, cmd: ParsedCommand) -> ApplyResult:
     app = get_application(conn, cmd.app_id)
 
     if cmd.command == "APPROVE":
-        # Only valid from WAITING_FOR_USER_APPROVAL
         if app.state != "WAITING_FOR_USER_APPROVAL":
             raise ValueError(
-                f"APPROVE requires state=WAITING_FOR_USER_APPROVAL, got {app.state}"
+                f"APPROVE requires WAITING_FOR_USER_APPROVAL, got {app.state}"
             )
         update_application(conn, cmd.app_id, approved_by_user=1)
-        # Record resolution in approvals table
         conn.execute(
             """
             UPDATE approvals SET status='approved', resolved_at=datetime('now'),
@@ -122,26 +141,43 @@ def _apply_one(conn: sqlite3.Connection, cmd: ParsedCommand) -> ApplyResult:
             (cmd.app_id,),
         )
         conn.commit()
-        # The actual SUBMITTING transition happens in the runner (needs verifier check)
         logger.info("APPROVE app_id=%d — approved_by_user set", cmd.app_id)
+        return ApplyResult(app_id=cmd.app_id, command="APPROVE", success=True,
+                           detail="approved_by_user=1; run overnight to submit")
 
     elif cmd.command in ("REJECT", "SKIP"):
-        to_state = "SKIPPED"
-        transition(conn, cmd.app_id, to_state,
-                   reason=f"user command: {cmd.command}",
-                   actor="user")
+        transition(conn, cmd.app_id, "SKIPPED",
+                   reason=f"user command: {cmd.command}", actor="user")
+        return ApplyResult(app_id=cmd.app_id, command=cmd.command, success=True)
 
     elif cmd.command == "EDIT":
-        transition(conn, cmd.app_id, "TAILORING",
-                   reason="user requested re-tailor",
-                   actor="user")
+        # Store instruction if provided (bare EDIT re-queues with no extra instruction)
+        if cmd.edit_instruction:
+            update_application(conn, cmd.app_id, edit_instruction=cmd.edit_instruction)
+        reason = (
+            f'user EDIT: "{cmd.edit_instruction[:60]}"'
+            if cmd.edit_instruction
+            else "user requested re-tailor"
+        )
+        transition(conn, cmd.app_id, "TAILORING", reason=reason, actor="user")
+        logger.info(
+            "EDIT app_id=%d instruction=%r — re-queued for tailoring",
+            cmd.app_id, cmd.edit_instruction,
+        )
+        detail = f"re-tailoring with: {cmd.edit_instruction!r}" if cmd.edit_instruction else "re-tailoring"
+        return ApplyResult(app_id=cmd.app_id, command="EDIT", success=True, detail=detail)
 
     elif cmd.command == "SNOOZE":
         transition(conn, cmd.app_id, "SNOOZED",
-                   reason="user snoozed",
+                   reason=f"user snoozed for {cmd.snooze_days} day(s)",
                    actor="user")
+        logger.info("SNOOZE app_id=%d for %d day(s)", cmd.app_id, cmd.snooze_days)
+        return ApplyResult(app_id=cmd.app_id, command="SNOOZE", success=True,
+                           detail=f"snoozed {cmd.snooze_days} day(s)")
 
     elif cmd.command in ("DONE", "MANUAL"):
         logger.info("app-level %s for app_id=%d", cmd.command, cmd.app_id)
+        return ApplyResult(app_id=cmd.app_id, command=cmd.command, success=True)
 
-    return ApplyResult(app_id=cmd.app_id, command=cmd.command, success=True)
+    return ApplyResult(app_id=cmd.app_id, command=cmd.command, success=False,
+                       error=f"unknown command: {cmd.command}")

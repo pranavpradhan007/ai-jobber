@@ -28,18 +28,28 @@ def rephrase_bullets(
     job_title: str = "",
     *,
     rephraser: Optional[RephraserFn] = None,
+    edit_instruction: Optional[str] = None,
 ) -> list[str]:
     """
     Rephrase bank bullets to highlight hot keywords.
     Returns a list of rephrased bullet strings.
     The rephraser MUST NOT introduce any claim not in `bullets`.
+
+    edit_instruction: optional user directive from APP-N EDIT "..." reply.
+    Passed to the rephraser prompt as an additional constraint.
     """
     if not bullets:
         return []
     if rephraser is None:
-        rephraser = _default_rephraser
+        # Wrap default rephraser to inject edit_instruction
+        base = _default_rephraser
+        if edit_instruction:
+            def rephraser(b, kw, jt):  # noqa: E731
+                return base(b, kw, jt, edit_instruction=edit_instruction)
+        else:
+            rephraser = base
     result = rephraser(bullets, hot_keywords, job_title)
-    logger.info("rephrased %d bullets", len(result))
+    logger.info("rephrased %d bullets (edit=%s)", len(result), bool(edit_instruction))
     return result
 
 
@@ -67,6 +77,8 @@ def _default_rephraser(
     bullets: list[BankItem],
     hot_keywords: list[str],
     job_title: str,
+    *,
+    edit_instruction: Optional[str] = None,
 ) -> list[str]:
     """Runtime rephraser. NOT called in tests."""
     import anthropic  # noqa: PLC0415
@@ -74,12 +86,21 @@ def _default_rephraser(
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     bullet_texts = [b.content for b in bullets]
+
+    edit_clause = ""
+    if edit_instruction:
+        edit_clause = (
+            f"\n\nAdditional instruction from candidate: {edit_instruction!r}. "
+            "Apply this as a stylistic/emphasis direction but do NOT invent "
+            "new facts, metrics, tools, or credentials."
+        )
+
     prompt = (
         f"Rephrase these resume bullets for a {job_title!r} role. "
         f"Highlight these keywords where natural: {hot_keywords}. "
         "You may reword but MUST NOT add any new metrics, tools, titles, or "
         "credentials not present in the original bullets. "
-        "Return a JSON array of strings, one per bullet.\n\n"
+        f"Return a JSON array of strings, one per bullet.{edit_clause}\n\n"
         f"Bullets:\n{json.dumps(bullet_texts, indent=2)}"
     )
     msg = client.messages.create(

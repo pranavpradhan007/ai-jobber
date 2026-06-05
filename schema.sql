@@ -54,8 +54,26 @@ CREATE TABLE IF NOT EXISTS applications (
     monitoring_status       TEXT,
     color_status            TEXT,                               -- 'gray','red','yellow','green'
     notes                   TEXT,
+    -- Phone-reply approval fields (added for email-based approval flow)
+    app_label               TEXT,                               -- 'APP-1', 'APP-2', etc. within a digest
+    digest_id               TEXT,                               -- which digest batch this app appeared in
+    edit_instruction        TEXT,                               -- quoted text from APP-N EDIT "..." reply
     created_at              TEXT     NOT NULL DEFAULT (datetime('now')),
     updated_at              TEXT     NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ------------------------------------------------------------
+-- digests: one row per morning digest sent
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS digests (
+    id           INTEGER  PRIMARY KEY AUTOINCREMENT,
+    digest_id    TEXT     NOT NULL UNIQUE,           -- e.g. DIGEST-20260605-a3f9
+    subject      TEXT,
+    recipient    TEXT,
+    thread_id    TEXT,                               -- Gmail thread_id (filled after send)
+    app_ids_json TEXT,                              -- JSON array of application IDs in this digest
+    sent_at      TEXT     NOT NULL DEFAULT (datetime('now')),
+    processed    INTEGER  NOT NULL DEFAULT 0        -- 1 once check-approvals ran for this digest
 );
 
 -- Trigger: keep updated_at fresh

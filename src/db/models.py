@@ -54,6 +54,10 @@ class Application:
     monitoring_status: Optional[str] = None
     color_status: Optional[str] = None
     notes: Optional[str] = None
+    # Phone-reply approval fields
+    app_label: Optional[str] = None           # e.g. 'APP-1'
+    digest_id: Optional[str] = None           # which digest batch
+    edit_instruction: Optional[str] = None    # from APP-N EDIT "..." reply
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

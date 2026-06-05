@@ -169,6 +169,8 @@ def _process_one(
     update_application(conn, app_id, scorecard_path=sc_path)
 
     # ── 6. Tailor ─────────────────────────────────────────────────────────────
+    # Pick up any edit_instruction stored from a phone EDIT reply
+    edit_instruction = app.edit_instruction if hasattr(app, "edit_instruction") else None
     transition(conn, app_id, "TAILORING", reason="score gate passed")
     try:
         run_tailoring(
@@ -178,6 +180,7 @@ def _process_one(
             candidate_name=candidate_name,
             rephraser=rephraser_fn,
             extractor=extractor_fn,
+            edit_instruction=edit_instruction,
         )
         stats.tailored += 1
     except VerifierGateError as exc:
