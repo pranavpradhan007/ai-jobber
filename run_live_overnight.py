@@ -44,7 +44,7 @@ print("\n=== APPLICATION STATES ===")
 for row in conn.execute(
     "SELECT a.id, j.company, j.title, a.state, a.score, a.submit_tier "
     "FROM applications a JOIN jobs j ON j.id=a.job_id "
-    "WHERE a.id IN (2,3,4) ORDER BY a.id"
+    "ORDER BY a.id"
 ):
     print(f"  APP-{row['id']}: {row['company'][:30]:30s} | {row['state']:35s} | score={row['score'] or 'n/a'} | tier={row['submit_tier']}")
 

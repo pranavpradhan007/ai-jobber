@@ -13,6 +13,7 @@ Injected dependencies (all mocked in tests):
 """
 from __future__ import annotations
 import logging
+import os
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Optional
@@ -26,7 +27,8 @@ from src.keywords.extractor import extract_keywords
 from src.scoring.scorer import score_job
 from src.scoring.gate import apply_score_gate
 from src.resume.pipeline import run_tailoring, PageLimitError
-from src.browser.submit import submit_auto_safe
+from src.browser.submit import submit_auto_safe, submit_gated_approved
+from src.browser.auto_submit import auto_submit_portal, build_candidate_answers
 from src.verifier.diff_verifier import VerifierGateError
 from src.browser.trap_detector import detect_traps_in_jd
 
@@ -58,6 +60,7 @@ def run_overnight(
     """
     Main overnight pipeline. Returns statistics.
     Processes all DISCOVERED applications up to max_jobs.
+    Also processes WAITING_FOR_USER_APPROVAL apps where approved_by_user=1.
     """
     if gmail_client is None:
         from src.gmail.client import MCPGmailClient  # noqa: PLC0415
@@ -65,15 +68,16 @@ def run_overnight(
 
     stats = OvernightStats()
 
+    # Phase 1: DISCOVERED apps (full pipeline)
     cur = conn.execute(
         "SELECT id FROM applications WHERE state='DISCOVERED' LIMIT ?",
         (max_jobs,),
     )
-    app_ids = [row["id"] for row in cur.fetchall()]
+    discovered_ids = [row["id"] for row in cur.fetchall()]
 
-    logger.info("overnight: %d discovered apps to process", len(app_ids))
+    logger.info("overnight: %d discovered apps to process", len(discovered_ids))
 
-    for app_id in app_ids:
+    for app_id in discovered_ids:
         try:
             _process_one(
                 conn, app_id, stats,
@@ -89,7 +93,29 @@ def run_overnight(
             logger.error(msg)
             stats.errors.append(msg)
             stats.failed += 1
-            # Log but do not crash the whole run
+            log_action(conn, action="overnight_error", application_id=app_id,
+                       details={"error": str(exc)})
+
+    # Phase 2: Submit approved gated apps (user replied APPROVE)
+    cur = conn.execute(
+        """
+        SELECT id FROM applications
+        WHERE state='WAITING_FOR_USER_APPROVAL' AND approved_by_user=1
+        LIMIT ?
+        """,
+        (max_jobs,),
+    )
+    approved_ids = [row["id"] for row in cur.fetchall()]
+    logger.info("overnight: %d approved gated apps to submit", len(approved_ids))
+
+    for app_id in approved_ids:
+        try:
+            _submit_approved(conn, app_id, stats, gmail_client=gmail_client, dry_run=dry_run)
+        except Exception as exc:
+            msg = f"app_id={app_id} approved submit error: {exc}"
+            logger.error(msg)
+            stats.errors.append(msg)
+            stats.failed += 1
             log_action(conn, action="overnight_error", application_id=app_id,
                        details={"error": str(exc)})
 
@@ -100,6 +126,106 @@ def run_overnight(
         stats.submitted, stats.gated, stats.failed,
     )
     return stats
+
+
+def _submit_approved(
+    conn,
+    app_id: int,
+    stats: OvernightStats,
+    *,
+    gmail_client,
+    dry_run: bool,
+) -> None:
+    """
+    Handle a gated app that the user has approved.
+
+    For email/api platforms: auto-submit via submit_gated_approved.
+    For portal platforms (greenhouse, workday, indeed, remoteok, etc.):
+      V1 cannot auto-submit portal forms — output the apply URL + artifact
+      folder so the user can apply manually with the tailored resume.
+    """
+    cur = conn.execute(
+        "SELECT j.platform, j.url, j.company, j.title, a.folder_path, a.resume_path "
+        "FROM applications a JOIN jobs j ON a.job_id=j.id WHERE a.id=?",
+        (app_id,),
+    )
+    row = cur.fetchone()
+    platform = (row["platform"] or "email").lower()
+
+    if platform in ("email", "api"):
+        result = submit_gated_approved(
+            conn, app_id,
+            gmail_client=gmail_client,
+            dry_run=dry_run,
+        )
+        if result.success:
+            transition(conn, app_id, "MONITORING", reason="submitted after user approval")
+            stats.submitted += 1
+            logger.info("submitted approved app_id=%d receipt=%s", app_id, result.receipt)
+        else:
+            stats.failed += 1
+            logger.error("submit failed approved app_id=%d error=%s", app_id, result.error)
+    else:
+        # Portal-based job: use Playwright browser automation to navigate + submit
+        answers = build_candidate_answers(
+            app_id,
+            job_title=row["title"] or "",
+            company=row["company"] or "",
+            resume_path=row["resume_path"] or "",
+        )
+        folder = (row["folder_path"] or "").replace("/", os.sep)
+
+        from src.browser.prefill import CaptchaDetected, MFADetected, AITrapDetected  # noqa: PLC0415
+        try:
+            result = auto_submit_portal(
+                app_id, answers,
+                url=row["url"] or "",
+                folder_path=folder,
+                dry_run=dry_run,
+            )
+        except CaptchaDetected:
+            transition(conn, app_id, "WAITING_FOR_CAPTCHA",
+                       reason="CAPTCHA encountered during portal submit")
+            stats.failed += 1
+            logger.warning("CAPTCHA on app_id=%d — needs human intervention", app_id)
+            return
+        except MFADetected:
+            transition(conn, app_id, "WAITING_FOR_MFA",
+                       reason="MFA encountered during portal submit")
+            stats.failed += 1
+            return
+        except AITrapDetected as e:
+            transition(conn, app_id, "AI_TRAP_DETECTED",
+                       reason=f"AI trap on apply form: {e}")
+            stats.skipped += 1
+            return
+
+        if result.success:
+            from src.browser.submit import _finalise_submission  # noqa: PLC0415
+            transition(conn, app_id, "SUBMITTING",
+                       reason="browser auto-submit")
+            _finalise_submission(conn, app_id, result.receipt or f"PORTAL:{platform}")
+            transition(conn, app_id, "MONITORING",
+                       reason="submitted after user approval via browser")
+            stats.submitted += 1
+            logger.info(
+                "portal submitted app_id=%d receipt=%s screenshot=%s",
+                app_id, result.receipt, result.screenshot_path,
+            )
+        elif result.captcha_detected:
+            transition(conn, app_id, "WAITING_FOR_CAPTCHA",
+                       reason="CAPTCHA on portal form")
+            stats.failed += 1
+        elif result.ai_trap_detected:
+            transition(conn, app_id, "AI_TRAP_DETECTED",
+                       reason="AI trap found on portal form")
+            stats.skipped += 1
+        else:
+            logger.error(
+                "portal submit failed app_id=%d error=%s",
+                app_id, result.error,
+            )
+            stats.failed += 1
 
 
 def _process_one(

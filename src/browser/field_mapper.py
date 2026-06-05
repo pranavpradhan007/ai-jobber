@@ -35,6 +35,12 @@ _WORKDAY_SELECTORS: dict[str, str] = {
     "email":                "#email",
     "phone":                "#phone",
     "linkedin_url":         "#linkedinUrl",
+    "website_url":          "#websiteUrl",
+    "address_line1":        "#addressLine1",
+    "address_city":         "#city",
+    "address_state":        "#state",
+    "address_zip":          "#postalCode",
+    "address_country":      "#country",
     "years_experience":     "#yearsExperience",
     "work_authorization":   "#workAuthorization",
     "cover_letter":         "#coverLetter",
@@ -46,12 +52,18 @@ _WORKDAY_SELECTORS: dict[str, str] = {
 }
 
 _GREENHOUSE_SELECTORS: dict[str, str] = {
-    "first_name":   "#first_name",
-    "last_name":    "#last_name",
-    "email":        "#email",
-    "phone":        "#phone",
-    "cover_letter": "#cover_letter",
-    "location":     "#location",
+    "first_name":    "#first_name",
+    "last_name":     "#last_name",
+    "email":         "#email",
+    "phone":         "#phone",
+    "cover_letter":  "#cover_letter",
+    "location":      "#location",
+    "website_url":   "#job_application_answers_attributes_0_text_value",
+    "linkedin_url":  "input[name*='linkedin']",
+    "address_line1": "input[name*='address']",
+    "address_city":  "input[name*='city']",
+    "address_state": "input[name*='state']",
+    "address_zip":   "input[name*='zip'], input[name*='postal']",
     # EEO / voluntary self-identification
     "eeo_gender":    "select#gender",
     "eeo_ethnicity": "select#race",
@@ -65,6 +77,8 @@ _LEVER_SELECTORS: dict[str, str] = {
     "email":        "input[name='email']",
     "phone":        "input[name='phone']",
     "cover_letter": "textarea[name='comments']",
+    "website_url":  "input[name='urls[Portfolio]']",
+    "linkedin_url": "input[name='urls[LinkedIn]']",
 }
 
 _ASHBY_SELECTORS: dict[str, str] = {
@@ -73,6 +87,8 @@ _ASHBY_SELECTORS: dict[str, str] = {
     "email":        "input[data-field='email']",
     "phone":        "input[data-field='phone']",
     "cover_letter": "textarea[data-field='coverLetter']",
+    "website_url":  "input[data-field='websiteUrl']",
+    "linkedin_url": "input[data-field='linkedIn']",
 }
 
 _PORTAL_MAPS: dict[str, dict] = {
@@ -102,6 +118,12 @@ _FIELD_TYPES: dict[str, str] = {
     "email":              "text",
     "phone":              "text",
     "linkedin_url":       "text",
+    "website_url":        "text",
+    "address_line1":      "text",
+    "address_city":       "text",
+    "address_state":      "text",
+    "address_zip":        "text",
+    "address_country":    "text",
     "years_experience":   "select",
     "work_authorization": "select",
     "cover_letter":       "textarea",

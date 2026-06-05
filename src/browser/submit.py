@@ -148,6 +148,73 @@ def _submit_api(conn, app_id: int) -> SubmitResult:
     return SubmitResult(success=True, receipt=f"API_STUB_{app_id}")
 
 
+def submit_gated_approved(
+    conn: sqlite3.Connection,
+    app_id: int,
+    *,
+    gmail_client=None,
+    dry_run: bool = False,
+) -> SubmitResult:
+    """
+    Submit a gated application that the user has explicitly approved.
+    Transitions: WAITING_FOR_USER_APPROVAL → SUBMITTING → SUBMITTED
+    Requires: verifier_passed=1 AND approved_by_user=1.
+    """
+    app = get_application(conn, app_id)
+
+    if not app.verifier_passed:
+        raise AutoSafeSubmitError(
+            f"Cannot submit app {app_id}: verifier_passed=0"
+        )
+    if not app.approved_by_user:
+        raise AutoSafeSubmitError(
+            f"Cannot submit app {app_id}: approved_by_user=0 — user approval required"
+        )
+
+    # State machine allows WAITING_FOR_USER_APPROVAL → SUBMITTING with approved_by_user=1
+    transition(conn, app_id, "SUBMITTING", reason="gated submit — user approved")
+
+    if dry_run:
+        receipt = f"DRY_RUN_{app_id}"
+        _finalise_submission(conn, app_id, receipt)
+        return SubmitResult(success=True, receipt=receipt)
+
+    cur = conn.execute(
+        "SELECT j.platform, j.email_apply_addr "
+        "FROM applications a JOIN jobs j ON a.job_id = j.id WHERE a.id=?",
+        (app_id,),
+    )
+    row = cur.fetchone()
+    platform  = (row["platform"] or "email").lower()
+    email_addr = row["email_apply_addr"]
+
+    try:
+        if platform == "email":
+            result = _submit_email(conn, app_id, email_addr, gmail_client)
+        elif platform == "api":
+            result = _submit_api(conn, app_id)
+        else:
+            result = SubmitResult(success=False, error=f"Unknown platform {platform}")
+    except _CaptchaDetected:
+        transition(conn, app_id, "WAITING_FOR_CAPTCHA",
+                   reason="CAPTCHA encountered during submit")
+        return SubmitResult(success=False, captcha_detected=True)
+    except _MFADetected:
+        transition(conn, app_id, "WAITING_FOR_MFA",
+                   reason="MFA encountered during submit")
+        return SubmitResult(success=False, mfa_detected=True)
+    except Exception as exc:
+        logger.error("submit failed app_id=%d error=%s", app_id, exc)
+        result = SubmitResult(success=False, error=str(exc))
+
+    if result.success and result.receipt:
+        _finalise_submission(conn, app_id, result.receipt)
+    else:
+        transition(conn, app_id, "FAILED", reason=result.error or "submit failed")
+
+    return result
+
+
 class _CaptchaDetected(Exception):
     pass
 
