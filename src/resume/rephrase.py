@@ -88,11 +88,10 @@ def _default_rephraser(
     *,
     edit_instruction: Optional[str] = None,
 ) -> list[str]:
-    """Runtime rephraser. NOT called in tests."""
-    import anthropic  # noqa: PLC0415
+    """Runtime rephraser. Calls Claude via Claude Code bridge or direct API."""
     from src.config import DEFAULT_MODEL  # noqa: PLC0415
+    from src.llm.claude_code_bridge import should_use_claude_code, queue_llm_task  # noqa: PLC0415
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     bullet_texts = [b.content for b in bullets]
 
     edit_clause = ""
@@ -126,12 +125,24 @@ def _default_rephraser(
         "\n"
         f"Bullets:\n{json.dumps(bullet_texts, indent=2)}"
     )
-    msg = client.messages.create(
-        model=DEFAULT_MODEL,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = msg.content[0].text.strip()
+
+    # Use Claude Code if configured, else direct API
+    if should_use_claude_code():
+        raw = queue_llm_task("rephrase", prompt, model=DEFAULT_MODEL)
+        if not raw:
+            logger.warning("Claude Code rephrase timed out, returning originals")
+            return bullet_texts
+    else:
+        import anthropic  # noqa: PLC0415
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        msg = client.messages.create(
+            model=DEFAULT_MODEL,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = msg.content[0].text.strip()
+
+    # Parse response
     raw = re.sub(r"^```[a-z]*\n?", "", raw)
     raw = re.sub(r"\n?```$", "", raw)
     try:

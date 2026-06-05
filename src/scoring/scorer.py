@@ -135,28 +135,42 @@ def _build_summary(
 
 def _default_scorer(job_info: dict, profile_info: dict) -> dict:
     """
-    Runtime scorer: calls the Anthropic API.
+    Runtime scorer: calls Claude via Claude Code bridge or direct API.
     NOT used in tests — inject a mock scorer instead.
     """
-    import anthropic  # noqa: PLC0415
-
     from src.config import DEFAULT_MODEL  # noqa: PLC0415
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    from src.llm.claude_code_bridge import should_use_claude_code, queue_llm_task  # noqa: PLC0415
+    import re  # noqa: PLC0415
+
     prompt = f"""Score this job against the candidate profile on each dimension (0-100).
-Return JSON: {{"title_match": {{"score": N, "reason": "..."}}, ...}}
+Return JSON only, no markdown: {{"title_match": {{"score": N, "reason": "..."}}, ...}}
 
 Job: {json.dumps(job_info, indent=2)}
 Profile: {json.dumps(profile_info, indent=2)}
 
 Dimensions: title_match, must_have_skills, nice_to_have_skills, industry_fit, location_match, salary_fit"""
 
-    msg = client.messages.create(
-        model=DEFAULT_MODEL,
-        max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = msg.content[0].text.strip()
-    import re
+    # Use Claude Code if configured, else direct API
+    if should_use_claude_code():
+        raw = queue_llm_task("score", prompt, model=DEFAULT_MODEL)
+        if not raw:
+            logger.warning("Claude Code scorer timed out, returning neutral scores")
+            return {dim: {"score": 50, "reason": "timeout"} for dim in WEIGHTS.keys()}
+    else:
+        import anthropic  # noqa: PLC0415
+        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        msg = client.messages.create(
+            model=DEFAULT_MODEL,
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = msg.content[0].text.strip()
+
+    # Parse response
     raw = re.sub(r"^```[a-z]*\n?", "", raw)
     raw = re.sub(r"\n?```$", "", raw)
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("Scorer returned non-JSON: %r", raw[:200])
+        return {dim: {"score": 50, "reason": "parse error"} for dim in WEIGHTS.keys()}
