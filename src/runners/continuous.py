@@ -1,27 +1,26 @@
 """
 Continuous pipeline runner.
 
-Runs the full job-agent loop at a configurable interval throughout
-the day (and night). Each cycle:
+Two interleaved loops:
+  FAST  (every pipeline_interval, default 30 min)
+    → score + tailor + verify + package all DISCOVERED apps
+    → submit auto_safe jobs
+    → check Gmail replies → process APPROVE/EDIT/REJECT/SNOOZE
+    → send digest if new gated apps arrived
 
-  1. DISCOVER   — queue Indeed searches → Claude Code executes MCP calls
-  2. IMPORT     — import any pending job results from MCP results cache
-  3. PIPELINE   — score → tailor → verify → package all DISCOVERED apps
-  4. APPROVALS  — check Gmail for reply commands → process them
-  5. SUBMIT     — run approved apps through submission
-  6. DIGEST     — if new gated apps exist, queue a digest email
-  7. SLEEP      — wait interval_minutes before next cycle
+  SLOW  (every discover_interval, default 4 h)
+    → queue Indeed searches across all US (60/cycle rotating through 2328)
+    → queue LinkedIn job alert email parse
+    → queue HN Who's Hiring + RemoteOK + We Work Remotely feeds
+    → import any cached results from the last discovery cycle
 
-This is designed to be left running in a terminal or as a background
-process. Claude Code should also be available to execute MCP actions
-(Gmail drafts, Indeed searches) that Python queues.
+Press Ctrl-C to stop after the current cycle finishes.
 
 Usage:
-    job-agent run-loop                      # default: every 30 min
-    job-agent run-loop --interval 60        # every hour
-    job-agent run-loop --interval 10        # every 10 min (aggressive)
-    job-agent run-loop --once               # single cycle, then exit
-    job-agent run-loop --skip-discover      # skip Indeed search this cycle
+  job-agent run-loop                          # 30 min pipeline, 4 h discovery
+  job-agent run-loop --pipeline-interval 10   # faster pipeline
+  job-agent run-loop --discover-interval 2    # discover every 2 h
+  job-agent run-loop --once                   # single full cycle
 """
 from __future__ import annotations
 import logging
@@ -38,9 +37,9 @@ logger = logging.getLogger(__name__)
 _STOP = False
 
 
-def _handle_signal(sig, frame):
+def _handle_signal(sig, _frame):
     global _STOP
-    logger.info("Signal %s received — stopping after current cycle", sig)
+    logger.info("Signal %s — stopping after this cycle", sig)
     _STOP = True
 
 
@@ -51,20 +50,21 @@ signal.signal(signal.SIGTERM, _handle_signal)
 @dataclass
 class CycleStats:
     cycle: int = 0
-    discovered: int = 0     # new jobs imported this cycle (LinkedIn alerts)
+    discovered: int = 0
     scored: int = 0
     skipped: int = 0
     tailored: int = 0
     submitted: int = 0
     gated: int = 0
-    approvals_processed: int = 0
+    approvals: int = 0
     errors: list[str] = field(default_factory=list)
 
 
 def run_continuous(
     conn: sqlite3.Connection,
     *,
-    interval_minutes: int = 30,
+    pipeline_interval: int = 30,    # minutes between pipeline runs
+    discover_interval: int = 240,   # minutes between discovery sweeps (4 h)
     once: bool = False,
     skip_discover: bool = False,
     skip_approvals: bool = False,
@@ -76,11 +76,6 @@ def run_continuous(
     gmail_client=None,
     max_jobs_per_cycle: int = 20,
 ) -> None:
-    """
-    Run the pipeline in a continuous loop.
-
-    Press Ctrl-C to stop cleanly after the current cycle completes.
-    """
     global _STOP
     _STOP = False
 
@@ -89,190 +84,197 @@ def run_continuous(
         gmail_client = MCPGmailClient()
 
     recipient = digest_recipient or os.environ.get(
-        "DIGEST_RECIPIENT",
-        os.environ.get("YOUR_EMAIL_ADDRESS", ""),
+        "DIGEST_RECIPIENT", os.environ.get("YOUR_EMAIL_ADDRESS", "")
     )
 
     cycle = 0
+    last_discovery_at: Optional[float] = None   # epoch seconds
+
     while not _STOP:
         cycle += 1
         stats = CycleStats(cycle=cycle)
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        logger.info("=" * 60)
-        logger.info("CYCLE %d  started at %s", cycle, now)
-        logger.info("=" * 60)
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        logger.info("─" * 56)
+        logger.info("CYCLE %d  %s", cycle, now_str)
+        logger.info("─" * 56)
 
-        # ── 1. Queue job discovery (Indeed + LinkedIn alerts) ───────────────
-        if not skip_discover:
-            try:
-                n = _queue_discovery(conn, cycle=cycle)
-                logger.info("DISCOVER: queued %d Indeed searches (cycle %d) for Claude Code", n, cycle)
-            except Exception as exc:
-                msg = f"discover error: {exc}"
-                logger.error(msg)
-                stats.errors.append(msg)
-
-            # Also queue LinkedIn job alert email fetch
-            try:
-                from src.discovery.linkedin_email import (  # noqa: PLC0415
-                    queue_linkedin_email_fetch,
-                    import_from_cached_alerts,
-                )
-                queue_linkedin_email_fetch(gmail_client)
-                li_summary = import_from_cached_alerts(conn)
-                if li_summary.get("added"):
-                    logger.info(
-                        "LINKEDIN: imported %d new jobs from email alerts",
-                        li_summary["added"],
-                    )
-                    stats.discovered += li_summary["added"]
-            except Exception as exc:
-                logger.warning("LinkedIn email import skipped: %s", exc)
-
-        # ── 2. Run the core pipeline on DISCOVERED apps ──────────────────────
-        try:
-            from src.runners.overnight import run_overnight
-            pipeline_stats = run_overnight(
-                conn,
-                scorer_fn=scorer_fn,
-                rephraser_fn=rephraser_fn,
-                extractor_fn=extractor_fn,
-                gmail_client=gmail_client,
-                candidate_name=candidate_name,
-                max_jobs=max_jobs_per_cycle,
-                dry_run=False,
+        # ── Discovery (every discover_interval hours) ────────────────────────
+        now_epoch = time.time()
+        run_discovery = (
+            not skip_discover
+            and (
+                last_discovery_at is None
+                or (now_epoch - last_discovery_at) >= discover_interval * 60
             )
-            stats.scored    = pipeline_stats.scored
-            stats.skipped   = pipeline_stats.skipped
-            stats.tailored  = pipeline_stats.tailored
-            stats.submitted = pipeline_stats.submitted
-            stats.gated     = pipeline_stats.gated
-            stats.errors   += pipeline_stats.errors
-            logger.info(
-                "PIPELINE: scored=%d skipped=%d tailored=%d submitted=%d gated=%d",
-                stats.scored, stats.skipped, stats.tailored,
-                stats.submitted, stats.gated,
-            )
-        except Exception as exc:
-            msg = f"pipeline error: {exc}"
-            logger.error(msg, exc_info=True)
-            stats.errors.append(msg)
+        )
 
-        # ── 3. Check Gmail for approval replies ──────────────────────────────
+        if run_discovery:
+            stats.discovered += _run_discovery(conn, cycle, gmail_client)
+            last_discovery_at = time.time()
+        else:
+            mins_since = int((now_epoch - (last_discovery_at or 0)) / 60)
+            next_in    = max(0, discover_interval - mins_since)
+            logger.info("DISCOVER: skipping (next sweep in ~%d min)", next_in)
+
+        # ── Pipeline ─────────────────────────────────────────────────────────
+        _run_pipeline(conn, stats, scorer_fn, rephraser_fn, extractor_fn,
+                      gmail_client, candidate_name, max_jobs_per_cycle)
+
+        # ── Approvals ────────────────────────────────────────────────────────
         if not skip_approvals:
-            try:
-                n = _check_approvals(conn, gmail_client)
-                stats.approvals_processed = n
-                if n:
-                    logger.info("APPROVALS: processed %d command(s)", n)
-            except Exception as exc:
-                msg = f"approvals error: {exc}"
-                logger.error(msg)
-                stats.errors.append(msg)
+            stats.approvals = _run_approvals(conn, gmail_client)
 
-        # ── 4. Send digest for newly gated apps ──────────────────────────────
+        # ── Digest ───────────────────────────────────────────────────────────
         if stats.gated > 0 and recipient:
-            try:
-                from src.gmail.digest import build_digest
-                action_id = build_digest(conn, recipient, gmail_client=gmail_client)
-                if action_id:
-                    logger.info("DIGEST: queued draft action_id=%s", action_id)
-            except Exception as exc:
-                msg = f"digest error: {exc}"
-                logger.error(msg)
-                stats.errors.append(msg)
+            _send_digest(conn, recipient, gmail_client)
 
-        # ── 5. Cycle summary ─────────────────────────────────────────────────
-        _log_cycle_summary(stats)
+        # ── Summary ──────────────────────────────────────────────────────────
+        logger.info(
+            "DONE  discovered=%d scored=%d skipped=%d tailored=%d "
+            "submitted=%d gated=%d approvals=%d errors=%d",
+            stats.discovered, stats.scored, stats.skipped, stats.tailored,
+            stats.submitted, stats.gated, stats.approvals, len(stats.errors),
+        )
+        for e in stats.errors:
+            logger.warning("  %s", e)
 
         if once or _STOP:
             break
 
-        logger.info("Sleeping %d minutes until next cycle…", interval_minutes)
-        _interruptible_sleep(interval_minutes * 60)
+        logger.info("Sleeping %d min until next cycle…", pipeline_interval)
+        _sleep(pipeline_interval * 60)
 
-    logger.info("Continuous runner stopped after %d cycle(s).", cycle)
+    logger.info("Runner stopped after %d cycle(s).", cycle)
 
 
-def _queue_discovery(conn: sqlite3.Connection, cycle: int = 1) -> int:
-    """
-    Write a pending discovery manifest for Claude Code to execute.
+# ── Private helpers ───────────────────────────────────────────────────────────
 
-    Uses rotate_searches() so the full US coverage (564 searches) is
-    spread across cycles rather than run all at once.
-    Each cycle gets 12 remote + 48 city searches = 60 searches.
-    Full rotation (~2400 searches) completes every ~50 cycles (~25 hrs at 30-min intervals).
-    """
+def _run_discovery(
+    conn: sqlite3.Connection,
+    cycle: int,
+    gmail_client,
+) -> int:
+    """Queue all discovery sources and import any cached results."""
+    from src.discovery.indeed import discover_searches_for_profile, rotate_searches, DEFAULT_SEARCHES
+    from src.discovery.linkedin_email import queue_linkedin_email_fetch, import_from_cached_alerts
+    from src.discovery.feeds import queue_feed_fetches, import_cached_feeds
     import json
     from pathlib import Path
-    from src.discovery.indeed import discover_searches_for_profile, rotate_searches, DEFAULT_SEARCHES
 
-    all_searches = discover_searches_for_profile()
-    batch = rotate_searches(all_searches, cycle=cycle, batch_size=48)
+    logger.info("DISCOVER: sweeping all sources…")
+    imported = 0
 
-    actions_dir = Path("gmail_actions") / "pending"
-    actions_dir.mkdir(parents=True, exist_ok=True)
+    # 1. Import cached results from previous sweep
+    li = import_from_cached_alerts(conn)
+    if li.get("added"):
+        logger.info("  LinkedIn alerts:  +%d jobs", li["added"])
+        imported += li["added"]
 
-    req_path = actions_dir / "discover_jobs_request.json"
+    feeds = import_cached_feeds(conn)
+    if feeds.get("added"):
+        for src, n in feeds.get("sources", {}).items():
+            logger.info("  %-18s +%d jobs", src + ":", n)
+        imported += feeds["added"]
+
+    # 2. Queue new discovery requests for this sweep
+    # Indeed — rotating batch
+    batch = rotate_searches(
+        discover_searches_for_profile(), cycle=cycle, batch_size=48
+    )
     manifest = {
-        "action":     "discover_jobs",
-        "searches":   batch,
-        "cycle":      cycle,
-        "total_pool": len(DEFAULT_SEARCHES),
-        "limit":      10,
-        "created_at": datetime.now(timezone.utc).isoformat() + "Z",
-        "status":     "pending",
+        "action":      "discover_jobs",
+        "searches":    batch,
+        "cycle":       cycle,
+        "total_pool":  len(DEFAULT_SEARCHES),
+        "limit":       10,
+        "created_at":  datetime.now(timezone.utc).isoformat() + "Z",
+        "status":      "pending",
         "instruction": (
             "For each search call MCP search_jobs (country_code='US'). "
-            "For each result call get_job_details to get the full description. "
-            "Then call: from src.discovery.indeed import import_jobs; "
-            "import_jobs(conn, job_dicts) with keys: url, company, title, "
-            "location, description."
+            "For each result call get_job_details. "
+            "Then: from src.discovery.indeed import import_jobs; "
+            "import_jobs(conn, job_dicts) keys: url, company, title, location, description."
         ),
     }
-    req_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    return len(batch)
+    pending = Path("gmail_actions") / "pending"
+    pending.mkdir(parents=True, exist_ok=True)
+    (pending / "discover_jobs_request.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    logger.info("  Indeed:           queued %d searches (cycle %d/%d)",
+                len(batch), cycle, len(DEFAULT_SEARCHES) // 48 + 1)
+
+    # LinkedIn email alerts
+    queue_linkedin_email_fetch(gmail_client)
+    logger.info("  LinkedIn alerts:  queued email fetch")
+
+    # External feeds (HN, RemoteOK, WWR)
+    feed_ids = queue_feed_fetches()
+    logger.info("  External feeds:   queued %d fetches (HN + RemoteOK + WWR)", len(feed_ids))
+
+    return imported
 
 
-def _check_approvals(conn: sqlite3.Connection, gmail_client) -> int:
-    """Read cached Gmail replies and apply approval commands."""
+def _run_pipeline(
+    conn, stats: CycleStats,
+    scorer_fn, rephraser_fn, extractor_fn,
+    gmail_client, candidate_name, max_jobs,
+) -> None:
+    from src.runners.overnight import run_overnight
+    try:
+        s = run_overnight(
+            conn,
+            scorer_fn=scorer_fn,
+            rephraser_fn=rephraser_fn,
+            extractor_fn=extractor_fn,
+            gmail_client=gmail_client,
+            candidate_name=candidate_name,
+            max_jobs=max_jobs,
+            dry_run=False,
+        )
+        stats.scored    = s.scored
+        stats.skipped   = s.skipped
+        stats.tailored  = s.tailored
+        stats.submitted = s.submitted
+        stats.gated     = s.gated
+        stats.errors   += s.errors
+    except Exception as exc:
+        msg = f"pipeline: {exc}"
+        logger.error(msg, exc_info=True)
+        stats.errors.append(msg)
+
+
+def _run_approvals(conn, gmail_client) -> int:
     from src.gmail.reply_watcher import watch_for_replies, mark_digest_processed
     from src.approvals.parser import parse_reply, apply_commands
-
-    cached = watch_for_replies(conn, gmail_client=gmail_client)
-    if not cached:
+    try:
+        cached = watch_for_replies(conn, gmail_client=gmail_client)
+        total = 0
+        for did, text in cached.items():
+            cmds = parse_reply(text)
+            if cmds:
+                results = apply_commands(conn, cmds)
+                n = sum(1 for r in results if r.success)
+                total += n
+                mark_digest_processed(conn, did)
+        return total
+    except Exception as exc:
+        logger.warning("approvals: %s", exc)
         return 0
 
-    total = 0
-    for digest_id, reply_text in cached.items():
-        commands = parse_reply(reply_text)
-        if not commands:
-            continue
-        results = apply_commands(conn, commands)
-        n = sum(1 for r in results if r.success)
-        total += n
-        mark_digest_processed(conn, digest_id)
-        logger.info("Processed %d/%d commands for %s", n, len(results), digest_id)
 
-    return total
+def _send_digest(conn, recipient, gmail_client) -> None:
+    from src.gmail.digest import build_digest
+    try:
+        aid = build_digest(conn, recipient, gmail_client=gmail_client)
+        if aid:
+            logger.info("DIGEST: queued action_id=%s", aid)
+    except Exception as exc:
+        logger.warning("digest: %s", exc)
 
 
-def _log_cycle_summary(stats: CycleStats) -> None:
-    logger.info(
-        "CYCLE %d DONE  discovered=%d scored=%d skipped=%d tailored=%d "
-        "submitted=%d gated=%d approvals=%d errors=%d",
-        stats.cycle, stats.discovered, stats.scored, stats.skipped,
-        stats.tailored, stats.submitted, stats.gated,
-        stats.approvals_processed, len(stats.errors),
-    )
-    for err in stats.errors:
-        logger.warning("  error: %s", err)
-
-
-def _interruptible_sleep(seconds: int) -> None:
-    """Sleep in short chunks so Ctrl-C is responsive."""
-    chunk = 5
-    elapsed = 0
+def _sleep(seconds: int) -> None:
+    chunk, elapsed = 5, 0
     while elapsed < seconds and not _STOP:
         time.sleep(min(chunk, seconds - elapsed))
         elapsed += chunk

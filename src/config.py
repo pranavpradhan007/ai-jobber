@@ -23,8 +23,9 @@ APPLICATION_ANSWERS_PATH: str = os.environ.get(
 )
 
 # Continuous loop settings
-LOOP_INTERVAL_MINUTES: int = int(os.environ.get("JOB_AGENT_LOOP_INTERVAL", "30"))
-MAX_JOBS_PER_CYCLE: int    = int(os.environ.get("JOB_AGENT_MAX_JOBS_PER_CYCLE", "20"))
+PIPELINE_INTERVAL_MINUTES: int = int(os.environ.get("JOB_AGENT_PIPELINE_INTERVAL", "30"))
+DISCOVER_INTERVAL_MINUTES: int = int(os.environ.get("JOB_AGENT_DISCOVER_INTERVAL", "240"))  # 4 h
+MAX_JOBS_PER_CYCLE: int        = int(os.environ.get("JOB_AGENT_MAX_JOBS_PER_CYCLE", "20"))
 
 # Resume paths (used when not tailoring)
 RESUME_DOCX_PATH: str = os.environ.get(

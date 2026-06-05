@@ -47,46 +47,52 @@ make smoke       # fast happy-path check only
 
 ## 2. Running modes
 
-### Continuous mode (recommended — runs all day)
+### Continuous mode (recommended)
 ```bash
-# Start the continuous loop — runs every 30 minutes, all day
+# Standard: pipeline every 30 min, discovery every 4 hours
 job-agent run-loop
 
-# Adjust interval
-job-agent run-loop --interval 60       # every hour
-job-agent run-loop --interval 10       # every 10 min (aggressive)
-
-# Single cycle and exit
+# Single full cycle then exit
 job-agent run-loop --once
+
+# Adjust independently
+job-agent run-loop --pipeline-interval 10    # faster scoring
+job-agent run-loop --discover-interval 120   # discover every 2 h
+job-agent run-loop --skip-discover           # pipeline only, no searches
 ```
 
-Each cycle does:
-1. Queue Indeed searches across the full US (Claude Code executes via MCP)
-2. Score + tailor + verify all queued DISCOVERED jobs
-3. Submit auto_safe jobs immediately
-4. Gate jobs needing approval → send digest email
-5. Check Gmail for your phone replies → APPROVE/EDIT/REJECT/SNOOZE
-6. Sleep → repeat
+**Two loops running together:**
+
+| Loop | Default | Does |
+|------|---------|------|
+| Pipeline | every 30 min | score → tailor → submit/gate → check replies → digest |
+| Discovery | every 4 hours | Indeed (2328 searches) + LinkedIn alerts + HN Who's Hiring + RemoteOK + WWR |
 
 Press **Ctrl-C** to stop cleanly after the current cycle finishes.
 
-### Manual / one-shot mode
+### Manual / one-shot
 ```bash
-job-agent discover                     # queue searches
-job-agent run-overnight                # one pipeline pass (no discover/approvals)
-job-agent prep-batch --to you@email    # send digest email manually
+job-agent run-overnight                # one pipeline pass only
+job-agent discover                     # queue Indeed searches now
+job-agent discover-linkedin            # queue LinkedIn email parse
+job-agent prep-batch --to you@email    # send digest manually
 job-agent check-approvals --from-gmail # process replies manually
 ```
 
 ### Typical day
 ```
-08:00  run-loop starts — discovers + processes overnight queue
-08:30  run-loop cycle 2 — picks up new jobs
-…      (runs every 30 min all day)
-12:00  you get a digest email on your phone
-12:05  you reply: APP-1 APPROVE, APP-2 EDIT "..."
-12:30  run-loop cycle picks up your reply → submits APP-1
-18:00  shut down run-loop (Ctrl-C) or leave running overnight
+08:00  run-loop starts
+       → first discovery sweep (Indeed + LinkedIn + HN + RemoteOK + WWR)
+08:30  pipeline cycle: scores any newly imported jobs, tailors, gates
+09:00  pipeline cycle: nothing new
+…
+12:00  second discovery sweep (next Indeed batch, new email alerts)
+12:05  3 new jobs imported → scored → gated → digest queued
+12:06  digest email arrives on your phone
+12:10  you reply: APP-7 APPROVE, APP-8 EDIT "..."
+12:30  pipeline cycle: picks up reply → APP-7 submitted
+16:00  third discovery sweep
+…
 ```
 
 ---

@@ -257,39 +257,41 @@ def run_overnight_cmd(ctx, dry_run, max_jobs, candidate_name):
 # ---------------------------------------------------------------------------
 
 @main.command("run-loop")
-@click.option("--interval", default=30, show_default=True,
-              help="Minutes between pipeline cycles.")
+@click.option("--pipeline-interval", default=30, show_default=True,
+              help="Minutes between pipeline runs (score/tailor/submit/approvals).")
+@click.option("--discover-interval", default=240, show_default=True,
+              help="Minutes between discovery sweeps (Indeed + LinkedIn + HN + feeds). Default: 240 (4 h).")
 @click.option("--once", is_flag=True, default=False,
-              help="Run a single cycle and exit (same as run-overnight but with discovery + approvals).")
+              help="Run a single full cycle and exit.")
 @click.option("--skip-discover", is_flag=True, default=False,
-              help="Skip queuing Indeed searches this cycle.")
+              help="Skip discovery this run (pipeline only).")
 @click.option("--skip-approvals", is_flag=True, default=False,
-              help="Skip checking Gmail for reply commands.")
-@click.option("--max-jobs", default=20, show_default=True,
-              help="Max DISCOVERED apps to process per cycle.")
+              help="Skip Gmail approval check.")
+@click.option("--max-jobs", default=20, show_default=True)
 @click.option("--to", "digest_recipient", default=None,
-              help="Digest email recipient (defaults to DIGEST_RECIPIENT env var).")
+              help="Digest email recipient (default: DIGEST_RECIPIENT env var).")
 @click.option("--candidate-name", default=None)
 @click.pass_context
-def run_loop_cmd(ctx, interval, once, skip_discover, skip_approvals,
-                 max_jobs, digest_recipient, candidate_name):
-    """Run the pipeline continuously — discovers, scores, tailors, approves, submits.
+def run_loop_cmd(ctx, pipeline_interval, discover_interval, once,
+                 skip_discover, skip_approvals, max_jobs,
+                 digest_recipient, candidate_name):
+    """Run the job agent continuously.
 
-    Designed to run all day (not just overnight). Each cycle:
-      1. Queue Indeed searches across the full US (Claude Code executes via MCP)
-      2. Score + tailor + verify all DISCOVERED applications
-      3. Submit auto_safe jobs immediately
-      4. Gate jobs requiring approval → queue digest email
-      5. Check Gmail for your phone replies → process APPROVE/EDIT/REJECT/SNOOZE
-      6. Sleep interval minutes, then repeat
+    \b
+    Two loops running together:
+      PIPELINE  every --pipeline-interval min (default 30)
+        score + tailor + verify + submit + check approvals + digest
+      DISCOVERY every --discover-interval min (default 240 = 4 h)
+        Indeed (2328 searches rotating) + LinkedIn alerts +
+        Hacker News Who's Hiring + RemoteOK + We Work Remotely
 
-    Press Ctrl-C to stop cleanly after the current cycle finishes.
-
+    \b
     Examples:
-      job-agent run-loop                    # run every 30 min, all day
-      job-agent run-loop --interval 60      # every hour
-      job-agent run-loop --once             # single full cycle
-      job-agent run-loop --skip-discover    # skip Indeed this cycle
+      job-agent run-loop                           # standard (30 min / 4 h)
+      job-agent run-loop --once                    # single cycle
+      job-agent run-loop --pipeline-interval 10    # faster pipeline
+      job-agent run-loop --discover-interval 120   # discover every 2 h
+      job-agent run-loop --skip-discover           # pipeline only
     """
     import logging
     from src.db.connection import get_connection as _gc
@@ -298,14 +300,15 @@ def run_loop_cmd(ctx, interval, once, skip_discover, skip_approvals,
 
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+        format="%(asctime)s %(levelname)-8s %(message)s",
     )
 
     conn = _gc(ctx.obj["db"])
     try:
         run_continuous(
             conn,
-            interval_minutes=interval,
+            pipeline_interval=pipeline_interval,
+            discover_interval=discover_interval,
             once=once,
             skip_discover=skip_discover,
             skip_approvals=skip_approvals,

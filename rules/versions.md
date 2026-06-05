@@ -27,6 +27,29 @@ in V1. If a design choice would "make V2 easier", defer it.
 Will containerise and deploy to cloud. Not a single line of V3 infrastructure
 (Docker, Terraform, cloud SDKs) belongs in V1.
 
+## V4 — Real-time notifications + X/Twitter (future)
+
+**Planned scope:**
+- Real-time job arrival push notifications (phone/desktop) — every new
+  job imported triggers an instant notify, not just the digest
+- X/Twitter integration: monitor job-posting tweets (e.g. companies
+  tweeting "we're hiring") and reply with a tailored interest message;
+  search for relevant tech job tweets by keyword
+- Job matching score shown in the notification so you can act instantly
+  from your phone before the application is even built
+- Possibly: Slack / Discord notifications as alternative channels
+
+**Hard constraints (unchanged from V1/V2/V3):**
+- No CAPTCHA/MFA bypass ever
+- No auto-submit on gated jobs without human approval
+- No invented resume claims
+- X replies must be manually confirmed before sending (same as Gmail)
+
+**Not in V4 scope (defer to V5+):**
+- Auto-sending X replies without confirmation
+- Full autonomous job negotiation
+- LinkedIn scraping or automation
+
 ## Enforcement
 
 When wearing any role, if a proposed change is V2 or V3 scope, **reject it and
