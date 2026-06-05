@@ -48,13 +48,22 @@ _JD_TRAP_PATTERNS = [
 # HTML-level trap patterns
 # ---------------------------------------------------------------------------
 
-# Input names / ids commonly used as honeypot fields
+# Input names / ids commonly used as honeypot fields.
+# Note: "url" is omitted — ATS forms legitimately use that for portfolio fields.
+# "website" is kept because anti-spam libraries use it as a honeypot name and
+# legitimate ATS fields use more specific names (websiteUrl, urls[Portfolio], etc.).
 _HONEYPOT_NAMES = frozenset({
-    "website", "url", "homepage", "company2", "phone2", "address2",
+    "website", "homepage", "company2", "phone2", "address2",
     "email2", "name2", "lastname2", "username2", "fax",
     "leave_blank", "leave-blank", "leaveblank",
     "trap", "honeypot", "bot_check", "bot-check",
     "ohnohoney", "gotcha",
+})
+
+# If an input's id or class contains any of these substrings it's blog/CMS
+# infrastructure, not an application form field — skip honeypot checks for it.
+_BLOG_FIELD_KEYWORDS = frozenset({
+    "carousel", "comment-form", "wp-comment", "jetpack", "blog",
 })
 
 # Labels / aria-label text that signal honeypot
@@ -133,6 +142,12 @@ def detect_traps_in_html(html: str) -> TrapResult:
 
         # Skip inputs that are legitimately hidden (hidden type = normal pattern)
         if input_type == "hidden":
+            continue
+
+        # Skip blog/CMS infrastructure fields (WordPress comment forms, carousels, etc.)
+        input_class = _attr(fragment, "class").lower()
+        field_context = input_id + " " + input_class
+        if any(kw in field_context for kw in _BLOG_FIELD_KEYWORDS):
             continue
 
         # 1. Honeypot name/id — exact match only (substring would catch e.g. linkedinUrl)

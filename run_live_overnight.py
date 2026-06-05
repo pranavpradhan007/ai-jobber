@@ -1,5 +1,11 @@
 """Run the overnight pipeline on the newly imported real jobs."""
 import os
+import sys
+
+# Ensure UTF-8 output on Windows (avoids UnicodeEncodeError with arrow chars)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 os.environ["JOB_AGENT_DB"] = "job_agent.db"
 
 from src.db.connection import get_connection

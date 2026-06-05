@@ -195,33 +195,50 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     page.goto(url, wait_until="domcontentloaded", timeout=30_000)
     time.sleep(1.5)
 
-    # ── Step 2: Find and click Apply button ───────────────────────────────────
-    apply_clicked = False
-    for sel in _APPLY_SELECTORS:
-        try:
-            loc = page.locator(sel).first
-            if loc.count() > 0 and loc.is_visible():
-                logger.info("app_id=%d clicking apply selector=%r", app_id, sel)
-                loc.click()
-                apply_clicked = True
-                break
-        except Exception:
-            continue
+    # ── Step 2: Find Apply URL / button ───────────────────────────────────────
+    current_url = page.url
 
-    if apply_clicked:
-        # Handle possible new tab opened by Apply button
-        try:
-            page.wait_for_load_state("domcontentloaded", timeout=int(_APPLY_WAIT * 1000))
-        except Exception:
-            pass
-        time.sleep(1.0)
+    # For RemoteOK: extract the direct ATS href instead of clicking (JS-rendered button)
+    if "remoteok.com" in current_url:
+        apply_href = _extract_apply_href(page)
+        if apply_href:
+            logger.info("app_id=%d RemoteOK: navigating to apply href %s", app_id, apply_href)
+            page.goto(apply_href, wait_until="domcontentloaded", timeout=30_000)
+            time.sleep(2.0)
+        else:
+            logger.warning("app_id=%d RemoteOK: could not extract apply href", app_id)
+    else:
+        apply_clicked = False
+        for sel in _APPLY_SELECTORS:
+            try:
+                loc = page.locator(sel).first
+                if loc.count() > 0 and loc.is_visible():
+                    logger.info("app_id=%d clicking apply selector=%r", app_id, sel)
+                    loc.click()
+                    apply_clicked = True
+                    break
+            except Exception:
+                continue
 
-        # If a new page/tab was opened, switch to it
-        pages = page.context.pages
-        if len(pages) > 1:
-            page = pages[-1]
-            page.wait_for_load_state("domcontentloaded", timeout=15_000)
+        if apply_clicked:
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=int(_APPLY_WAIT * 1000))
+            except Exception:
+                pass
             time.sleep(1.0)
+
+            # If a new page/tab was opened, switch to it
+            pages = page.context.pages
+            if len(pages) > 1:
+                page = pages[-1]
+                page.wait_for_load_state("domcontentloaded", timeout=15_000)
+                time.sleep(1.0)
+
+    # Indeed login detection — requires human sign-in, cannot auto-apply
+    if "secure.indeed.com/auth" in page.url or "indeed.com/account" in page.url:
+        raise MFADetected(
+            f"Indeed requires login before applying (redirected to {page.url})"
+        )
 
     # ── Step 3: AI trap check ─────────────────────────────────────────────────
     html = page.content()
@@ -371,6 +388,30 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
         receipt=receipt,
         screenshot_path=ss_after,
     )
+
+
+def _extract_apply_href(page) -> str:
+    """
+    For listing pages (RemoteOK, HN, etc.) that render Apply links via JS,
+    extract the href directly instead of clicking.
+    Returns empty string if nothing useful found.
+    """
+    _APPLY_LINK_SELECTORS = [
+        "a.apply[href]",
+        "a.button.apply[href]",
+        "a:text-is('Apply Now')[href]",
+        "a:text-is('Apply')[href]",
+        ".apply-link[href]",
+        "[data-testid='apply-link'][href]",
+    ]
+    for sel in _APPLY_LINK_SELECTORS:
+        try:
+            href = page.locator(sel).first.get_attribute("href")
+            if href and href.startswith("http"):
+                return href
+        except Exception:
+            continue
+    return ""
 
 
 def _fill_if_visible(page, value: str, selectors: list[str], delay: float) -> None:
