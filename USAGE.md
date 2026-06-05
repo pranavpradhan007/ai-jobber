@@ -94,16 +94,47 @@ job-agent check-approvals --from-gmail # process replies manually
 ## 3. Discovering jobs
 
 ### Job sources
+
 | Source | Coverage | How |
 |--------|----------|-----|
-| **Indeed MCP** | ~10M US jobs — aggregates LinkedIn cross-posts, Greenhouse, Workday, Lever, direct company sites | `job-agent discover` |
-| **Manual** | Any URL — LinkedIn, company page, referral link | `job-agent add-job --url ...` |
-| **LinkedIn direct** | Not available as MCP | Use `add-job` manually |
+| **Indeed MCP** | ~10M US jobs, aggregates cross-posts from LinkedIn/Greenhouse/Workday/Lever | `job-agent discover` |
+| **LinkedIn email alerts** | LinkedIn-exclusive postings via official alert emails | `job-agent discover-linkedin` |
+| **Manual** | Any URL — LinkedIn, company page, referral | `job-agent add-job --url ...` |
 
-> **LinkedIn note:** The Claude Code MCP connector available here is Indeed,
-> not LinkedIn. Indeed aggregates the vast majority of jobs that companies
-> cross-post to LinkedIn. For LinkedIn-exclusive postings (rare), copy the
-> URL and use `job-agent add-job --url <linkedin_url> --company ... --title ...`.
+### LinkedIn via Gmail job alerts (recommended)
+
+LinkedIn sends official job alert emails to your Gmail. The agent reads them automatically via the Gmail MCP — no scraping, no API key, no ToS violation.
+
+**One-time setup in LinkedIn (do this once):**
+1. Go to [linkedin.com/jobs](https://www.linkedin.com/jobs)
+2. Search for a role, e.g. `Machine Learning Engineer`
+3. Click **"Set alert"** → Email → **Daily** (or "As they happen")
+4. Repeat for each role you want covered:
+   - `AI Research Engineer`
+   - `Reinforcement Learning Engineer`
+   - `Applied Scientist`
+   - `LLM Engineer`
+   - `Data Scientist machine learning`
+   - *(any others relevant to you)*
+5. LinkedIn will email `jobalerts@linkedin.com → pranavpradhan00721@gmail.com`
+
+**The agent then handles everything automatically each cycle:**
+```
+run-loop cycle
+  → Gmail MCP: search for LinkedIn alert emails
+  → parse job title, company, location, LinkedIn job URL from each email
+  → import_jobs() → DISCOVERED applications
+  → pipeline scores, tailors, and gates them as normal
+```
+
+**Manual trigger:**
+```bash
+# Queue the Gmail fetch
+job-agent discover-linkedin
+
+# After Claude Code processes it, import the results
+job-agent discover-linkedin --import-cached
+```
 
 ### Discovery commands
 ```bash

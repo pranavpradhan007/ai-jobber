@@ -51,7 +51,7 @@ signal.signal(signal.SIGTERM, _handle_signal)
 @dataclass
 class CycleStats:
     cycle: int = 0
-    discovered: int = 0
+    discovered: int = 0     # new jobs imported this cycle (LinkedIn alerts)
     scored: int = 0
     skipped: int = 0
     tailored: int = 0
@@ -102,15 +102,32 @@ def run_continuous(
         logger.info("CYCLE %d  started at %s", cycle, now)
         logger.info("=" * 60)
 
-        # ── 1. Queue Indeed discovery searches ──────────────────────────────
+        # ── 1. Queue job discovery (Indeed + LinkedIn alerts) ───────────────
         if not skip_discover:
             try:
                 n = _queue_discovery(conn, cycle=cycle)
-                logger.info("DISCOVER: queued %d searches (cycle %d) for Claude Code", n, cycle)
+                logger.info("DISCOVER: queued %d Indeed searches (cycle %d) for Claude Code", n, cycle)
             except Exception as exc:
                 msg = f"discover error: {exc}"
                 logger.error(msg)
                 stats.errors.append(msg)
+
+            # Also queue LinkedIn job alert email fetch
+            try:
+                from src.discovery.linkedin_email import (  # noqa: PLC0415
+                    queue_linkedin_email_fetch,
+                    import_from_cached_alerts,
+                )
+                queue_linkedin_email_fetch(gmail_client)
+                li_summary = import_from_cached_alerts(conn)
+                if li_summary.get("added"):
+                    logger.info(
+                        "LINKEDIN: imported %d new jobs from email alerts",
+                        li_summary["added"],
+                    )
+                    stats.discovered += li_summary["added"]
+            except Exception as exc:
+                logger.warning("LinkedIn email import skipped: %s", exc)
 
         # ── 2. Run the core pipeline on DISCOVERED apps ──────────────────────
         try:
@@ -242,11 +259,11 @@ def _check_approvals(conn: sqlite3.Connection, gmail_client) -> int:
 
 def _log_cycle_summary(stats: CycleStats) -> None:
     logger.info(
-        "CYCLE %d DONE  scored=%d skipped=%d tailored=%d "
+        "CYCLE %d DONE  discovered=%d scored=%d skipped=%d tailored=%d "
         "submitted=%d gated=%d approvals=%d errors=%d",
-        stats.cycle, stats.scored, stats.skipped, stats.tailored,
-        stats.submitted, stats.gated, stats.approvals_processed,
-        len(stats.errors),
+        stats.cycle, stats.discovered, stats.scored, stats.skipped,
+        stats.tailored, stats.submitted, stats.gated,
+        stats.approvals_processed, len(stats.errors),
     )
     for err in stats.errors:
         logger.warning("  error: %s", err)

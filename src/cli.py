@@ -505,3 +505,59 @@ def discover_cmd(ctx, role, location, remote_only, limit):
     click.echo()
     click.echo("Full US rotation: every search runs once every ~10 cycles (~5 hrs at 30-min interval).")
     click.echo("Claude Code executes via MCP Indeed — then: job-agent run-loop --once")
+
+
+# ---------------------------------------------------------------------------
+# discover-linkedin  (via Gmail job alert emails)
+# ---------------------------------------------------------------------------
+
+@main.command("discover-linkedin")
+@click.option("--import-cached", is_flag=True, default=False,
+              help="Import any already-fetched LinkedIn alert results from gmail_actions/results/.")
+@click.option("--dry-run", is_flag=True, default=False)
+@click.pass_context
+def discover_linkedin_cmd(ctx, import_cached, dry_run):
+    """Discover LinkedIn jobs from your Gmail job alert emails (no scraping).
+
+    LinkedIn sends job alert emails to your Gmail. This command:
+      1. Queues a Gmail search for LinkedIn alert emails
+      2. Claude Code reads them via MCP and extracts job listings
+      3. Jobs are imported as DISCOVERED applications
+
+    One-time setup (do this in LinkedIn, not here):
+      1. Go to linkedin.com/jobs
+      2. Search for a role e.g. "Machine Learning Engineer"
+      3. Click "Set alert" -> Email -> Daily
+      4. Repeat for each role you want
+
+    Then run this command to process the emails.
+    """
+    from src.db.connection import get_connection as _gc
+    from src.gmail.client import MCPGmailClient
+    from src.discovery.linkedin_email import (
+        queue_linkedin_email_fetch,
+        import_from_cached_alerts,
+        LINKEDIN_ALERT_QUERY,
+    )
+
+    conn = _gc(ctx.obj["db"])
+    client = MCPGmailClient()
+
+    if import_cached:
+        summary = import_from_cached_alerts(conn, dry_run=dry_run)
+        click.echo(f"Imported {summary.get('added', 0)} new LinkedIn jobs "
+                   f"from {summary.get('files', 0)} cached result file(s).")
+        conn.close()
+        return
+
+    req_id = queue_linkedin_email_fetch(client)
+    click.echo(f"Queued LinkedIn alert email fetch (request_id={req_id}).")
+    click.echo()
+    click.echo("Claude Code will:")
+    click.echo(f"  1. Search Gmail: {LINKEDIN_ALERT_QUERY!r}")
+    click.echo("  2. Parse each alert email for job listings")
+    click.echo("  3. Write results to gmail_actions/results/")
+    click.echo()
+    click.echo("Then re-run with --import-cached to load them:")
+    click.echo("  job-agent discover-linkedin --import-cached")
+    conn.close()
