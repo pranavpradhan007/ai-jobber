@@ -1,0 +1,53 @@
+# Test fixture: pre-seeded source_bank data for Sprint 2+ tests
+# Loaded by conftest.py fixture `seeded_db`
+
+metrics:
+  - content: "Reduced API latency by 40%"
+    source_ref: "verified_facts_test"
+    usage_level: resume
+
+  - content: "Led team of 5 engineers"
+    source_ref: "verified_facts_test"
+    usage_level: resume
+
+tools:
+  - content: "Python"
+    usage_level: resume
+
+  - content: "PostgreSQL"
+    usage_level: resume
+
+  - content: "Kubernetes"
+    usage_level: resume
+
+  - content: "dbt"
+    usage_level: cover_letter
+
+skills:
+  - content: "REST API design"
+    usage_level: resume
+
+  - content: "Agile"
+    usage_level: screener
+
+credentials:
+  - content: "B.S. Computer Science"
+    usage_level: resume
+
+  - content: "AWS Certified Developer"
+    usage_level: resume
+
+titles:
+  - content: "Senior Software Engineer"
+    usage_level: resume
+
+  - content: "Staff Engineer"
+    usage_level: private_never_submit
+
+companies:
+  - content: "Acme Corp"
+    usage_level: resume
+
+keywords:
+  - content: "machine learning"
+    usage_level: resume

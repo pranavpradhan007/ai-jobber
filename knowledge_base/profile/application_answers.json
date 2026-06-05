@@ -1,0 +1,37 @@
+{
+  "_comment": "Default application answers for browser prefill. Edit values as needed. Sensitive fields use screener-level only.",
+
+  "first_name": "Pranav",
+  "last_name": "Pradhan",
+  "full_name": "Pranav Tushar Pradhan",
+  "email": "pranavpradhan00721@gmail.com",
+  "phone": "+1 (929) 754-5592",
+  "location": "New York, NY",
+  "linkedin_url": "https://www.linkedin.com/in/pranav-pradhan-150072236",
+  "github_url": "https://github.com/pranavpradhan007",
+  "portfolio_url": "",
+
+  "current_title": "AI Research Engineer Intern",
+  "years_experience": "3-5",
+
+  "education_degree": "Master of Science in Computer Science",
+  "education_school": "New York University, Tandon School of Engineering",
+  "education_gpa": "3.667",
+  "graduation_year": "2026",
+
+  "work_authorization": "I am authorized to work in the United States and will require visa sponsorship in the future.",
+  "requires_sponsorship": "Yes",
+  "us_citizen_or_pr": "No",
+  "visa_status": "F-1 Student Visa (OPT eligible)",
+
+  "salary_expectation": "80000",
+  "salary_display": "$80,000",
+  "willing_to_relocate": "Open to discuss",
+  "remote_preference": "Open to remote or hybrid",
+
+  "cover_letter_default": "I am excited to apply for this role. My background in machine learning research, data engineering, and AI systems — spanning scientific ML, medical AI, game AI, and data pipelines — aligns well with the requirements. I am eager to contribute to impactful work and would welcome the opportunity to discuss further.",
+
+  "linkedin_headline": "AI Research Engineer Intern @ Hexbandit.io | Research Assistant @ NYU | Former Data Analyst Intern @ IFF | MS CS NYU 2026",
+
+  "_private_note": "Phone and email are screener-only. Do not include in public-facing text unless the application form requires it."
+}

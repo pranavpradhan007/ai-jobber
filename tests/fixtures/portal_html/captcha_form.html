@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Apply - With CAPTCHA</title>
+</head>
+<body>
+  <div id="application-form">
+    <h1>Apply Now</h1>
+    <form action="/submit" method="post">
+      <input type="text" id="firstName" name="firstName">
+      <input type="email" id="email" name="email">
+
+      <!-- CAPTCHA element — agent must detect and hand off, not solve -->
+      <div class="g-recaptcha" id="recaptcha"
+           data-sitekey="6Le-fake-key-for-testing">
+      </div>
+
+      <button type="submit">Submit</button>
+    </form>
+  </div>
+</body>
+</html>

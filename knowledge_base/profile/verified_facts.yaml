@@ -1,0 +1,601 @@
+# verified_facts_staged.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Pranav Tushar Pradhan — career profile source bank
+# Generated from: pranav_career_profile_source_file.md + ML-AI Resume.docx
+# Last updated: 2026-06-05
+#
+# REVIEW THIS FILE, then rename/copy to verified_facts.yaml to make it canonical.
+# source_bank has already been seeded from this file.
+#
+# usage_level values:
+#   resume             → may appear on resume, cover letter, screener answers
+#   cover_letter       → cover letter and screener only
+#   screener           → screener/application-form answers only
+#   private_never_submit → internal use only; never in any generated output
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── METRICS ──────────────────────────────────────────────────────────────────
+# Exact metric strings as they appear in the approved resume.
+# Every metric must match a verifiable project/role context.
+
+metrics:
+
+  # Hexbandit.io — Catan AI
+  - content: "100% win rate against alpha-beta pruning baseline"
+    source_ref: "ML-AI Resume.docx / Hexbandit.io bullets"
+    usage_level: resume
+
+  # IFF — cheminformatics
+  - content: "consolidated 12 chemical datasets (~90K records to ~15K unique entries)"
+    source_ref: "ML-AI Resume.docx / IFF bullets"
+    usage_level: resume
+
+  - content: "improved predictive performance by ~15%"
+    source_ref: "ML-AI Resume.docx / IFF bullets"
+    usage_level: resume
+
+  - content: "increased registration throughput by 82%"
+    source_ref: "ML-AI Resume.docx / IFF bullets"
+    usage_level: resume
+
+  # NYU Atmospheric ML (Prof. Sara Shamekh)
+  - content: "reduced RMSE by about 15%"
+    source_ref: "ML-AI Resume.docx / NYU atmospheric ML bullets"
+    usage_level: resume
+
+  - content: "RMSE reduction of 15%"
+    source_ref: "career_profile_source_file.md / NYU Courant"
+    usage_level: resume
+
+  - content: "MAPE reduction of 10%"
+    source_ref: "career_profile_source_file.md / NYU Courant"
+    usage_level: resume
+
+  - content: "2.5x throughput increase"
+    source_ref: "career_profile_source_file.md / NYU Courant"
+    usage_level: resume
+
+  - content: "60% simulation time reduction"
+    source_ref: "career_profile_source_file.md / NYU Courant"
+    usage_level: resume
+
+  # NYU Medical LLM (Prof. Kimberly Carballo)
+  - content: "improved AUROC/AUPRC from 0.50/0.20 to 0.80/0.30"
+    source_ref: "ML-AI Resume.docx / NYU medical LLM bullets"
+    usage_level: resume
+
+  - content: "15% average performance drop under adversarial attacks"
+    source_ref: "ML-AI Resume.docx / NYU medical LLM bullets"
+    usage_level: resume
+
+  - content: "evaluated 5 clinical LLMs"
+    source_ref: "ML-AI Resume.docx / NYU medical LLM bullets"
+    usage_level: resume
+
+  - content: "applied 10 adversarial attacks"
+    source_ref: "ML-AI Resume.docx / NYU medical LLM bullets"
+    usage_level: resume
+
+  # 3D Engineering Automation
+  - content: "93% diagnostic accuracy"
+    source_ref: "ML-AI Resume.docx / 3D Engineering bullets"
+    usage_level: resume
+
+  - content: "87% failure-prediction precision"
+    source_ref: "ML-AI Resume.docx / 3D Engineering bullets"
+    usage_level: resume
+
+  - content: "processed 30 GB of sensor data"
+    source_ref: "ML-AI Resume.docx / 3D Engineering bullets"
+    usage_level: resume
+
+  - content: "sub-second anomaly-detection latency"
+    source_ref: "ML-AI Resume.docx / 3D Engineering bullets"
+    usage_level: resume
+
+  # PufferDrive / adversarial RL
+  - content: "PPO lap completion fell from 95% to 60% under hardest adversarial setting"
+    source_ref: "ML-AI Resume.docx / PufferDrive project"
+    usage_level: resume
+
+  - content: "diverse agents sustained ~80% lap completion"
+    source_ref: "ML-AI Resume.docx / PufferDrive project"
+    usage_level: resume
+
+  # XRayGen
+  - content: "74.4% classification accuracy"
+    source_ref: "ML-AI Resume.docx / XRayGen project"
+    usage_level: resume
+
+  - content: "89.4% report accuracy"
+    source_ref: "ML-AI Resume.docx / XRayGen project"
+    usage_level: resume
+
+  - content: "reduced manual review time by 98%"
+    source_ref: "ML-AI Resume.docx / XRayGen project"
+    usage_level: resume
+
+  - content: "improved diagnostic issue detection by ~30%"
+    source_ref: "ML-AI Resume.docx / XRayGen project"
+    usage_level: resume
+
+  - content: "BLEU score of 0.443"
+    source_ref: "career_profile_source_file.md / XRayGen"
+    usage_level: resume
+
+  - content: "ROUGE F1 of 0.632"
+    source_ref: "career_profile_source_file.md / XRayGen"
+    usage_level: resume
+
+  # Minecraft PCG (career profile — use only if in approved resume version)
+  - content: "generation efficiency +35%"
+    source_ref: "career_profile_source_file.md / Minecraft PCG"
+    usage_level: cover_letter
+    notes: "Use only if backed by current resume version; not in ML-AI Resume.docx"
+
+  - content: "ORP preference 85%, RRP completion 100%"
+    source_ref: "career_profile_source_file.md / Pokemon WFC"
+    usage_level: cover_letter
+
+
+# ── TOOLS / TECHNOLOGIES ─────────────────────────────────────────────────────
+
+tools:
+  # Core ML / DL
+  - content: "Python"
+    usage_level: resume
+  - content: "PyTorch"
+    usage_level: resume
+  - content: "TensorFlow"
+    usage_level: resume
+  - content: "Keras"
+    usage_level: resume
+  - content: "JAX"
+    usage_level: resume
+  - content: "Flax"
+    usage_level: resume
+  - content: "Optax"
+    usage_level: resume
+  - content: "scikit-learn"
+    usage_level: resume
+  - content: "OpenCV"
+    usage_level: resume
+  - content: "LoRA"
+    usage_level: resume
+  - content: "QLoRA"
+    usage_level: resume
+
+  # LLMs / models
+  - content: "Llama 3.1"
+    usage_level: resume
+  - content: "Mistral-7B"
+    usage_level: resume
+  - content: "BioMistral-7B"
+    usage_level: resume
+  - content: "BiMediX2-8B"
+    usage_level: resume
+  - content: "ClinicalMamba-2.8B"
+    usage_level: resume
+  - content: "Meditron-7B"
+    usage_level: resume
+  - content: "OpenBioLLM-8B"
+    usage_level: resume
+  - content: "VGG16"
+    usage_level: resume
+  - content: "ResNet"
+    usage_level: resume
+  - content: "DenseNet"
+    usage_level: resume
+
+  # Data engineering
+  - content: "PySpark"
+    usage_level: resume
+  - content: "Apache Kafka"
+    usage_level: resume
+  - content: "Databricks"
+    usage_level: resume
+  - content: "Delta Lake"
+    usage_level: resume
+  - content: "Azure Synapse"
+    usage_level: resume
+  - content: "KNIME"
+    usage_level: resume
+  - content: "MLflow"
+    usage_level: resume
+  - content: "ClearML"
+    usage_level: resume
+  - content: "Stardrop"
+    usage_level: resume
+
+  # Databases
+  - content: "PostgreSQL"
+    usage_level: resume
+  - content: "MySQL"
+    usage_level: resume
+  - content: "MongoDB"
+    usage_level: resume
+  - content: "Qdrant"
+    usage_level: resume
+  - content: "GraphQL"
+    usage_level: resume
+  - content: "Supabase"
+    usage_level: resume
+
+  # Cloud / infra
+  - content: "AWS"
+    usage_level: resume
+  - content: "AWS EC2"
+    usage_level: resume
+  - content: "AWS S3"
+    usage_level: resume
+  - content: "AWS Lambda"
+    usage_level: resume
+  - content: "AWS EKS"
+    usage_level: resume
+  - content: "Azure"
+    usage_level: resume
+  - content: "Azure AKS"
+    usage_level: resume
+  - content: "GCP"
+    usage_level: resume
+  - content: "Docker"
+    usage_level: resume
+  - content: "Kubernetes"
+    usage_level: resume
+  - content: "Seldon Core"
+    usage_level: resume
+
+  # Dev tools
+  - content: "Git"
+    usage_level: resume
+  - content: "GitHub Actions"
+    usage_level: resume
+  - content: "Linux"
+    usage_level: resume
+  - content: "Slurm"
+    usage_level: resume
+  - content: "Singularity"
+    usage_level: resume
+  - content: "C++"
+    usage_level: resume
+  - content: "Java"
+    usage_level: resume
+  - content: "JavaScript"
+    usage_level: resume
+  - content: "TypeScript"
+    usage_level: resume
+  - content: "Bash"
+    usage_level: resume
+
+  # Web / backend
+  - content: "Django"
+    usage_level: resume
+  - content: "FastAPI"
+    usage_level: resume
+  - content: "Flask"
+    usage_level: resume
+  - content: "React"
+    usage_level: resume
+  - content: "Streamlit"
+    usage_level: resume
+  - content: "LangChain"
+    usage_level: resume
+
+  # Game / simulation
+  - content: "Godot"
+    usage_level: resume
+  - content: "Pygame"
+    usage_level: resume
+  - content: "Minecraft Forge"
+    usage_level: resume
+  - content: "PufferDrive"
+    usage_level: resume
+  - content: "GPUDrive"
+    usage_level: resume
+  - content: "Wave Function Collapse"
+    usage_level: resume
+
+  # ML frameworks / specialised
+  - content: "ChemProp"
+    usage_level: resume
+  - content: "DeepChem"
+    usage_level: resume
+  - content: "NetworkX"
+    usage_level: resume
+  - content: "spaCy"
+    usage_level: resume
+  - content: "Dash"
+    usage_level: resume
+  - content: "Power BI"
+    usage_level: resume
+  - content: "Selenium"
+    usage_level: resume
+  - content: "Playwright"
+    usage_level: resume
+
+
+# ── SKILLS ───────────────────────────────────────────────────────────────────
+
+skills:
+  - content: "machine learning"
+    usage_level: resume
+  - content: "deep learning"
+    usage_level: resume
+  - content: "reinforcement learning"
+    usage_level: resume
+  - content: "procedural content generation"
+    usage_level: resume
+  - content: "scientific ML"
+    usage_level: resume
+  - content: "neural network parameterization"
+    usage_level: resume
+  - content: "RAG"
+    usage_level: resume
+  - content: "retrieval-augmented generation"
+    usage_level: resume
+  - content: "vector databases"
+    usage_level: resume
+  - content: "computer vision"
+    usage_level: resume
+  - content: "natural language processing"
+    usage_level: resume
+  - content: "NLP"
+    usage_level: resume
+  - content: "clinical NLP"
+    usage_level: resume
+  - content: "LLM evaluation"
+    usage_level: resume
+  - content: "adversarial robustness"
+    usage_level: resume
+  - content: "model fine-tuning"
+    usage_level: resume
+  - content: "cheminformatics"
+    usage_level: resume
+  - content: "molecular data analytics"
+    usage_level: resume
+  - content: "graph neural networks"
+    usage_level: resume
+  - content: "GCN"
+    usage_level: resume
+  - content: "GAT"
+    usage_level: resume
+  - content: "imitation learning"
+    usage_level: resume
+  - content: "MCTS"
+    usage_level: resume
+  - content: "quality-diversity algorithms"
+    usage_level: resume
+  - content: "MAP-Elites"
+    usage_level: resume
+  - content: "data engineering"
+    usage_level: resume
+  - content: "ETL pipelines"
+    usage_level: resume
+  - content: "time-series forecasting"
+    usage_level: resume
+  - content: "predictive maintenance"
+    usage_level: resume
+  - content: "computational social science"
+    usage_level: resume
+  - content: "data annotation pipelines"
+    usage_level: resume
+  - content: "agentic systems"
+    usage_level: resume
+  - content: "human-in-the-loop workflows"
+    usage_level: resume
+  - content: "MLOps"
+    usage_level: resume
+  - content: "HPC / Slurm"
+    usage_level: resume
+  - content: "medical imaging"
+    usage_level: resume
+  - content: "multimodal AI"
+    usage_level: resume
+  - content: "diffusion models"
+    usage_level: resume
+  - content: "VQGAN"
+    usage_level: resume
+  - content: "constraint satisfaction"
+    usage_level: resume
+  - content: "game AI"
+    usage_level: resume
+  - content: "autonomous driving agents"
+    usage_level: resume
+
+
+# ── CREDENTIALS ──────────────────────────────────────────────────────────────
+
+credentials:
+  - content: "Master of Science in Computer Science, New York University Tandon School of Engineering (2024–2026)"
+    source_ref: "NYU Tandon 2026 Master's Degrees page / ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "NYU GPA 3.667/4.0"
+    source_ref: "ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "Bachelor of Engineering in Computer Science, Savitribai Phule Pune University / PVGCOET (2020–2024)"
+    source_ref: "IJARIIT publication / ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "Undergraduate CGPA 9.01/10"
+    source_ref: "ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "Published in IJARIIT Volume 9 Issue 5 (Smart Water Management, 2023)"
+    source_ref: "IJARIIT V9I5-1149 public listing"
+    usage_level: resume
+
+  - content: "Presented at Transformers and AI in Games conference, Atlanta (Pokémon FireRed WFC, 2025/2026)"
+    source_ref: "Public LinkedIn post / publication record"
+    usage_level: resume
+
+  - content: "XRayGen listed in ICCUBEA 2024 session schedule"
+    source_ref: "ICCUBEA 2024 schedule PDF"
+    usage_level: resume
+
+
+# ── TITLES ───────────────────────────────────────────────────────────────────
+
+titles:
+  - content: "AI Research Engineer Intern"
+    source_ref: "GitHub NYU / LinkedIn public profile"
+    usage_level: resume
+
+  - content: "ML Research Assistant"
+    source_ref: "ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "AI Research Assistant"
+    source_ref: "ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "Research Assistant"
+    source_ref: "ML-AI Resume.docx / public LinkedIn"
+    usage_level: resume
+
+  - content: "Data Analyst Intern"
+    source_ref: "ML-AI Resume.docx / public LinkedIn"
+    usage_level: resume
+
+  - content: "Data Science Intern"
+    source_ref: "ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "Machine Learning Engineer"
+    source_ref: "career_profile_source_file.md / target roles"
+    usage_level: resume
+
+  - content: "Applied AI Engineer"
+    source_ref: "career_profile_source_file.md / target roles"
+    usage_level: resume
+
+  - content: "AI/ML Software Engineer"
+    source_ref: "career_profile_source_file.md / target roles"
+    usage_level: resume
+
+  # Internal positioning — do not submit as a past title
+  - content: "Staff Engineer"
+    usage_level: private_never_submit
+    notes: "Never submit; this is not a held title"
+
+
+# ── COMPANIES ────────────────────────────────────────────────────────────────
+
+companies:
+  - content: "New York University"
+    source_ref: "NYU Tandon 2026 Master's Degrees page"
+    usage_level: resume
+
+  - content: "NYU Tandon School of Engineering"
+    source_ref: "NYU Tandon 2026 Master's Degrees page"
+    usage_level: resume
+
+  - content: "Hexbandit.io"
+    source_ref: "GitHub NYU / LinkedIn public profile"
+    usage_level: resume
+
+  - content: "International Flavors & Fragrances"
+    source_ref: "public LinkedIn / ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "IFF"
+    source_ref: "ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "3D Engineering Automation LLP"
+    source_ref: "ML-AI Resume.docx"
+    usage_level: resume
+
+  - content: "Savitribai Phule Pune University"
+    source_ref: "IJARIIT publication"
+    usage_level: resume
+
+  - content: "PVGCOET"
+    source_ref: "PVGCOET internship listing"
+    usage_level: resume
+
+  - content: "Escents"
+    source_ref: "PVGCOET internship listing"
+    usage_level: resume
+
+
+# ── KEYWORDS ─────────────────────────────────────────────────────────────────
+
+keywords:
+  - content: "large language models"
+    usage_level: resume
+  - content: "LLM"
+    usage_level: resume
+  - content: "transformer"
+    usage_level: resume
+  - content: "attention mechanism"
+    usage_level: resume
+  - content: "positional encoding"
+    usage_level: resume
+  - content: "self-play"
+    usage_level: resume
+  - content: "Monte Carlo Tree Search"
+    usage_level: resume
+  - content: "PUCT"
+    usage_level: resume
+  - content: "alpha-beta pruning"
+    usage_level: resume
+  - content: "simulation engine"
+    usage_level: resume
+  - content: "spot instances"
+    usage_level: resume
+  - content: "single column atmospheric model"
+    usage_level: resume
+  - content: "turbulent flux prediction"
+    usage_level: resume
+  - content: "Kuramoto-Sivashinsky PDE"
+    usage_level: resume
+  - content: "scheduled sampling"
+    usage_level: resume
+  - content: "spectral loss"
+    usage_level: resume
+  - content: "MIMIC-IV"
+    usage_level: resume
+  - content: "INSPECT dataset"
+    usage_level: resume
+  - content: "mortality prediction"
+    usage_level: resume
+  - content: "radiology impressions"
+    usage_level: resume
+  - content: "A/B retraining"
+    usage_level: resume
+  - content: "PPO"
+    usage_level: resume
+  - content: "PGA-ME"
+    usage_level: resume
+  - content: "quality-diversity"
+    usage_level: resume
+  - content: "Sokoban puzzle generation"
+    usage_level: resume
+  - content: "solvability validation"
+    usage_level: resume
+  - content: "medical report generation"
+    usage_level: resume
+  - content: "4-bit quantization"
+    usage_level: resume
+  - content: "graph-based molecular featurization"
+    usage_level: resume
+  - content: "GCN embeddings"
+    usage_level: resume
+  - content: "data pipeline"
+    usage_level: resume
+  - content: "automation"
+    usage_level: resume
+  - content: "browser automation"
+    usage_level: resume
+  - content: "agentic AI"
+    usage_level: resume
+  - content: "AI for games"
+    usage_level: resume
+  - content: "procedural map generation"
+    usage_level: resume
+  - content: "sustainability AI"
+    usage_level: resume
+  - content: "big data"
+    usage_level: resume

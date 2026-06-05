@@ -1,0 +1,11 @@
+# resume_config.yaml — copy to resume_config.yaml and fill in your paths
+# This file is gitignored because paths are machine-specific.
+
+# Primary editable source — used when MAKING changes (tailoring, editing)
+resume_docx: "C:\\path\\to\\your\\ML-AI Resume.docx"
+
+# Clean PDF — used as-is when NOT making changes (direct submissions)
+resume_pdf:  "C:\\path\\to\\your\\Resume.pdf"
+
+# Fallback / general resume
+resume_general_pdf: "C:\\path\\to\\your\\Main Resume.pdf"

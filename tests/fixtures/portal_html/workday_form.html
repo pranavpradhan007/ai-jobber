@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Workday - Apply for Senior Software Engineer</title>
+  <meta name="generator" content="Workday">
+</head>
+<body>
+  <div id="wd-application-form" class="workday-application">
+    <h1>Apply: Senior Software Engineer</h1>
+    <form id="applicationForm" action="/apply/submit" method="post">
+
+      <div class="form-section">
+        <label for="firstName">First Name *</label>
+        <input type="text" id="firstName" name="firstName" required>
+      </div>
+
+      <div class="form-section">
+        <label for="lastName">Last Name *</label>
+        <input type="text" id="lastName" name="lastName" required>
+      </div>
+
+      <div class="form-section">
+        <label for="email">Email *</label>
+        <input type="email" id="email" name="email" required>
+      </div>
+
+      <div class="form-section">
+        <label for="phone">Phone Number</label>
+        <input type="tel" id="phone" name="phone">
+      </div>
+
+      <div class="form-section">
+        <label for="linkedinUrl">LinkedIn URL</label>
+        <input type="url" id="linkedinUrl" name="linkedinUrl">
+      </div>
+
+      <div class="form-section">
+        <label for="yearsExperience">Years of Experience *</label>
+        <select id="yearsExperience" name="yearsExperience" required>
+          <option value="">Select...</option>
+          <option value="0-2">0-2 years</option>
+          <option value="3-5">3-5 years</option>
+          <option value="6-10">6-10 years</option>
+          <option value="10+">10+ years</option>
+        </select>
+      </div>
+
+      <div class="form-section">
+        <label for="workAuthorization">Work Authorization *</label>
+        <select id="workAuthorization" name="workAuthorization" required>
+          <option value="">Select...</option>
+          <option value="citizen">US Citizen</option>
+          <option value="greencard">Green Card</option>
+          <option value="visa">Visa (requires sponsorship)</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <div class="form-section">
+        <label for="coverLetter">Cover Letter / Additional Info</label>
+        <textarea id="coverLetter" name="coverLetter" rows="6"></textarea>
+      </div>
+
+      <div class="form-section">
+        <label>
+          <input type="checkbox" id="eeoc_agree" name="eeoc_agree">
+          I agree to the EEOC data collection statement
+        </label>
+      </div>
+
+      <!-- STOP HERE: Do NOT click this button autonomously -->
+      <div class="submit-section">
+        <button type="submit" id="submitApplication" class="btn-primary">
+          Submit Application
+        </button>
+      </div>
+
+    </form>
+  </div>
+</body>
+</html>

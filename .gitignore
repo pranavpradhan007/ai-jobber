@@ -1,0 +1,43 @@
+# Secrets — never commit
+.env
+
+# Runtime database
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Application artifacts (runtime-generated)
+applications/
+
+# MCP Gmail action manifests (runtime)
+gmail_actions/
+
+# Staged / superseded knowledge-base files
+knowledge_base/profile/verified_facts_staged.yaml
+
+# Resume local-path config (machine-specific absolute paths)
+# Keep the .example instead
+knowledge_base/profile/resume_config.yaml
+
+# Claude Code session-local permissions cache (machine-specific)
+.claude/settings.local.json
+
+# Node (docx skill)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

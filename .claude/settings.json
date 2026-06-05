@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python hooks/secret_scanner.py \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
+          },
+          {
+            "type": "command",
+            "command": "python hooks/protected_files_guard.py \"$CLAUDE_TOOL_INPUT_FILE_PATH\""
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pytest:*)",
+      "Bash(make:*)",
+      "Bash(pip:*)"
+    ]
+  }
+}

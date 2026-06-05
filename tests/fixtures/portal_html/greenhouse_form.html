@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Greenhouse - Apply for Senior Software Engineer</title>
+  <meta name="gh-application" content="true">
+</head>
+<body>
+  <div id="application_form" class="greenhouse-app">
+    <h1 class="app-title">Apply for Senior Software Engineer</h1>
+    <form id="application" action="/submit_application" method="post">
+
+      <div class="field">
+        <label class="required" for="first_name">First Name</label>
+        <input type="text" id="first_name" name="job_application[first_name]" required>
+      </div>
+
+      <div class="field">
+        <label class="required" for="last_name">Last Name</label>
+        <input type="text" id="last_name" name="job_application[last_name]" required>
+      </div>
+
+      <div class="field">
+        <label class="required" for="email">Email</label>
+        <input type="email" id="email" name="job_application[email]" required>
+      </div>
+
+      <div class="field">
+        <label for="phone">Phone</label>
+        <input type="tel" id="phone" name="job_application[phone]">
+      </div>
+
+      <div class="field">
+        <label for="resume">Resume/CV</label>
+        <input type="file" id="resume" name="resume" accept=".pdf,.doc,.docx">
+      </div>
+
+      <div class="field">
+        <label for="cover_letter">Cover Letter</label>
+        <textarea id="cover_letter" name="job_application[cover_letter]" rows="5"></textarea>
+      </div>
+
+      <div class="field">
+        <label for="location">Current Location</label>
+        <input type="text" id="location" name="job_application[location]">
+      </div>
+
+      <div class="field custom-question">
+        <label for="q_years_python">Years of Python experience?</label>
+        <select id="q_years_python" name="answers[12345]">
+          <option value="">-- Select --</option>
+          <option value="lt2">Less than 2 years</option>
+          <option value="2to5">2-5 years</option>
+          <option value="5plus">5+ years</option>
+        </select>
+      </div>
+
+      <div class="field custom-question">
+        <label for="q_remote">Are you comfortable with fully remote work?</label>
+        <select id="q_remote" name="answers[12346]">
+          <option value="">-- Select --</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+          <option value="hybrid">Prefer hybrid</option>
+        </select>
+      </div>
+
+      <!-- STOP HERE: Do NOT click submit autonomously -->
+      <div id="submit_app">
+        <button type="submit" id="submit_app_button" class="btn submit">
+          Submit Application
+        </button>
+      </div>
+
+    </form>
+  </div>
+</body>
+</html>

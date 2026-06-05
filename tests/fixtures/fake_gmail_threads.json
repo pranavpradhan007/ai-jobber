@@ -1,0 +1,50 @@
+[
+  {
+    "thread_id": "thread_rejection_001",
+    "message_id": "msg_rejection_001",
+    "sender": "noreply@acmecorp.com",
+    "subject": "Your Application for Senior Engineer - App #101",
+    "body": "Thank you for applying. Unfortunately, we have decided to pursue other candidates whose experience more closely aligns with our current needs. We regret to inform you that you will not be moving forward in the process.",
+    "snippet": "Thank you for applying. Unfortunately..."
+  },
+  {
+    "thread_id": "thread_oa_001",
+    "message_id": "msg_oa_001",
+    "sender": "recruiting@betacorp.com",
+    "subject": "Online Assessment Invitation - App #102",
+    "body": "Congratulations on advancing! Please complete the following HackerRank online assessment within 72 hours. The assessment link is included below.",
+    "snippet": "Please complete the HackerRank online assessment..."
+  },
+  {
+    "thread_id": "thread_interview_001",
+    "message_id": "msg_interview_001",
+    "sender": "recruiter@gammacorp.com",
+    "subject": "Interview Invitation - Senior Engineer - App #103",
+    "body": "We'd love to schedule a technical interview with you for the Senior Engineer role. Please use the link below to book a 1-hour Zoom call at your convenience.",
+    "snippet": "We'd love to schedule a technical interview..."
+  },
+  {
+    "thread_id": "thread_positive_001",
+    "message_id": "msg_positive_001",
+    "sender": "hiring@deltacorp.com",
+    "subject": "Re: Application - Senior Engineer - App #104",
+    "body": "We are extremely excited to move forward with your application. We were impressed with your background and would love to discuss next steps.",
+    "snippet": "We are extremely excited to move forward..."
+  },
+  {
+    "thread_id": "thread_receipt_001",
+    "message_id": "msg_receipt_001",
+    "sender": "noreply@jobs.epsiloncorp.com",
+    "subject": "Application Received - Senior Engineer - App #105",
+    "body": "Thank you for your interest in joining Epsilon Corp. We have received your application for the Senior Engineer position and will be in touch.",
+    "snippet": "We have received your application..."
+  },
+  {
+    "thread_id": "thread_unknown_001",
+    "message_id": "msg_unknown_001",
+    "sender": "system@zetacorp.com",
+    "subject": "System notification - App #106",
+    "body": "This is an automated system notification.",
+    "snippet": "This is an automated system notification."
+  }
+]

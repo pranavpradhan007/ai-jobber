@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-agent"
+version = "0.1.0"
+description = "Local-laptop job application agent (V1)"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.25.0",
+    "python-docx>=1.1.0",
+    "python-dotenv>=1.0.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.2.0",
+    "playwright>=1.44.0",
+    "weasyprint>=62.0",
+    "pyyaml>=6.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "jinja2>=3.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "freezegun>=1.4",
+    "responses>=0.25",
+]
+
+[project.scripts]
+job-agent = "src.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+markers = [
+    "smoke: fast happy-path checks",
+    "unit: isolated unit tests",
+    "integration: multi-component tests",
+    "live: requires live LLM or external service (excluded from CI)",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "hooks/*"]
