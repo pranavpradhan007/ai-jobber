@@ -1,0 +1,49 @@
+"""Run the overnight pipeline on the newly imported real jobs."""
+import os, tempfile
+os.environ["JOB_AGENT_DB"] = "job_agent.db"
+
+from src.db.connection import get_connection
+from src.scoring.heuristic_scorer import make_heuristic_scorer
+from src.verifier.bank_extractor import make_bank_extractor
+from src.resume.rephrase import mock_rephraser_clean
+from src.runners.overnight import run_overnight
+import src.storage.folders as fm
+
+# Use the real applications/ folder this time (not temp)
+import pathlib
+fm.APPLICATIONS_BASE = str(pathlib.Path("applications").resolve())
+pathlib.Path("applications").mkdir(exist_ok=True)
+
+conn = get_connection("job_agent.db")
+scorer    = make_heuristic_scorer(conn)
+extractor = make_bank_extractor(conn)
+
+stats = run_overnight(
+    conn,
+    scorer_fn=scorer,
+    rephraser_fn=mock_rephraser_clean,
+    extractor_fn=extractor,
+    candidate_name="Pranav Tushar Pradhan",
+    dry_run=False,   # REAL run — will submit auto_safe, gate gated
+)
+
+print("\n=== OVERNIGHT RESULTS ===")
+print(f"  scored    {stats.scored}")
+print(f"  skipped   {stats.skipped}")
+print(f"  tailored  {stats.tailored}")
+print(f"  submitted {stats.submitted}")
+print(f"  gated     {stats.gated}")
+print(f"  failed    {stats.failed}")
+if stats.errors:
+    for e in stats.errors:
+        print(f"  ERROR: {e}")
+
+print("\n=== APPLICATION STATES ===")
+for row in conn.execute(
+    "SELECT a.id, j.company, j.title, a.state, a.score, a.submit_tier "
+    "FROM applications a JOIN jobs j ON j.id=a.job_id "
+    "WHERE a.id IN (2,3,4) ORDER BY a.id"
+):
+    print(f"  APP-{row['id']}: {row['company'][:30]:30s} | {row['state']:35s} | score={row['score'] or 'n/a'} | tier={row['submit_tier']}")
+
+conn.close()
