@@ -242,7 +242,7 @@ def run_overnight_cmd(ctx, dry_run, max_jobs, candidate_name):
     )
     conn.close()
     click.echo(
-        f"Overnight: scored={stats.scored} skipped={stats.skipped} "
+        f"Pipeline: scored={stats.scored} skipped={stats.skipped} "
         f"tailored={stats.tailored} submitted={stats.submitted} "
         f"gated={stats.gated} failed={stats.failed}"
     )
@@ -250,6 +250,71 @@ def run_overnight_cmd(ctx, dry_run, max_jobs, candidate_name):
         click.echo(f"Errors ({len(stats.errors)}):")
         for e in stats.errors:
             click.echo(f"  {e}")
+
+
+# ---------------------------------------------------------------------------
+# run-loop  (continuous daytime + overnight runner)
+# ---------------------------------------------------------------------------
+
+@main.command("run-loop")
+@click.option("--interval", default=30, show_default=True,
+              help="Minutes between pipeline cycles.")
+@click.option("--once", is_flag=True, default=False,
+              help="Run a single cycle and exit (same as run-overnight but with discovery + approvals).")
+@click.option("--skip-discover", is_flag=True, default=False,
+              help="Skip queuing Indeed searches this cycle.")
+@click.option("--skip-approvals", is_flag=True, default=False,
+              help="Skip checking Gmail for reply commands.")
+@click.option("--max-jobs", default=20, show_default=True,
+              help="Max DISCOVERED apps to process per cycle.")
+@click.option("--to", "digest_recipient", default=None,
+              help="Digest email recipient (defaults to DIGEST_RECIPIENT env var).")
+@click.option("--candidate-name", default=None)
+@click.pass_context
+def run_loop_cmd(ctx, interval, once, skip_discover, skip_approvals,
+                 max_jobs, digest_recipient, candidate_name):
+    """Run the pipeline continuously — discovers, scores, tailors, approves, submits.
+
+    Designed to run all day (not just overnight). Each cycle:
+      1. Queue Indeed searches across the full US (Claude Code executes via MCP)
+      2. Score + tailor + verify all DISCOVERED applications
+      3. Submit auto_safe jobs immediately
+      4. Gate jobs requiring approval → queue digest email
+      5. Check Gmail for your phone replies → process APPROVE/EDIT/REJECT/SNOOZE
+      6. Sleep interval minutes, then repeat
+
+    Press Ctrl-C to stop cleanly after the current cycle finishes.
+
+    Examples:
+      job-agent run-loop                    # run every 30 min, all day
+      job-agent run-loop --interval 60      # every hour
+      job-agent run-loop --once             # single full cycle
+      job-agent run-loop --skip-discover    # skip Indeed this cycle
+    """
+    import logging
+    from src.db.connection import get_connection as _gc
+    from src.runners.continuous import run_continuous
+    from src.config import CANDIDATE_NAME
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+    )
+
+    conn = _gc(ctx.obj["db"])
+    try:
+        run_continuous(
+            conn,
+            interval_minutes=interval,
+            once=once,
+            skip_discover=skip_discover,
+            skip_approvals=skip_approvals,
+            candidate_name=candidate_name or CANDIDATE_NAME,
+            digest_recipient=digest_recipient,
+            max_jobs_per_cycle=max_jobs,
+        )
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -364,48 +429,60 @@ def check_approvals_cmd(ctx, reply_file, from_gmail, digest_id):
 
 @main.command("discover")
 @click.option("--role", default=None,
-              help="Job title / keywords to search (overrides profile defaults).")
-@click.option("--location", default="New York, NY", show_default=True)
-@click.option("--remote", is_flag=True, default=False,
+              help="Specific job title / keywords (adds to defaults, doesn't replace).")
+@click.option("--location", default=None,
+              help="Restrict to this location. Default: all US (7 cities + remote).")
+@click.option("--remote-only", is_flag=True, default=False,
               help="Search remote positions only.")
-@click.option("--limit", default=5, show_default=True,
+@click.option("--limit", default=10, show_default=True,
               help="Max results per search term.")
 @click.pass_context
-def discover_cmd(ctx, role, location, remote, limit):
-    """Discover new jobs from Indeed via Claude Code MCP and import to DB.
+def discover_cmd(ctx, role, location, remote_only, limit):
+    """Discover new jobs from Indeed across the whole US via Claude Code MCP.
 
-    This command queues the searches. Claude Code executes them via MCP
-    search_jobs, then calls the import endpoint with the results.
+    Searches 12 roles x 7 locations (remote + NYC, SF, Seattle, Boston,
+    Austin, Chicago) by default — 84 searches total.
 
-    To run a discovery cycle:
-      1. job-agent discover                  ← queue searches
-      2. Claude Code executes MCP searches   ← automatic when Claude Code runs
-      3. job-agent run-overnight             ← process newly DISCOVERED jobs
+    Note on LinkedIn: The available MCP is Indeed (not LinkedIn). Indeed
+    aggregates most jobs cross-posted from LinkedIn, Greenhouse, Workday etc.
+    For LinkedIn-exclusive postings use: job-agent add-job --url <url> ...
+
+    To run a full discovery cycle:
+      1. job-agent discover          ← queue searches (this command)
+      2. Claude Code executes them   ← happens automatically in an active session
+      3. job-agent run-loop --once   ← process newly DISCOVERED jobs
     """
-    from src.discovery.indeed import discover_searches_for_profile, import_jobs
+    from src.discovery.indeed import discover_searches_for_profile
     from src.db.connection import get_connection as _gc
     import json
     from pathlib import Path
+    from datetime import datetime, timezone
 
-    searches = discover_searches_for_profile()
+    # Build search list
+    locs = [location] if location else (["remote"] if remote_only else None)
+    searches = discover_searches_for_profile(locations=locs)
     if role:
-        searches = [{"search": role, "location": "remote" if remote else location}]
-    elif remote:
-        searches = [dict(s, location="remote") for s in searches]
+        extra_locs = ["remote", "New York, NY", "San Francisco, CA",
+                      "Seattle, WA", "Boston, MA", "Austin, TX", "Chicago, IL"]
+        if location:
+            extra_locs = [location]
+        if remote_only:
+            extra_locs = ["remote"]
+        for loc in extra_locs:
+            searches.append({"search": role, "location": loc})
 
-    # Write a discovery request manifest for Claude Code
     manifest = {
-        "action":    "discover_jobs",
-        "searches":  searches,
-        "limit":     limit,
-        "created_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
-        "status":    "pending",
+        "action":     "discover_jobs",
+        "searches":   searches,
+        "limit":      limit,
+        "created_at": datetime.now(timezone.utc).isoformat() + "Z",
+        "status":     "pending",
         "instruction": (
-            "For each search, call MCP search_jobs (country_code='US'). "
-            "For each result, call MCP get_job_details to get the full description. "
+            "For each search call MCP search_jobs (country_code='US'). "
+            "For each result call get_job_details to get the full description. "
             "Then call: from src.discovery.indeed import import_jobs; "
-            "import_jobs(conn, job_dicts) where job_dicts is a list of dicts "
-            "with keys: url, company, title, location, description."
+            "import_jobs(conn, job_dicts) with keys: url, company, title, "
+            "location, description."
         ),
     }
 
@@ -414,9 +491,11 @@ def discover_cmd(ctx, role, location, remote, limit):
     req_path = actions_dir / "discover_jobs_request.json"
     req_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-    click.echo(f"Discovery request queued ({len(searches)} search(es)).")
-    click.echo("Claude Code will execute the Indeed searches via MCP.")
-    click.echo("Re-run 'job-agent run-overnight' after Claude Code completes the search.")
-    click.echo("\nSearches queued:")
-    for s in searches:
-        click.echo(f"  {s['search']!r}  in  {s['location']!r}")
+    locations_used = sorted({s["location"] for s in searches})
+    click.echo(f"Queued {len(searches)} searches across {len(locations_used)} location(s):")
+    for loc in locations_used:
+        n = sum(1 for s in searches if s["location"] == loc)
+        click.echo(f"  {loc:<25} {n} role searches")
+    click.echo()
+    click.echo("Claude Code will execute via MCP Indeed — then run:")
+    click.echo("  job-agent run-loop --once   to process the results.")

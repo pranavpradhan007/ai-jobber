@@ -26,27 +26,73 @@ from src.parsing.jd_parser import parse_jd
 
 logger = logging.getLogger(__name__)
 
-# Default searches tuned to Pranav's profile
-DEFAULT_SEARCHES = [
-    {"search": "Machine Learning Engineer",          "location": "New York, NY"},
-    {"search": "AI Research Engineer",               "location": "New York, NY"},
-    {"search": "Applied Scientist ML",               "location": "New York, NY"},
-    {"search": "Reinforcement Learning Engineer",    "location": "remote"},
-    {"search": "LLM Engineer Python PyTorch",        "location": "remote"},
-    {"search": "Research Engineer deep learning",    "location": "New York, NY"},
-    {"search": "Data Scientist machine learning",    "location": "New York, NY"},
-    {"search": "MLOps ML Platform Engineer",         "location": "remote"},
+# ── US-wide search matrix ────────────────────────────────────────────────────
+# Covers remote + 6 major US tech hubs.
+# LinkedIn note: Indeed aggregates jobs cross-posted from LinkedIn, Greenhouse,
+# Workday etc. — no separate LinkedIn MCP is available. For LinkedIn-exclusive
+# postings use `job-agent add-job --url <linkedin_url> ...` manually.
+
+_ROLE_SEARCHES = [
+    "Machine Learning Engineer",
+    "AI Research Engineer",
+    "Applied Scientist Machine Learning",
+    "Reinforcement Learning Engineer",
+    "LLM Engineer Python PyTorch",
+    "Research Engineer deep learning",
+    "Data Scientist machine learning",
+    "MLOps ML Platform Engineer",
+    "AI Engineer NLP computer vision",
+    "Scientific ML Engineer JAX",
+    "Game AI Engineer reinforcement learning",
+    "Robotics ML Engineer simulation",
+]
+
+_US_LOCATIONS = [
+    "remote",
+    "New York, NY",
+    "San Francisco, CA",
+    "Seattle, WA",
+    "Boston, MA",
+    "Austin, TX",
+    "Chicago, IL",
+]
+
+# Build the full matrix: every role x every location
+# Deduplicated at import time so duplicates from different searches don't matter.
+DEFAULT_SEARCHES: list[dict] = [
+    {"search": role, "location": loc}
+    for role in _ROLE_SEARCHES
+    for loc in _US_LOCATIONS
 ]
 
 
 def discover_searches_for_profile(
     custom_searches: Optional[list[dict]] = None,
+    *,
+    locations: Optional[list[str]] = None,
+    roles: Optional[list[str]] = None,
 ) -> list[dict]:
     """
     Return the list of Indeed searches to run for this profile.
+
+    Args:
+        custom_searches: override the entire list.
+        locations: restrict to specific locations (e.g. ["remote", "Seattle, WA"]).
+        roles: restrict to specific role keywords.
+
     Claude Code iterates this and calls MCP search_jobs for each entry.
     """
-    return custom_searches or DEFAULT_SEARCHES
+    if custom_searches:
+        return custom_searches
+    searches = DEFAULT_SEARCHES
+    if locations:
+        loc_set = {l.lower() for l in locations}
+        searches = [s for s in searches if s["location"].lower() in loc_set]
+    if roles:
+        role_set = {r.lower() for r in roles}
+        searches = [s for s in searches
+                    if any(r in s["search"].lower() for r in role_set)]
+    return searches
 
 
 def import_jobs(

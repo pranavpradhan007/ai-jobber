@@ -45,53 +45,92 @@ make smoke       # fast happy-path check only
 
 ---
 
-## 2. Daily workflow
+## 2. Running modes
 
+### Continuous mode (recommended — runs all day)
+```bash
+# Start the continuous loop — runs every 30 minutes, all day
+job-agent run-loop
+
+# Adjust interval
+job-agent run-loop --interval 60       # every hour
+job-agent run-loop --interval 10       # every 10 min (aggressive)
+
+# Single cycle and exit
+job-agent run-loop --once
 ```
-Morning
-  1. Claude Code ran check-approvals overnight → check your Gmail
-  2. Reply to the digest email from your phone (see §7)
-  3. Optionally: job-agent status  to see what's pending
 
-Evening / before bed
-  1. job-agent discover              ← queue new Indeed searches
-     (Claude Code executes them via MCP)
-  2. job-agent run-overnight         ← score, tailor, verify, submit/gate
-  3. job-agent prep-batch            ← send digest email for tomorrow morning
+Each cycle does:
+1. Queue Indeed searches across the full US (Claude Code executes via MCP)
+2. Score + tailor + verify all queued DISCOVERED jobs
+3. Submit auto_safe jobs immediately
+4. Gate jobs needing approval → send digest email
+5. Check Gmail for your phone replies → APPROVE/EDIT/REJECT/SNOOZE
+6. Sleep → repeat
+
+Press **Ctrl-C** to stop cleanly after the current cycle finishes.
+
+### Manual / one-shot mode
+```bash
+job-agent discover                     # queue searches
+job-agent run-overnight                # one pipeline pass (no discover/approvals)
+job-agent prep-batch --to you@email    # send digest email manually
+job-agent check-approvals --from-gmail # process replies manually
+```
+
+### Typical day
+```
+08:00  run-loop starts — discovers + processes overnight queue
+08:30  run-loop cycle 2 — picks up new jobs
+…      (runs every 30 min all day)
+12:00  you get a digest email on your phone
+12:05  you reply: APP-1 APPROVE, APP-2 EDIT "..."
+12:30  run-loop cycle picks up your reply → submits APP-1
+18:00  shut down run-loop (Ctrl-C) or leave running overnight
 ```
 
 ---
 
 ## 3. Discovering jobs
 
-Indeed searches are queued and executed by Claude Code via MCP.
+### Job sources
+| Source | Coverage | How |
+|--------|----------|-----|
+| **Indeed MCP** | ~10M US jobs — aggregates LinkedIn cross-posts, Greenhouse, Workday, Lever, direct company sites | `job-agent discover` |
+| **Manual** | Any URL — LinkedIn, company page, referral link | `job-agent add-job --url ...` |
+| **LinkedIn direct** | Not available as MCP | Use `add-job` manually |
 
+> **LinkedIn note:** The Claude Code MCP connector available here is Indeed,
+> not LinkedIn. Indeed aggregates the vast majority of jobs that companies
+> cross-post to LinkedIn. For LinkedIn-exclusive postings (rare), copy the
+> URL and use `job-agent add-job --url <linkedin_url> --company ... --title ...`.
+
+### Discovery commands
 ```bash
-# Queue default searches (8 searches tuned to your ML/AI profile)
+# Default: 12 roles × 7 locations = 84 searches across the whole US
 job-agent discover
 
-# Search a specific role
-job-agent discover --role "Reinforcement Learning Engineer"
+# Remote-only
+job-agent discover --remote-only
 
-# Search remote only
-job-agent discover --role "ML Engineer" --remote
+# Single city
+job-agent discover --location "San Francisco, CA"
 
-# Specify location
-job-agent discover --role "Data Scientist" --location "San Francisco, CA"
+# Add a specific role on top of defaults
+job-agent discover --role "Robotics ML Engineer"
+
+# Specific role + specific city
+job-agent discover --role "Quantitative Researcher ML" --location "Chicago, IL"
 ```
 
-After running `discover`, Claude Code executes the Indeed MCP calls and
-imports results. Then run `job-agent run-overnight` to process them.
+**Locations covered by default:**
+remote · New York, NY · San Francisco, CA · Seattle, WA · Boston, MA · Austin, TX · Chicago, IL
 
-**Default searches (auto-configured for your profile):**
-- Machine Learning Engineer — New York, NY
-- AI Research Engineer — New York, NY
-- Applied Scientist ML — New York, NY
-- Reinforcement Learning Engineer — remote
-- LLM Engineer Python PyTorch — remote
-- Research Engineer deep learning — New York, NY
-- Data Scientist machine learning — New York, NY
-- MLOps ML Platform Engineer — remote
+**Roles searched:**
+Machine Learning Engineer · AI Research Engineer · Applied Scientist ML ·
+Reinforcement Learning Engineer · LLM Engineer · Research Engineer ·
+Data Scientist · MLOps Engineer · AI Engineer NLP · Scientific ML Engineer ·
+Game AI Engineer · Robotics ML Engineer
 
 ---
 
