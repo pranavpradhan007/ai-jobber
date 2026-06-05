@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 LEGAL_TRANSITIONS: dict[str, set[str]] = {
     "DISCOVERED":                 {"SCORED", "SKIPPED"},
-    "SCORED":                     {"TAILORING", "SKIPPED"},
+    "SCORED":                     {"TAILORING", "SKIPPED", "AI_TRAP_DETECTED"},
     "TAILORING":                  {"RESUME_VERIFIED", "FAILED"},
     "RESUME_VERIFIED":            {"PACKAGING"},
     "PACKAGING":                  {"READY_TO_SUBMIT"},
-    "READY_TO_SUBMIT":            {"SUBMITTING", "WAITING_FOR_USER_APPROVAL"},
+    "READY_TO_SUBMIT":            {"SUBMITTING", "WAITING_FOR_USER_APPROVAL", "AI_TRAP_DETECTED"},
     "WAITING_FOR_USER_APPROVAL":  {"SUBMITTING", "SKIPPED", "TAILORING", "SNOOZED"},
     "SUBMITTING":                 {
                                       "SUBMITTED",
@@ -46,6 +46,7 @@ LEGAL_TRANSITIONS: dict[str, set[str]] = {
     "SNOOZED":                    {"WAITING_FOR_USER_APPROVAL"},
     "FAILED":                     {"DEAD"},
     # Terminal states — no outbound edges
+    "AI_TRAP_DETECTED":           set(),
     "INTERVIEW_SCHEDULED":        set(),
     "OA_RECEIVED":                set(),
     "REJECTED":                   set(),

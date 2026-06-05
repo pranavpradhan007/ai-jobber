@@ -111,10 +111,21 @@ class MCPGmailClient:
         attachments: Optional[list[str]] = None,
     ) -> str:
         """
-        Write a pending 'create_draft' action.
-        Returns an action_id (not a real message_id — that comes after MCP executes).
-        Claude Code picks this up and creates the Gmail draft via MCP.
+        Send email directly via Gmail SMTP when GMAIL_APP_PASSWORD is set.
+        Falls back to queuing a create_draft manifest for Claude Code if not.
+
+        To enable direct send:
+          1. In your Google Account: Security > 2-Step Verification > App passwords
+          2. Create an app password for "Mail"
+          3. Add to .env:  GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
         """
+        app_password = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
+        sender = os.environ.get("YOUR_EMAIL_ADDRESS", "").strip()
+
+        if app_password and sender:
+            return self._smtp_send(sender, to, subject, body, app_password)
+
+        # Fallback: queue draft manifest for Claude Code to execute via MCP
         action_id = _timestamp_id("draft")
         manifest = {
             "action":      "create_draft",
@@ -128,11 +139,37 @@ class MCPGmailClient:
         }
         path = self._dir / "pending" / f"{action_id}.json"
         path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        logger.info(
-            "MCPGmail: queued draft action_id=%s to=%s subject=%r",
-            action_id, to, subject[:60],
+        logger.warning(
+            "MCPGmail: GMAIL_APP_PASSWORD not set — queued draft instead of sending. "
+            "action_id=%s to=%s", action_id, to,
         )
         return action_id
+
+    def _smtp_send(
+        self,
+        sender: str,
+        to: str,
+        subject: str,
+        body: str,
+        app_password: str,
+    ) -> str:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = sender
+        msg["To"]      = to
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(sender, app_password)
+            smtp.send_message(msg)
+
+        msg_id = _timestamp_id("smtp")
+        logger.info("MCPGmail: sent via SMTP to=%s subject=%r id=%s", to, subject[:60], msg_id)
+        return msg_id
 
     # ── Receive ───────────────────────────────────────────────────────────────
 

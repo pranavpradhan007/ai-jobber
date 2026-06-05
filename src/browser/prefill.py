@@ -30,6 +30,7 @@ from src.browser.field_mapper import (
     FILL_DELAY_SECONDS,
 )
 from src.browser.portal import classify_portal
+from src.browser.trap_detector import detect_traps_in_html, TrapResult
 from src.db.applications import get_application
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,10 @@ class UnknownFieldEncountered(Exception):
     """Raised when a required field cannot be mapped."""
 
 
+class AITrapDetected(Exception):
+    """Raised when a honeypot / AI-trap field is found in the form HTML."""
+
+
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -64,6 +69,7 @@ class PrefillResult:
     screenshot_after: Optional[str] = None
     captcha_detected: bool = False
     mfa_detected: bool = False
+    ai_trap_detected: bool = False
     stopped_at_submit: bool = True   # always True on success — never submitted
     errors: list[str] = field(default_factory=list)
 
@@ -185,6 +191,19 @@ def _prefill_static(
     portal = classify_portal(html=html, url=url)
     logger.info("prefill app_id=%d portal=%s (static mode)", app_id, portal)
 
+    # AI trap check — must run before any fills
+    trap = detect_traps_in_html(html)
+    if trap.trap_found:
+        logger.warning(
+            "AI trap in form HTML app_id=%d type=%s — aborting prefill",
+            app_id, trap.trap_type,
+        )
+        return PrefillResult(
+            success=False, portal=portal, fields_filled=0,
+            ai_trap_detected=True, stopped_at_submit=False,
+            errors=[f"AI trap detected: {trap.trap_type}: {trap.evidence[:80]}"],
+        )
+
     try:
         engine = StaticFillEngine(html, fill_delay=fill_delay)
     except CaptchaDetected:
@@ -268,6 +287,19 @@ def _prefill_playwright(
 
         html = page.content()
         portal = classify_portal(html=html, url=url)
+
+        # AI trap check
+        trap = detect_traps_in_html(html)
+        if trap.trap_found:
+            logger.warning(
+                "AI trap in form HTML app_id=%d type=%s — aborting prefill",
+                app_id, trap.trap_type,
+            )
+            return PrefillResult(
+                success=False, portal=portal, fields_filled=0,
+                ai_trap_detected=True, stopped_at_submit=False,
+                errors=[f"AI trap detected: {trap.trap_type}: {trap.evidence[:80]}"],
+            )
 
         # CAPTCHA/MFA check
         for cid in StaticFillEngine.CAPTCHA_IDS:

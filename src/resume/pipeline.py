@@ -28,6 +28,7 @@ from src.resume.retrieval import retrieve_bullets
 from src.resume.rephrase import rephrase_bullets, RephraserFn
 from src.resume.renderer import render_docx, render_pdf
 from src.resume.diff import write_resume_diff
+from src.ats.scanner import ats_scan, ats_report_text
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,12 @@ class TailoringResult:
     resume_pdf_path: str
     resume_diff_path: str
     verifier_passed: bool
+    ats_report_path: str = ""
+    ats_score: int = 0
+
+
+class PageLimitError(Exception):
+    """Raised when the rendered resume exceeds 1 page after trimming."""
 
 
 def run_tailoring(
@@ -130,7 +137,37 @@ def run_tailoring(
             f"unsupported claim(s) found."
         )
 
-    # 8. All claims passed — persist and advance state
+    # 8. ATS scan — run on the full rephrased text
+    experience_bullets = [
+        rephrased[i] for i, item in enumerate(all_bullets)
+        if i < len(rephrased) and item.item_type == "metric"
+    ]
+    ats_result = ats_scan(
+        full_text,
+        hot_keywords,
+        experience_bullets=experience_bullets or None,
+    )
+    ats_report = ats_report_text(ats_result, job_title=job_title)
+    ats_path = artifact_path(folder, "ats_report.txt")
+    with open(ats_path, "w", encoding="utf-8") as fh:
+        fh.write(ats_report)
+    logger.info(
+        "ATS scan app_id=%d score=%d page=%.2f passed=%s",
+        app_id, ats_result.ats_score, ats_result.page_count_est, ats_result.passed,
+    )
+
+    # Hard gate: 1-page limit
+    if not ats_result.passed and ats_result.page_count_est > 1.05:
+        logger.error(
+            "ATS gate blocked app_id=%d: resume estimated %.2f pages (must be <= 1)",
+            app_id, ats_result.page_count_est,
+        )
+        raise PageLimitError(
+            f"Resume exceeds 1 page (est {ats_result.page_count_est:.2f}). "
+            "Reduce bullet count or shorten bullets."
+        )
+
+    # 9. All claims passed — persist and advance state
     update_application(
         conn, app_id,
         resume_path=docx_path,
@@ -141,13 +178,15 @@ def run_tailoring(
     transition(conn, app_id, "RESUME_VERIFIED", reason="verifier passed")
 
     logger.info(
-        "tailoring complete app_id=%d resume=%s", app_id, docx_path
+        "tailoring complete app_id=%d resume=%s ats=%d", app_id, docx_path, ats_result.ats_score
     )
     return TailoringResult(
         resume_path=docx_path,
         resume_pdf_path=pdf_path,
         resume_diff_path=diff_path,
         verifier_passed=True,
+        ats_report_path=ats_path,
+        ats_score=ats_result.ats_score,
     )
 
 

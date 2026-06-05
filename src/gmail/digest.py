@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
@@ -24,6 +25,22 @@ from typing import Optional
 from src.db.applications import get_applications_by_state, update_application
 
 logger = logging.getLogger(__name__)
+
+# Quiet hours: no digest emails sent outside 8am–11pm local time.
+# Override via .env: DIGEST_QUIET_START=23  DIGEST_QUIET_END=8
+_QUIET_START = int(os.environ.get("DIGEST_QUIET_START", "23"))  # 11pm
+_QUIET_END   = int(os.environ.get("DIGEST_QUIET_END",   "8"))   # 8am
+
+
+def is_quiet_hours(local_hour: Optional[int] = None) -> bool:
+    """Return True if current local time is in the quiet window (no emails)."""
+    if local_hour is None:
+        local_hour = datetime.now().hour
+    # Overnight window e.g. 23–8: quiet if hour >= 23 OR hour < 8
+    if _QUIET_START > _QUIET_END:
+        return local_hour >= _QUIET_START or local_hour < _QUIET_END
+    # Same-day window e.g. 9–17: quiet if 9 <= hour < 17
+    return _QUIET_START <= local_hour < _QUIET_END
 
 
 def _digest_id(ts: str) -> str:
@@ -47,6 +64,13 @@ def build_digest(
     pending = get_applications_by_state(conn, "WAITING_FOR_USER_APPROVAL")
     if not pending:
         logger.info("No WAITING_FOR_USER_APPROVAL apps — skipping digest")
+        return None
+
+    if is_quiet_hours():
+        logger.info(
+            "Quiet hours (%d:00–%d:00) — digest suppressed until 08:00",
+            _QUIET_START, _QUIET_END,
+        )
         return None
 
     now_utc  = datetime.now(timezone.utc)

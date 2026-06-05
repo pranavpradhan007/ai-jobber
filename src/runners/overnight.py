@@ -25,9 +25,10 @@ from src.parsing.jd_parser import parse_jd
 from src.keywords.extractor import extract_keywords
 from src.scoring.scorer import score_job
 from src.scoring.gate import apply_score_gate
-from src.resume.pipeline import run_tailoring
+from src.resume.pipeline import run_tailoring, PageLimitError
 from src.browser.submit import submit_auto_safe
 from src.verifier.diff_verifier import VerifierGateError
+from src.browser.trap_detector import detect_traps_in_jd
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,18 @@ def _process_one(
     kw_report = extract_keywords(conn, parsed_jd)
     hot_keywords = kw_report.hot_keywords
 
+    # ── 3a. AI trap check (JD-level) ─────────────────────────────────────────
+    trap = detect_traps_in_jd(parsed_jd)
+    if trap.trap_found:
+        logger.warning(
+            "AI trap detected in JD for app_id=%d type=%s — skipping",
+            app_id, trap.trap_type,
+        )
+        transition(conn, app_id, "AI_TRAP_DETECTED",
+                   reason=f"AI trap in JD: {trap.trap_type}: {trap.evidence[:80]}")
+        stats.skipped += 1
+        return
+
     # ── 4. Score ─────────────────────────────────────────────────────────────
     job_info = {
         "title": job["title"],
@@ -183,7 +196,7 @@ def _process_one(
             edit_instruction=edit_instruction,
         )
         stats.tailored += 1
-    except VerifierGateError as exc:
+    except (VerifierGateError, PageLimitError) as exc:
         transition(conn, app_id, "FAILED", reason=str(exc))
         stats.failed += 1
         return

@@ -38,6 +38,11 @@ _WORKDAY_SELECTORS: dict[str, str] = {
     "years_experience":     "#yearsExperience",
     "work_authorization":   "#workAuthorization",
     "cover_letter":         "#coverLetter",
+    # EEO / voluntary self-identification
+    "eeo_gender":           "[data-automation-id='gender']",
+    "eeo_ethnicity":        "[data-automation-id='ethnicGroup']",
+    "eeo_veteran":          "[data-automation-id='veteranStatus']",
+    "eeo_disability":       "[data-automation-id='disability']",
 }
 
 _GREENHOUSE_SELECTORS: dict[str, str] = {
@@ -47,11 +52,16 @@ _GREENHOUSE_SELECTORS: dict[str, str] = {
     "phone":        "#phone",
     "cover_letter": "#cover_letter",
     "location":     "#location",
+    # EEO / voluntary self-identification
+    "eeo_gender":    "select#gender",
+    "eeo_ethnicity": "select#race",
+    "eeo_veteran":   "select#veteran_status",
+    "eeo_disability": "select#disability_status",
 }
 
 _LEVER_SELECTORS: dict[str, str] = {
     "first_name":   "input[name='name']",
-    "last_name":    "input[name='org']",     # lever uses org for company but some use name split
+    "last_name":    "input[name='org']",
     "email":        "input[name='email']",
     "phone":        "input[name='phone']",
     "cover_letter": "textarea[name='comments']",
@@ -73,6 +83,18 @@ _PORTAL_MAPS: dict[str, dict] = {
     "custom":     _GREENHOUSE_SELECTORS,   # generic fallback
 }
 
+# ---------------------------------------------------------------------------
+# EEO demographic defaults (voluntary self-identification fields).
+# These are pre-filled whenever the portal form exposes them.
+# Values must match the option text the portal renders in its dropdowns.
+# ---------------------------------------------------------------------------
+EEO_DEFAULTS: dict[str, str] = {
+    "eeo_gender":     "Male",
+    "eeo_ethnicity":  "Asian",        # "Asian (not Hispanic or Latino)"
+    "eeo_veteran":    "I am not a protected veteran",
+    "eeo_disability": "No, I don't have a disability",
+}
+
 # Answer key → field_type hint
 _FIELD_TYPES: dict[str, str] = {
     "first_name":         "text",
@@ -85,6 +107,10 @@ _FIELD_TYPES: dict[str, str] = {
     "cover_letter":       "textarea",
     "location":           "text",
     "resume":             "file",
+    "eeo_gender":         "select",
+    "eeo_ethnicity":      "select",
+    "eeo_veteran":        "select",
+    "eeo_disability":     "select",
 }
 
 
@@ -95,11 +121,16 @@ def build_fill_instructions(
     """
     Build a list of FillInstruction objects for the given portal.
     `answers` is the parsed application_answers.json dict.
+
+    EEO_DEFAULTS are merged in automatically; answers can override them.
     """
     selector_map = _PORTAL_MAPS.get(portal, _GREENHOUSE_SELECTORS)
-    instructions: list[FillInstruction] = []
 
-    for key, value in answers.items():
+    # EEO defaults first, then answers override
+    merged = {**EEO_DEFAULTS, **answers}
+
+    instructions: list[FillInstruction] = []
+    for key, value in merged.items():
         if not value or key == "resume":   # resume handled separately
             continue
         selector = selector_map.get(key)

@@ -29,8 +29,8 @@ _ACTIONS_DIR = Path("gmail_actions")
 
 # ── Source definitions ────────────────────────────────────────────────────────
 
-# RemoteOK public JSON API — no key needed
-REMOTEOK_URL = "https://remoteok.io/api?tag=machine-learning"
+# RemoteOK public JSON API — no key needed (.io redirects to .com)
+REMOTEOK_URL = "https://remoteok.com/api?tag=machine-learning"
 REMOTEOK_TAGS = [
     "machine-learning",
     "ai",
@@ -40,15 +40,14 @@ REMOTEOK_TAGS = [
     "data-science",
 ]
 
-# We Work Remotely RSS — curated remote tech jobs
+# We Work Remotely RSS — programming feed works; data-science feed returns 301
 WWR_FEEDS = [
-    "https://weworkremotely.com/categories/remote-data-science-jobs.rss",
     "https://weworkremotely.com/categories/remote-programming-jobs.rss",
 ]
 
-# HN Who's Hiring — monthly thread.
-# Claude Code searches HN for the current month's thread ID.
-HN_SEARCH_URL = "https://hn.algolia.com/api/v1/search?query=Ask+HN+Who+Is+Hiring&tags=story,ask_hn&numericFilters=created_at_i>1700000000"
+# HN Who's Hiring — monthly thread. Use a recent timestamp (~1 year ago) so
+# the search always returns current-year threads.
+HN_SEARCH_URL = "https://hn.algolia.com/api/v1/search?query=Ask+HN+Who+Is+Hiring&tags=story,ask_hn&numericFilters=created_at_i>1746000000"
 
 
 # ── Manifest helpers ──────────────────────────────────────────────────────────
@@ -70,7 +69,7 @@ def queue_feed_fetches() -> list[str]:
         "action":     "fetch_feed",
         "source":     "remoteok",
         "request_id": req_id,
-        "urls":       [f"https://remoteok.io/api?tag={t}" for t in REMOTEOK_TAGS],
+        "urls":       [f"https://remoteok.com/api?tag={t}" for t in REMOTEOK_TAGS],
         "instruction": (
             "Fetch each URL with WebFetch. Each returns a JSON array. "
             "The first element is metadata — skip it. "

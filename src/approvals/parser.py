@@ -11,6 +11,8 @@ Supported formats (one command per line, case-insensitive):
   APP-{id} EDIT "re-write the opening to emphasise RL research"
   APP-{id} SNOOZE
   APP-{id} SNOOZE 3          ← snooze for N days
+  APPROVE ALL                ← approve every WAITING_FOR_USER_APPROVAL app
+  REJECT ALL                 ← reject every WAITING_FOR_USER_APPROVAL app
   DONE
   MANUAL
 
@@ -38,13 +40,16 @@ VALID_COMMANDS = {"APPROVE", "REJECT", "SKIP", "EDIT", "SNOOZE", "DONE", "MANUAL
 # APP-3 APPROVE
 # APP-3 EDIT "some quoted text"
 # APP-3 SNOOZE 2
+# APPROVE ALL  /  REJECT ALL
 _CMD_RE = re.compile(
     r'(?i)'
     r'(?:APP-(\d+)\s+)?'                           # optional APP-N prefix
     r'(APPROVE|REJECT|SKIP|EDIT|SNOOZE|DONE|MANUAL)'  # command
     r'(?:\s+"([^"]*)")?'                           # optional "quoted instruction"
-    r'(?:\s+(\d+))?'                               # optional numeric arg (snooze days)
+    r'(?:\s+(ALL|\d+))?'                           # optional ALL or numeric arg
 )
+
+_ALL_RE = re.compile(r'(?i)^(APPROVE|REJECT|SKIP)\s+ALL\s*$')
 
 
 @dataclass
@@ -65,24 +70,49 @@ class ApplyResult:
     detail: Optional[str] = None
 
 
-def parse_reply(text: str) -> list[ParsedCommand]:
-    """Parse a reply email body into a list of ParsedCommands."""
+def parse_reply(text: str, conn: sqlite3.Connection = None) -> list[ParsedCommand]:
+    """Parse a reply email body into a list of ParsedCommands.
+
+    If conn is supplied, APPROVE ALL / REJECT ALL expand into one command per
+    WAITING_FOR_USER_APPROVAL application.
+    """
     commands = []
     for line in text.splitlines():
         line = line.strip()
-        if not line or line.startswith(">"):   # skip quoted-reply lines (>>)
+        if not line or line.startswith(">"):   # skip quoted-reply lines
             continue
+
+        # Handle APPROVE ALL / REJECT ALL / SKIP ALL
+        m_all = _ALL_RE.match(line)
+        if m_all:
+            cmd = m_all.group(1).upper()
+            if conn is not None:
+                rows = conn.execute(
+                    "SELECT id FROM applications WHERE state='WAITING_FOR_USER_APPROVAL'"
+                ).fetchall()
+                for row in rows:
+                    commands.append(ParsedCommand(
+                        app_id=row[0], command=cmd, raw_line=line,
+                    ))
+            else:
+                # Without a conn we can't expand — store as a sentinel (app_id=None)
+                commands.append(ParsedCommand(app_id=None, command=cmd, raw_line=line))
+            continue
+
         m = _CMD_RE.search(line)
         if not m:
             continue
-        app_id_str, cmd, quoted, num = m.group(1), m.group(2), m.group(3), m.group(4)
+        app_id_str, cmd, quoted, arg = m.group(1), m.group(2), m.group(3), m.group(4)
         cmd = cmd.upper()
+        # Skip "APPROVE ALL" matched by _CMD_RE (already handled above)
+        if arg and arg.upper() == "ALL":
+            continue
         commands.append(ParsedCommand(
             app_id=int(app_id_str) if app_id_str else None,
             command=cmd,
             raw_line=line,
             edit_instruction=quoted.strip() if quoted else None,
-            snooze_days=int(num) if num else 1,
+            snooze_days=int(arg) if arg and arg.isdigit() else 1,
         ))
     return commands
 

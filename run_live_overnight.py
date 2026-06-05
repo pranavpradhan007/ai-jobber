@@ -1,5 +1,5 @@
 """Run the overnight pipeline on the newly imported real jobs."""
-import os, tempfile
+import os
 os.environ["JOB_AGENT_DB"] = "job_agent.db"
 
 from src.db.connection import get_connection
@@ -7,6 +7,8 @@ from src.scoring.heuristic_scorer import make_heuristic_scorer
 from src.verifier.bank_extractor import make_bank_extractor
 from src.resume.rephrase import mock_rephraser_clean
 from src.runners.overnight import run_overnight
+from src.gmail.client import MCPGmailClient
+from src.gmail.digest import build_digest, is_quiet_hours
 import src.storage.folders as fm
 
 # Use the real applications/ folder this time (not temp)
@@ -45,5 +47,22 @@ for row in conn.execute(
     "WHERE a.id IN (2,3,4) ORDER BY a.id"
 ):
     print(f"  APP-{row['id']}: {row['company'][:30]:30s} | {row['state']:35s} | score={row['score'] or 'n/a'} | tier={row['submit_tier']}")
+
+print("\n=== SENDING DIGEST ===")
+recipient = os.environ.get("DIGEST_RECIPIENT") or os.environ.get("YOUR_EMAIL_ADDRESS", "")
+if recipient:
+    if is_quiet_hours():
+        from datetime import datetime
+        print(f"  Quiet hours active — digest suppressed until 08:00")
+    else:
+        gmail = MCPGmailClient()
+        digest_id = build_digest(conn, recipient=recipient, gmail_client=gmail)
+        if digest_id:
+            print(f"  Digest sent to {recipient}")
+            print(f"  Digest ID: {digest_id}")
+        else:
+            print("  No gated applications — digest skipped")
+else:
+    print("  DIGEST_RECIPIENT not set in .env — skipping digest")
 
 conn.close()
