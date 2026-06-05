@@ -22,6 +22,7 @@ from src.db.applications import update_application
 from src.db.state_machine import transition
 from src.storage.folders import create_application_folder, artifact_path
 from src.verifier.diff_verifier import verify_text, VerifierGateError
+from src.verifier.style_checker import check_style, StyleGateError, style_report
 from src.verifier.retrieval import BankItem
 from src.resume.retrieval import retrieve_bullets
 from src.resume.rephrase import rephrase_bullets, RephraserFn
@@ -79,15 +80,35 @@ def run_tailoring(
                 job_title=job_title, out_path=docx_path)
     pdf_path = render_pdf(docx_path, artifact_path(folder, "resume.pdf"))
 
-    # 5. Verify all rephrased text
-    full_text = " ".join(rephrased)
+    # 5a. Style check — em dashes and AI language (BEFORE verifier)
+    full_text = "\n".join(rephrased)
+    style_violations = check_style(full_text, raise_on_hard=False)
+    hard_style = [v for v in style_violations if v.hard_fail]
+    if hard_style:
+        logger.error(
+            "style gate blocked app_id=%d: %d hard violation(s) — %s",
+            app_id, len(hard_style),
+            "; ".join(v.text for v in hard_style[:3]),
+        )
+        raise StyleGateError(style_violations)
+
+    if style_violations:
+        logger.warning(
+            "app_id=%d style warnings (%d): %s",
+            app_id, len(style_violations),
+            ", ".join(v.text for v in style_violations[:5]),
+        )
+
+    # 5b. Claim verifier
     verifier_report = verify_text(
         conn, app_id, full_text, surface=surface, extractor=extractor
     )
 
-    # 6. Write diff
+    # 6. Write diff (includes style report)
     diff_path = write_resume_diff(
-        folder, all_bullets, rephrased, verifier_report, job_title=job_title
+        folder, all_bullets, rephrased, verifier_report,
+        job_title=job_title,
+        style_report=style_report(style_violations),
     )
 
     # 7. Gate on verifier

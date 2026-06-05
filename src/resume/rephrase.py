@@ -58,8 +58,16 @@ def mock_rephraser_clean(
     hot_keywords: list[str],
     job_title: str,
 ) -> list[str]:
-    """Deterministic mock: rewrites each bullet as 'Utilised {content}.'"""
-    return [f"Utilised {b.content}." for b in bullets]
+    """
+    Deterministic mock: uses plain action verbs, no AI language, no em dashes.
+    Cycles through action verbs so bullets look varied.
+    """
+    _VERBS = ["Built", "Trained", "Designed", "Deployed", "Improved",
+              "Reduced", "Integrated", "Benchmarked", "Evaluated", "Wrote"]
+    return [
+        f"{_VERBS[i % len(_VERBS)]} {b.content}."
+        for i, b in enumerate(bullets)
+    ]
 
 
 def mock_rephraser_with_hallucination(
@@ -68,7 +76,7 @@ def mock_rephraser_with_hallucination(
     job_title: str,
 ) -> list[str]:
     """Mock that injects a fake metric — verifier must catch this."""
-    rephrased = [f"Utilised {b.content}." for b in bullets]
+    rephrased = mock_rephraser_clean(bullets, hot_keywords, job_title)
     rephrased.append("Increased revenue by 500% with a proprietary AI system.")
     return rephrased
 
@@ -96,11 +104,26 @@ def _default_rephraser(
         )
 
     prompt = (
-        f"Rephrase these resume bullets for a {job_title!r} role. "
-        f"Highlight these keywords where natural: {hot_keywords}. "
-        "You may reword but MUST NOT add any new metrics, tools, titles, or "
-        "credentials not present in the original bullets. "
-        f"Return a JSON array of strings, one per bullet.{edit_clause}\n\n"
+        f"Rephrase these resume bullets for a {job_title!r} role.\n"
+        f"Emphasise these keywords where natural: {hot_keywords}.\n"
+        "\n"
+        "STRICT RULES — violations cause the output to be rejected:\n"
+        "1. NEVER use em dashes (—). Use commas, colons, or rewrite.\n"
+        "2. NEVER use these words: leverage, utilize, utilise, delve, foster,\n"
+        "   facilitate, streamline, empower, spearhead, orchestrate, harness,\n"
+        "   robust, innovative, cutting-edge, transformative, synergy,\n"
+        "   seamlessly, impactful, passionate, excited, thrilled, world-class,\n"
+        "   exceptional, outstanding, ground-breaking.\n"
+        "3. NEVER start a bullet with 'Utilized', 'Leveraged', or 'Facilitated'.\n"
+        "4. NEVER add facts, metrics, tools, titles, or credentials not in the\n"
+        "   original bullets.\n"
+        "5. Write like a human engineer — short, specific, past-tense action verbs:\n"
+        "   built, trained, reduced, improved, integrated, deployed, designed,\n"
+        "   benchmarked, evaluated, extended, wrote, shipped, led, ran.\n"
+        "6. Each bullet: one clear idea, specific numbers where available.\n"
+        "\n"
+        f"Return a JSON array of strings, one string per bullet.{edit_clause}\n"
+        "\n"
         f"Bullets:\n{json.dumps(bullet_texts, indent=2)}"
     )
     msg = client.messages.create(
