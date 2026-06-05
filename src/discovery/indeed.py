@@ -47,79 +47,313 @@ _ROLE_SEARCHES = [
     "Robotics ML Engineer simulation",
 ]
 
-# Every significant US metro area — not just 7 cities.
-# "remote" first so it always runs; the rest cover the full country.
+# ── Complete US coverage ─────────────────────────────────────────────────────
+# One or more cities per state so every US market is reached.
+# Large tech states get multiple entries (CA, TX, NY, FL, WA, MA, etc.).
+# "remote" always runs first — catches nationwide remote-ok postings.
 _US_LOCATIONS = [
-    # ── Remote (catches nationwide remote-ok postings) ──────────────────────
+    # ── Always ───────────────────────────────────────────────────────────────
     "remote",
 
-    # ── Northeast ───────────────────────────────────────────────────────────
-    "New York, NY",
-    "Boston, MA",
-    "Philadelphia, PA",
-    "Washington, DC",
-    "Baltimore, MD",
-    "Pittsburgh, PA",
-    "Hartford, CT",
+    # ── Alabama ──────────────────────────────────────────────────────────────
+    "Birmingham, AL",
+    "Huntsville, AL",
+    "Montgomery, AL",
 
-    # ── Southeast ───────────────────────────────────────────────────────────
-    "Atlanta, GA",
+    # ── Alaska ───────────────────────────────────────────────────────────────
+    "Anchorage, AK",
+
+    # ── Arizona ──────────────────────────────────────────────────────────────
+    "Phoenix, AZ",
+    "Scottsdale, AZ",
+    "Tempe, AZ",
+    "Tucson, AZ",
+    "Mesa, AZ",
+    "Chandler, AZ",
+
+    # ── Arkansas ─────────────────────────────────────────────────────────────
+    "Little Rock, AR",
+    "Fayetteville, AR",
+
+    # ── California ───────────────────────────────────────────────────────────
+    "San Francisco, CA",
+    "San Jose, CA",
+    "Oakland, CA",
+    "Palo Alto, CA",
+    "Mountain View, CA",
+    "Sunnyvale, CA",
+    "Santa Clara, CA",
+    "Menlo Park, CA",
+    "Redwood City, CA",
+    "Fremont, CA",
+    "Los Angeles, CA",
+    "Santa Monica, CA",
+    "Culver City, CA",
+    "Burbank, CA",
+    "Long Beach, CA",
+    "Irvine, CA",
+    "San Diego, CA",
+    "Sacramento, CA",
+    "Fresno, CA",
+    "Santa Barbara, CA",
+    "Santa Cruz, CA",
+    "Pasadena, CA",
+    "Riverside, CA",
+
+    # ── Colorado ─────────────────────────────────────────────────────────────
+    "Denver, CO",
+    "Boulder, CO",
+    "Colorado Springs, CO",
+    "Fort Collins, CO",
+    "Aurora, CO",
+
+    # ── Connecticut ──────────────────────────────────────────────────────────
+    "Hartford, CT",
+    "New Haven, CT",
+    "Stamford, CT",
+    "Bridgeport, CT",
+
+    # ── Delaware ─────────────────────────────────────────────────────────────
+    "Wilmington, DE",
+
+    # ── Florida ──────────────────────────────────────────────────────────────
     "Miami, FL",
+    "Fort Lauderdale, FL",
+    "Boca Raton, FL",
+    "West Palm Beach, FL",
     "Tampa, FL",
+    "St. Petersburg, FL",
     "Orlando, FL",
+    "Jacksonville, FL",
+    "Tallahassee, FL",
+    "Gainesville, FL",
+
+    # ── Georgia ──────────────────────────────────────────────────────────────
+    "Atlanta, GA",
+    "Alpharetta, GA",
+    "Savannah, GA",
+    "Augusta, GA",
+
+    # ── Hawaii ───────────────────────────────────────────────────────────────
+    "Honolulu, HI",
+
+    # ── Idaho ────────────────────────────────────────────────────────────────
+    "Boise, ID",
+    "Coeur d'Alene, ID",
+
+    # ── Illinois ─────────────────────────────────────────────────────────────
+    "Chicago, IL",
+    "Evanston, IL",
+    "Naperville, IL",
+    "Schaumburg, IL",
+    "Springfield, IL",
+
+    # ── Indiana ──────────────────────────────────────────────────────────────
+    "Indianapolis, IN",
+    "Fort Wayne, IN",
+    "Bloomington, IN",
+
+    # ── Iowa ─────────────────────────────────────────────────────────────────
+    "Des Moines, IA",
+    "Iowa City, IA",
+    "Cedar Rapids, IA",
+
+    # ── Kansas ───────────────────────────────────────────────────────────────
+    "Wichita, KS",
+    "Overland Park, KS",
+    "Kansas City, KS",
+
+    # ── Kentucky ─────────────────────────────────────────────────────────────
+    "Louisville, KY",
+    "Lexington, KY",
+
+    # ── Louisiana ────────────────────────────────────────────────────────────
+    "New Orleans, LA",
+    "Baton Rouge, LA",
+
+    # ── Maine ────────────────────────────────────────────────────────────────
+    "Portland, ME",
+
+    # ── Maryland ─────────────────────────────────────────────────────────────
+    "Baltimore, MD",
+    "Bethesda, MD",
+    "Rockville, MD",
+    "Silver Spring, MD",
+    "Annapolis, MD",
+
+    # ── Massachusetts ────────────────────────────────────────────────────────
+    "Boston, MA",
+    "Cambridge, MA",
+    "Somerville, MA",
+    "Waltham, MA",
+    "Burlington, MA",
+    "Worcester, MA",
+    "Springfield, MA",
+
+    # ── Michigan ─────────────────────────────────────────────────────────────
+    "Detroit, MI",
+    "Ann Arbor, MI",
+    "Grand Rapids, MI",
+    "Lansing, MI",
+
+    # ── Minnesota ────────────────────────────────────────────────────────────
+    "Minneapolis, MN",
+    "St. Paul, MN",
+    "Rochester, MN",
+
+    # ── Mississippi ──────────────────────────────────────────────────────────
+    "Jackson, MS",
+
+    # ── Missouri ─────────────────────────────────────────────────────────────
+    "Kansas City, MO",
+    "St. Louis, MO",
+    "Columbia, MO",
+
+    # ── Montana ──────────────────────────────────────────────────────────────
+    "Billings, MT",
+    "Missoula, MT",
+
+    # ── Nebraska ─────────────────────────────────────────────────────────────
+    "Omaha, NE",
+    "Lincoln, NE",
+
+    # ── Nevada ───────────────────────────────────────────────────────────────
+    "Las Vegas, NV",
+    "Reno, NV",
+    "Henderson, NV",
+
+    # ── New Hampshire ────────────────────────────────────────────────────────
+    "Manchester, NH",
+    "Nashua, NH",
+
+    # ── New Jersey ───────────────────────────────────────────────────────────
+    "Newark, NJ",
+    "Jersey City, NJ",
+    "Princeton, NJ",
+    "Hoboken, NJ",
+    "Trenton, NJ",
+
+    # ── New Mexico ───────────────────────────────────────────────────────────
+    "Albuquerque, NM",
+    "Santa Fe, NM",
+
+    # ── New York ─────────────────────────────────────────────────────────────
+    "New York, NY",
+    "Brooklyn, NY",
+    "Buffalo, NY",
+    "Rochester, NY",
+    "Albany, NY",
+    "Syracuse, NY",
+    "Ithaca, NY",
+
+    # ── North Carolina ───────────────────────────────────────────────────────
     "Charlotte, NC",
     "Raleigh, NC",
-    "Nashville, TN",
-    "Richmond, VA",
-    "Jacksonville, FL",
+    "Durham, NC",
+    "Chapel Hill, NC",
+    "Greensboro, NC",
+    "Winston-Salem, NC",
 
-    # ── Midwest ─────────────────────────────────────────────────────────────
-    "Chicago, IL",
-    "Minneapolis, MN",
+    # ── North Dakota ─────────────────────────────────────────────────────────
+    "Fargo, ND",
+    "Bismarck, ND",
+
+    # ── Ohio ─────────────────────────────────────────────────────────────────
     "Columbus, OH",
     "Cleveland, OH",
     "Cincinnati, OH",
-    "Detroit, MI",
-    "Indianapolis, IN",
-    "Milwaukee, WI",
-    "Kansas City, MO",
-    "St. Louis, MO",
+    "Dayton, OH",
+    "Toledo, OH",
 
-    # ── Southwest ───────────────────────────────────────────────────────────
+    # ── Oklahoma ─────────────────────────────────────────────────────────────
+    "Oklahoma City, OK",
+    "Tulsa, OK",
+
+    # ── Oregon ───────────────────────────────────────────────────────────────
+    "Portland, OR",
+    "Eugene, OR",
+    "Bend, OR",
+    "Hillsboro, OR",
+
+    # ── Pennsylvania ─────────────────────────────────────────────────────────
+    "Philadelphia, PA",
+    "Pittsburgh, PA",
+    "Harrisburg, PA",
+    "Allentown, PA",
+    "State College, PA",
+
+    # ── Rhode Island ─────────────────────────────────────────────────────────
+    "Providence, RI",
+
+    # ── South Carolina ───────────────────────────────────────────────────────
+    "Columbia, SC",
+    "Charleston, SC",
+    "Greenville, SC",
+
+    # ── South Dakota ─────────────────────────────────────────────────────────
+    "Sioux Falls, SD",
+
+    # ── Tennessee ────────────────────────────────────────────────────────────
+    "Nashville, TN",
+    "Memphis, TN",
+    "Knoxville, TN",
+    "Chattanooga, TN",
+
+    # ── Texas ────────────────────────────────────────────────────────────────
     "Austin, TX",
     "Dallas, TX",
+    "Fort Worth, TX",
     "Houston, TX",
     "San Antonio, TX",
-    "Denver, CO",
-    "Phoenix, AZ",
-    "Tucson, AZ",
-    "Albuquerque, NM",
-    "Las Vegas, NV",
+    "El Paso, TX",
+    "Plano, TX",
+    "Irving, TX",
+    "Round Rock, TX",
+    "College Station, TX",
 
-    # ── West ────────────────────────────────────────────────────────────────
-    "San Francisco, CA",
-    "San Jose, CA",
-    "Los Angeles, CA",
-    "San Diego, CA",
-    "Sacramento, CA",
-    "Seattle, WA",
-    "Portland, OR",
+    # ── Utah ─────────────────────────────────────────────────────────────────
     "Salt Lake City, UT",
-    "Boise, ID",
-    "Reno, NV",
-
-    # ── Mountain / Plains ───────────────────────────────────────────────────
-    "Boulder, CO",
-    "Scottsdale, AZ",
     "Provo, UT",
-    "Omaha, NE",
-    "Tulsa, OK",
-    "Oklahoma City, OK",
+    "Ogden, UT",
+    "St. George, UT",
+
+    # ── Vermont ──────────────────────────────────────────────────────────────
+    "Burlington, VT",
+
+    # ── Virginia ─────────────────────────────────────────────────────────────
+    "Arlington, VA",
+    "Richmond, VA",
+    "McLean, VA",
+    "Reston, VA",
+    "Charlottesville, VA",
+    "Norfolk, VA",
+
+    # ── Washington ───────────────────────────────────────────────────────────
+    "Seattle, WA",
+    "Bellevue, WA",
+    "Redmond, WA",
+    "Kirkland, WA",
+    "Tacoma, WA",
+    "Spokane, WA",
+
+    # ── Washington DC ────────────────────────────────────────────────────────
+    "Washington, DC",
+
+    # ── West Virginia ────────────────────────────────────────────────────────
+    "Charleston, WV",
+    "Morgantown, WV",
+
+    # ── Wisconsin ────────────────────────────────────────────────────────────
+    "Milwaukee, WI",
+    "Madison, WI",
+
+    # ── Wyoming ──────────────────────────────────────────────────────────────
+    "Cheyenne, WY",
 ]
 
-# Full matrix: 12 roles × 47 locations = 564 search combinations.
-# The rotate_searches() helper spreads these across cycles so we never
-# hammer the API with all 564 at once.
+# Full matrix: 12 roles × ~200 locations = ~2400 search combinations.
+# rotate_searches() spreads these across cycles (60 per cycle).
+# Full sweep completes every ~40 cycles ≈ 20 hours at 30-min intervals.
 DEFAULT_SEARCHES: list[dict] = [
     {"search": role, "location": loc}
     for role in _ROLE_SEARCHES
@@ -135,8 +369,8 @@ def rotate_searches(
     """
     Return the slice of searches for this cycle number.
 
-    With 564 total searches and batch_size=48, every search runs once
-    across ~12 cycles (≈6 hours at 30-min intervals).
+    With ~2400 total searches and batch_size=48, every search runs once
+    across ~50 cycles (≈25 hours at 30-min intervals — roughly once per day).
     'remote' searches always run — they're prepended to every batch.
 
     Args:

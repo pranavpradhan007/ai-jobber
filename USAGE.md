@@ -123,17 +123,19 @@ job-agent discover --role "Robotics ML Engineer"
 job-agent discover --role "Quantitative Researcher ML" --location "Chicago, IL"
 ```
 
-**Coverage: 12 roles × 47 locations = 564 searches across the whole US.**
-Rotates in batches of ~60 per cycle — full pool covered every ~5 hours at 30-min intervals.
+**Coverage: 12 roles × ~200 cities = ~2400 searches — every state, every major market.**
+Rotates in batches of 60 per cycle. Full sweep completes every ~25 hours (once per day).
+Remote searches always run every cycle.
 
-**47 US locations covered:**
-- **Remote** (always in every cycle)
-- **Northeast:** New York, Boston, Philadelphia, Washington DC, Baltimore, Pittsburgh, Hartford
-- **Southeast:** Atlanta, Miami, Tampa, Orlando, Charlotte, Raleigh, Nashville, Richmond, Jacksonville
-- **Midwest:** Chicago, Minneapolis, Columbus, Cleveland, Cincinnati, Detroit, Indianapolis, Milwaukee, Kansas City, St. Louis
-- **Southwest:** Austin, Dallas, Houston, San Antonio, Denver, Phoenix, Tucson, Albuquerque, Las Vegas
-- **West:** San Francisco, San Jose, Los Angeles, San Diego, Sacramento, Seattle, Portland, Salt Lake City, Boise, Reno
-- **Mountain/Plains:** Boulder, Scottsdale, Provo, Omaha, Tulsa, Oklahoma City
+**Every US state covered** (all 50 + DC), with extra cities for major tech states:
+- **Remote** (every cycle)
+- **California (23):** SF, San Jose, Oakland, Palo Alto, Mountain View, Sunnyvale, Santa Clara, Menlo Park, Redwood City, Fremont, LA, Santa Monica, Culver City, Irvine, San Diego, Sacramento, + more
+- **Texas (10):** Austin, Dallas, Fort Worth, Houston, San Antonio, Plano, Irving, Round Rock, + more
+- **New York (7):** NYC, Brooklyn, Buffalo, Rochester, Albany, Syracuse, Ithaca
+- **Washington (6):** Seattle, Bellevue, Redmond, Kirkland, Tacoma, Spokane
+- **Florida (10):** Miami, Tampa, Orlando, Jacksonville, Fort Lauderdale, Boca Raton, + more
+- **Massachusetts (7):** Boston, Cambridge, Somerville, Waltham, Burlington, Worcester, Springfield
+- **All other states:** at least 1–3 cities each, covering every market
 
 **12 roles searched:**
 Machine Learning Engineer · AI Research Engineer · Applied Scientist ML ·

@@ -184,7 +184,7 @@ def _queue_discovery(conn: sqlite3.Connection, cycle: int = 1) -> int:
     Uses rotate_searches() so the full US coverage (564 searches) is
     spread across cycles rather than run all at once.
     Each cycle gets 12 remote + 48 city searches = 60 searches.
-    Full rotation completes every ~10 cycles (~5 hours at 30-min intervals).
+    Full rotation (~2400 searches) completes every ~50 cycles (~25 hrs at 30-min intervals).
     """
     import json
     from pathlib import Path
