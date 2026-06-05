@@ -92,6 +92,17 @@ _INPUT_TAG_RE = re.compile(
     re.I | re.S,
 )
 
+# Strip script/style blocks before scanning for label patterns so that
+# JavaScript variable names (e.g. "honeypot_job_card_tst") don't trigger false positives.
+_SCRIPT_TAG_RE = re.compile(r"<script\b[^>]*>.*?</script>", re.I | re.S)
+_STYLE_TAG_RE  = re.compile(r"<style\b[^>]*>.*?</style>",  re.I | re.S)
+
+
+def _strip_scripts(html: str) -> str:
+    html = _SCRIPT_TAG_RE.sub("", html)
+    html = _STYLE_TAG_RE.sub("", html)
+    return html
+
 # Regex to extract a named attribute from a tag fragment
 def _attr(fragment: str, name: str) -> str:
     m = re.search(
@@ -192,9 +203,11 @@ def detect_traps_in_html(html: str) -> TrapResult:
                 evidence=evidence,
             )
 
-    # 4. Label text with honeypot patterns (search in full HTML)
+    # 4. Label text with honeypot patterns (search HTML with scripts stripped
+    #    to avoid false positives on JS variable names like "honeypot_job_card_tst")
+    html_no_scripts = _strip_scripts(html)
     for pat in _HONEYPOT_LABEL_PATTERNS:
-        m = pat.search(html)
+        m = pat.search(html_no_scripts)
         if m:
             evidence = html[max(0, m.start() - 20): m.end() + 40].strip()
             logger.warning(

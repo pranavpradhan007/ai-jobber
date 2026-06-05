@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+import urllib.parse
 from dataclasses import dataclass
 from typing import Optional
 
@@ -191,22 +192,46 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     os.makedirs(folder_path, exist_ok=True)
 
     # ── Step 1: Navigate to listing URL ───────────────────────────────────────
-    logger.info("app_id=%d navigating to %s", app_id, url)
-    page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-    time.sleep(1.5)
+    # For Indeed tracking URLs, extract the job key and use the direct viewjob URL
+    nav_url = url
+    if "indeed.com/rc/clk" in url or "indeed.com/pagead" in url:
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        jk = params.get("jk", [""])[0]
+        if jk:
+            nav_url = f"https://www.indeed.com/viewjob?jk={jk}"
+            logger.info("app_id=%d Indeed: using viewjob URL jk=%s", app_id, jk)
+
+    logger.info("app_id=%d navigating to %s", app_id, nav_url)
+    page.goto(nav_url, wait_until="domcontentloaded", timeout=30_000)
+    time.sleep(2.0)
 
     # ── Step 2: Find Apply URL / button ───────────────────────────────────────
     current_url = page.url
 
-    # For RemoteOK: extract the direct ATS href instead of clicking (JS-rendered button)
+    # For RemoteOK: wait for JS rendering, then extract the direct ATS href
     if "remoteok.com" in current_url:
+        # Wait for page to fully render (RemoteOK is JS-heavy)
+        try:
+            page.wait_for_load_state("networkidle", timeout=8_000)
+        except Exception:
+            pass
+        time.sleep(1.0)
         apply_href = _extract_apply_href(page)
         if apply_href:
             logger.info("app_id=%d RemoteOK: navigating to apply href %s", app_id, apply_href)
-            page.goto(apply_href, wait_until="domcontentloaded", timeout=30_000)
-            time.sleep(2.0)
+            try:
+                page.goto(apply_href, wait_until="domcontentloaded", timeout=30_000)
+                time.sleep(2.0)
+            except Exception as e:
+                logger.warning("app_id=%d RemoteOK navigate failed: %s", app_id, e)
+                raise RuntimeError(f"RemoteOK apply URL navigation failed: {e}")
         else:
             logger.warning("app_id=%d RemoteOK: could not extract apply href", app_id)
+            raise RuntimeError(
+                f"Could not find apply link on RemoteOK page {current_url}. "
+                "The job may have been removed or requires manual application."
+            )
     else:
         apply_clicked = False
         for sel in _APPLY_SELECTORS:
@@ -397,20 +422,43 @@ def _extract_apply_href(page) -> str:
     Returns empty string if nothing useful found.
     """
     _APPLY_LINK_SELECTORS = [
-        "a.apply[href]",
-        "a.button.apply[href]",
-        "a:text-is('Apply Now')[href]",
-        "a:text-is('Apply')[href]",
-        ".apply-link[href]",
-        "[data-testid='apply-link'][href]",
+        # RemoteOK specific
+        "a.apply",
+        "a.button.apply",
+        "td.apply a",
+        ".job .apply a",
+        # Generic
+        "a:text-is('Apply Now')",
+        "a:text-is('Apply')",
+        ".apply-link",
+        "[data-testid='apply-link']",
+        "a[href*='greenhouse.io/apply']",
+        "a[href*='lever.co/apply']",
+        "a[href*='ashbyhq.com']",
+        "a[href*='workday.com']",
     ]
     for sel in _APPLY_LINK_SELECTORS:
         try:
-            href = page.locator(sel).first.get_attribute("href")
-            if href and href.startswith("http"):
+            loc = page.locator(sel).first
+            if loc.count() == 0:
+                continue
+            href = loc.get_attribute("href")
+            if href and href.startswith("http") and "remoteok.com" not in href:
                 return href
         except Exception:
             continue
+
+    # Last resort: find any <a> whose text contains "Apply" with an external href
+    try:
+        links = page.locator("a").all()
+        for link in links[:30]:   # cap to avoid scanning thousands
+            text = (link.text_content() or "").strip().lower()
+            href = link.get_attribute("href") or ""
+            if "apply" in text and href.startswith("http") and "remoteok.com" not in href:
+                return href
+    except Exception:
+        pass
+
     return ""
 
 

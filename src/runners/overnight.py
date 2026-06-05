@@ -216,6 +216,10 @@ def _submit_approved(
             transition(conn, app_id, "WAITING_FOR_CAPTCHA",
                        reason="CAPTCHA on portal form")
             stats.failed += 1
+        elif result.mfa_detected:
+            transition(conn, app_id, "WAITING_FOR_MFA",
+                       reason="MFA/login required on portal form")
+            stats.failed += 1
         elif result.ai_trap_detected:
             transition(conn, app_id, "AI_TRAP_DETECTED",
                        reason="AI trap found on portal form")
