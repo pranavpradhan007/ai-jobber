@@ -97,10 +97,12 @@ def run_overnight(
                        details={"error": str(exc)})
 
     # Phase 2: Submit approved gated apps (user replied APPROVE)
+    # RemoteOK is excluded — bot detection too strong, no reliable apply URL
     cur = conn.execute(
         """
-        SELECT id FROM applications
-        WHERE state='WAITING_FOR_USER_APPROVAL' AND approved_by_user=1
+        SELECT a.id FROM applications a JOIN jobs j ON a.job_id=j.id
+        WHERE a.state='WAITING_FOR_USER_APPROVAL' AND a.approved_by_user=1
+        AND LOWER(j.platform) NOT IN ('remoteok')
         LIMIT ?
         """,
         (max_jobs,),

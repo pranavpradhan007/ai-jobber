@@ -1,16 +1,15 @@
 """
-Portal auto-submit module.
+Portal auto-submit module — uses the user's real Chrome profile.
 
-Full flow for an approved gated application:
-  1. Load candidate answers from env + DB
-  2. Navigate to the job listing URL
-  3. Find and click the "Apply" / "Apply Now" button
-  4. Wait for the application form to load
-  5. Detect portal type
-  6. Check for AI traps (hard abort)
-  7. Fill all fields including resume upload
-  8. Click the submit button
-  9. Wait for confirmation, capture screenshot as receipt
+Connects to Chrome via launch_persistent_context so that:
+  - The user's login sessions / cookies are active (avoids auth walls)
+  - The Claude Chrome extension is present (real browser identity)
+  - Bot detection is far less effective (not a Playwright-controlled Chromium)
+
+Human-like interactions:
+  - Random delays between actions (1.0–2.5 s)
+  - Char-by-char typing with variable speed
+  - Mouse hover before click
 
 CAPTCHA/MFA on any page → raises CaptchaDetected / MFADetected.
 AI trap → raises AITrapDetected.
@@ -18,6 +17,7 @@ AI trap → raises AITrapDetected.
 from __future__ import annotations
 import logging
 import os
+import random
 import time
 import urllib.parse
 from dataclasses import dataclass
@@ -30,25 +30,24 @@ from src.browser.field_mapper import build_fill_instructions, FILL_DELAY_SECONDS
 
 logger = logging.getLogger(__name__)
 
-# How long to wait for page/redirect after clicking Apply (seconds)
-_APPLY_WAIT  = 4.0
-_SUBMIT_WAIT = 6.0
+_APPLY_WAIT  = 5.0
+_SUBMIT_WAIT = 8.0
+
+# Default Chrome user-data-dir on Windows
+_DEFAULT_CHROME_DIR = os.path.join(
+    os.environ.get("LOCALAPPDATA", r"C:\Users\hp\AppData\Local"),
+    "Google", "Chrome", "User Data",
+)
 
 # Selectors for "Apply" / "Apply Now" buttons on listing pages
 _APPLY_SELECTORS = [
-    # Generic
-    "a:text-is('Apply Now')",
-    "a:text-is('Apply')",
-    "button:text-is('Apply Now')",
-    "button:text-is('Apply')",
-    # Indeed
-    ".ia-IndeedApplyButton",
+    ".ia-IndeedApplyButton",         # Indeed Easy Apply
     "[data-testid='applyButton']",
     "#indeedApplyButton",
-    # RemoteOK
-    "a[href*='apply']",
-    "a.apply",
-    # Greenhouse / Lever
+    "button:text-is('Apply Now')",
+    "button:text-is('Apply')",
+    "a:text-is('Apply Now')",
+    "a:text-is('Apply')",
     ".btn-apply",
     "[data-mapped='true']",
 ]
@@ -100,7 +99,6 @@ def build_candidate_answers(
     zipcode   = os.environ.get("ADDRESS_ZIP", "").strip()
     country   = os.environ.get("ADDRESS_COUNTRY", "United States").strip()
 
-    # Use GitHub URL as the website/portfolio field; fall back to LinkedIn
     website = github or linkedin
 
     cover = (
@@ -138,134 +136,117 @@ def auto_submit_portal(
     dry_run: bool = False,
 ) -> AutoSubmitResult:
     """
-    Navigate to `url`, fill the application form, and click Submit.
-    Returns AutoSubmitResult. Raises CaptchaDetected / MFADetected on detection.
+    Open the job URL in the user's real Chrome profile, fill the application
+    form with human-like timing, and click Submit.
     """
     if dry_run:
         logger.info("DRY_RUN auto_submit app_id=%d url=%s", app_id, url)
         return AutoSubmitResult(
             success=True, app_id=app_id,
             receipt=f"DRY_RUN_{app_id}",
-            screenshot_path=None,
         )
 
     try:
-        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout  # noqa: PLC0415
+        from playwright.sync_api import sync_playwright  # noqa: PLC0415
     except ImportError:
         return AutoSubmitResult(
             success=False, app_id=app_id,
-            error="playwright not installed — run: pip install playwright && playwright install chromium",
+            error="playwright not installed — run: pip install playwright && playwright install chrome",
         )
+
+    chrome_dir  = os.environ.get("CHROME_USER_DATA_DIR", _DEFAULT_CHROME_DIR)
+    chrome_profile = os.environ.get("CHROME_PROFILE", "Default")
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False)   # visible so user can see what's happening
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            accept_downloads=True,
-        )
-        page = context.new_page()
-
         try:
-            return _run_submit_flow(
-                page, app_id, answers, url, folder_path, fill_delay,
+            context = pw.chromium.launch_persistent_context(
+                user_data_dir=chrome_dir,
+                channel="chrome",          # real Chrome binary, not bundled Chromium
+                headless=False,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    f"--profile-directory={chrome_profile}",
+                ],
+                viewport={"width": 1280, "height": 900},
+                accept_downloads=True,
+                slow_mo=80,                # base human-like pacing
             )
+        except Exception as exc:
+            # Chrome profile in use — fall back to isolated Chromium as last resort
+            logger.warning(
+                "Could not open real Chrome profile (%s). Chrome may be open. "
+                "Falling back to isolated Chromium. Error: %s", chrome_dir, exc
+            )
+            browser = pw.chromium.launch(headless=False)
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 900},
+                accept_downloads=True,
+            )
+
+        page = context.new_page()
+        try:
+            return _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay)
         except CaptchaDetected:
             logger.warning("CAPTCHA detected for app_id=%d", app_id)
             return AutoSubmitResult(success=False, app_id=app_id, captcha_detected=True)
         except MFADetected:
-            logger.warning("MFA detected for app_id=%d", app_id)
+            logger.warning("MFA/login required for app_id=%d", app_id)
             return AutoSubmitResult(success=False, app_id=app_id, mfa_detected=True)
         except AITrapDetected as e:
-            logger.warning("AI trap detected for app_id=%d: %s", app_id, e)
+            logger.warning("AI trap for app_id=%d: %s", app_id, e)
             return AutoSubmitResult(success=False, app_id=app_id, ai_trap_detected=True)
         except Exception as exc:
             logger.error("auto_submit failed app_id=%d: %s", app_id, exc)
             return AutoSubmitResult(success=False, app_id=app_id, error=str(exc))
         finally:
-            context.close()
-            browser.close()
-
-
-def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
-    from playwright.sync_api import TimeoutError as PWTimeout  # noqa: PLC0415
-
-    os.makedirs(folder_path, exist_ok=True)
-
-    # ── Step 1: Navigate to listing URL ───────────────────────────────────────
-    # For Indeed tracking URLs, extract the job key and use the direct viewjob URL
-    nav_url = url
-    if "indeed.com/rc/clk" in url or "indeed.com/pagead" in url:
-        parsed = urllib.parse.urlparse(url)
-        params = urllib.parse.parse_qs(parsed.query)
-        jk = params.get("jk", [""])[0]
-        if jk:
-            nav_url = f"https://www.indeed.com/viewjob?jk={jk}"
-            logger.info("app_id=%d Indeed: using viewjob URL jk=%s", app_id, jk)
-
-    logger.info("app_id=%d navigating to %s", app_id, nav_url)
-    page.goto(nav_url, wait_until="domcontentloaded", timeout=30_000)
-    time.sleep(2.0)
-
-    # ── Step 2: Find Apply URL / button ───────────────────────────────────────
-    current_url = page.url
-
-    # For RemoteOK: wait for JS rendering, then extract the direct ATS href
-    if "remoteok.com" in current_url:
-        # Wait for page to fully render (RemoteOK is JS-heavy)
-        try:
-            page.wait_for_load_state("networkidle", timeout=8_000)
-        except Exception:
-            pass
-        time.sleep(1.0)
-        apply_href = _extract_apply_href(page)
-        if apply_href:
-            logger.info("app_id=%d RemoteOK: navigating to apply href %s", app_id, apply_href)
             try:
-                page.goto(apply_href, wait_until="domcontentloaded", timeout=30_000)
-                time.sleep(2.0)
-            except Exception as e:
-                logger.warning("app_id=%d RemoteOK navigate failed: %s", app_id, e)
-                raise RuntimeError(f"RemoteOK apply URL navigation failed: {e}")
-        else:
-            logger.warning("app_id=%d RemoteOK: could not extract apply href", app_id)
-            raise RuntimeError(
-                f"Could not find apply link on RemoteOK page {current_url}. "
-                "The job may have been removed or requires manual application."
-            )
-    else:
-        apply_clicked = False
-        for sel in _APPLY_SELECTORS:
-            try:
-                loc = page.locator(sel).first
-                if loc.count() > 0 and loc.is_visible():
-                    logger.info("app_id=%d clicking apply selector=%r", app_id, sel)
-                    loc.click()
-                    apply_clicked = True
-                    break
-            except Exception:
-                continue
-
-        if apply_clicked:
-            try:
-                page.wait_for_load_state("domcontentloaded", timeout=int(_APPLY_WAIT * 1000))
+                context.close()
             except Exception:
                 pass
-            time.sleep(1.0)
 
-            # If a new page/tab was opened, switch to it
-            pages = page.context.pages
-            if len(pages) > 1:
-                page = pages[-1]
-                page.wait_for_load_state("domcontentloaded", timeout=15_000)
-                time.sleep(1.0)
 
-    # Indeed login detection — requires human sign-in, cannot auto-apply
-    if "secure.indeed.com/auth" in page.url or "indeed.com/account" in page.url:
-        raise MFADetected(
-            f"Indeed requires login before applying (redirected to {page.url})"
-        )
+# ---------------------------------------------------------------------------
+# Main submission flow
+# ---------------------------------------------------------------------------
 
-    # ── Step 3: AI trap check ─────────────────────────────────────────────────
+def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
+    os.makedirs(folder_path, exist_ok=True)
+
+    # ── Step 1: Navigate to listing URL ──────────────────────────────────────
+    nav_url = _resolve_indeed_url(url)
+    logger.info("app_id=%d navigating to %s", app_id, nav_url)
+    page.goto(nav_url, wait_until="domcontentloaded", timeout=30_000)
+    _human_pause(2.0, 3.5)
+
+    # ── Step 2: Detect auth walls early ──────────────────────────────────────
+    _check_auth_wall(page)
+
+    # ── Step 3: Find and click Apply button ──────────────────────────────────
+    _click_apply(page, app_id)
+
+    # Wait for redirect / modal
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=int(_APPLY_WAIT * 1000))
+    except Exception:
+        pass
+    _human_pause(1.5, 2.5)
+
+    # Switch to new tab if opened
+    pages = page.context.pages
+    if len(pages) > 1:
+        page = pages[-1]
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=15_000)
+        except Exception:
+            pass
+        _human_pause(1.0, 2.0)
+
+    # Re-check auth wall (apply button may redirect to login)
+    _check_auth_wall(page)
+
+    # ── Step 4: AI trap check ─────────────────────────────────────────────────
     html = page.content()
     trap = detect_traps_in_html(html)
     if trap.trap_found:
@@ -273,214 +254,224 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
 
     _check_captcha_mfa(page)
 
-    # ── Step 4: Classify portal and build fill instructions ───────────────────
+    # ── Step 5: Classify portal and fill fields ───────────────────────────────
     portal = classify_portal(html=html, url=page.url)
     logger.info("app_id=%d portal=%s url=%s", app_id, portal, page.url)
 
-    # Screenshot before filling
-    ss_before = os.path.join(folder_path, "submit_before.png")
-    try:
-        page.screenshot(path=ss_before, full_page=False)
-    except Exception:
-        pass
+    _screenshot(page, folder_path, "submit_before.png")
 
     instructions = build_fill_instructions(answers, portal)
+    _fill_all_fields(page, answers, instructions, fill_delay)
 
-    # ── Step 5: Fill each field ───────────────────────────────────────────────
-    errors = []
-    # Best-effort: fill address fields by placeholder/aria-label
-    _fill_if_visible(page, answers.get("address_line1",""), [
+    # ── Step 6: Click Submit ──────────────────────────────────────────────────
+    _click_submit(page, app_id)
+
+    # ── Step 7: Confirm ───────────────────────────────────────────────────────
+    try:
+        page.wait_for_load_state("networkidle", timeout=int(_SUBMIT_WAIT * 1000))
+    except Exception:
+        pass
+    _human_pause(2.0, 3.0)
+
+    _check_captcha_mfa(page)
+
+    ss_after = _screenshot(page, folder_path, "submit_confirmation.png")
+
+    receipt = f"PORTAL:{portal}:{page.url}"
+    logger.info("app_id=%d submitted portal=%s url=%s", app_id, portal, page.url)
+
+    return AutoSubmitResult(
+        success=True, app_id=app_id,
+        receipt=receipt,
+        screenshot_path=ss_after,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_indeed_url(url: str) -> str:
+    """Convert Indeed tracking/redirect URLs to direct viewjob URLs."""
+    if "indeed.com/rc/clk" in url or "indeed.com/pagead" in url or "to.indeed.com/" in url:
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        jk = params.get("jk", [""])[0]
+        if jk:
+            return f"https://www.indeed.com/viewjob?jk={jk}"
+        # to.indeed.com short URLs — return as-is (will follow redirect in browser)
+    return url
+
+
+def _check_auth_wall(page) -> None:
+    """Raise MFADetected if we landed on a login/auth page."""
+    u = page.url.lower()
+    auth_patterns = [
+        "secure.indeed.com/auth",
+        "indeed.com/account/login",
+        "accounts.google.com/signin",
+        "login.microsoftonline.com",
+        "auth.workday.com",
+    ]
+    if any(p in u for p in auth_patterns):
+        raise MFADetected(f"Login wall detected at {page.url}")
+
+
+def _click_apply(page, app_id: int) -> None:
+    """Find and click the Apply button on a listing page."""
+    for sel in _APPLY_SELECTORS:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() > 0 and loc.is_visible():
+                _human_click(page, loc)
+                logger.info("app_id=%d clicked apply selector=%r", app_id, sel)
+                return
+        except Exception:
+            continue
+    logger.info("app_id=%d no Apply button found — may already be on form page", app_id)
+
+
+def _click_submit(page, app_id: int) -> None:
+    """Find and click the Submit button; raise if none found."""
+    for sel in _SUBMIT_SELECTORS:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() > 0 and loc.is_visible() and loc.is_enabled():
+                _human_click(page, loc)
+                logger.info("app_id=%d clicked submit selector=%r", app_id, sel)
+                return
+        except Exception:
+            continue
+    raise RuntimeError(
+        f"Could not find submit button on {page.url}. "
+        "Form may have multiple pages or require manual completion."
+    )
+
+
+def _fill_all_fields(page, answers: dict, instructions, fill_delay: float) -> None:
+    """Fill all form fields with human-like timing."""
+    # Best-effort address fields
+    _fill_if_visible(page, answers.get("address_line1", ""), [
         "input[placeholder*='street' i]", "input[placeholder*='address' i]",
         "input[aria-label*='address' i]", "input[name*='street' i]",
     ], fill_delay)
-    _fill_if_visible(page, answers.get("address_city",""), [
+    _fill_if_visible(page, answers.get("address_city", ""), [
         "input[placeholder*='city' i]", "input[aria-label*='city' i]",
         "input[name*='city' i]",
     ], fill_delay)
-    _fill_if_visible(page, answers.get("address_state",""), [
+    _fill_if_visible(page, answers.get("address_state", ""), [
         "input[placeholder*='state' i]", "input[aria-label*='state' i]",
         "input[name*='state' i]",
     ], fill_delay)
-    _fill_if_visible(page, answers.get("address_zip",""), [
+    _fill_if_visible(page, answers.get("address_zip", ""), [
         "input[placeholder*='zip' i]", "input[placeholder*='postal' i]",
         "input[aria-label*='zip' i]", "input[name*='zip' i]",
     ], fill_delay)
 
-    # Best-effort: fill website/GitHub URL in any field labelled Website/Portfolio/GitHub
+    # Best-effort website / GitHub / portfolio
     github_url = answers.get("website_url", "")
     if github_url:
-        for website_sel in [
-            "input[placeholder*='github' i]",
-            "input[placeholder*='website' i]",
-            "input[placeholder*='portfolio' i]",
-            "input[aria-label*='website' i]",
-            "input[aria-label*='github' i]",
-            "input[aria-label*='portfolio' i]",
-            "input[name*='website' i]",
-            "input[name*='github' i]",
+        for sel in [
+            "input[placeholder*='github' i]", "input[placeholder*='website' i]",
+            "input[placeholder*='portfolio' i]", "input[aria-label*='website' i]",
+            "input[aria-label*='github' i]", "input[aria-label*='portfolio' i]",
+            "input[name*='website' i]", "input[name*='github' i]",
             "input[name*='portfolio' i]",
         ]:
             try:
-                loc = page.locator(website_sel).first
+                loc = page.locator(sel).first
                 if loc.count() > 0 and loc.is_visible():
-                    loc.fill(github_url)
-                    time.sleep(fill_delay)
+                    _human_type(loc, github_url)
+                    _human_pause(fill_delay * 0.5, fill_delay)
                     break
             except Exception:
                 continue
 
+    # Portal-specific fields
     for inst in instructions:
         try:
             if inst.field_type == "file":
-                # Resume upload
                 resume_path = inst.value
                 if resume_path and os.path.isfile(resume_path):
                     file_input = page.locator("input[type='file']").first
                     if file_input.count() > 0:
                         file_input.set_input_files(resume_path)
-                        time.sleep(fill_delay)
+                        _human_pause(fill_delay, fill_delay + 1.0)
             elif inst.field_type == "select":
                 el = page.locator(inst.selector).first
                 if el.count() > 0:
                     try:
                         el.select_option(inst.value)
                     except Exception:
-                        # Try partial match
                         el.select_option(label=inst.value)
-                    time.sleep(fill_delay)
+                    _human_pause(fill_delay * 0.5, fill_delay)
             elif inst.field_type in ("text", "textarea"):
                 el = page.locator(inst.selector).first
                 if el.count() > 0:
-                    el.click()
-                    el.fill(inst.value)
-                    time.sleep(fill_delay)
+                    _human_click(page, el)
+                    _human_type(el, inst.value)
+                    _human_pause(fill_delay * 0.5, fill_delay)
             elif inst.field_type == "checkbox" and inst.value.lower() in ("1", "true", "yes"):
                 el = page.locator(inst.selector).first
                 if el.count() > 0 and not el.is_checked():
                     el.check()
-                    time.sleep(fill_delay)
+                    _human_pause(fill_delay * 0.3, fill_delay * 0.6)
         except Exception as exc:
-            msg = f"field {inst.label!r}: {exc}"
-            logger.warning("app_id=%d fill error: %s", app_id, msg)
-            errors.append(msg)
-
-    # ── Step 6: Click Submit ───────────────────────────────────────────────────
-    submitted = False
-    for sel in _SUBMIT_SELECTORS:
-        try:
-            loc = page.locator(sel).first
-            if loc.count() > 0 and loc.is_visible() and loc.is_enabled():
-                logger.info("app_id=%d clicking submit selector=%r", app_id, sel)
-                loc.click()
-                submitted = True
-                break
-        except Exception:
-            continue
-
-    if not submitted:
-        raise RuntimeError(
-            f"Could not find submit button on {page.url}. "
-            "Portal may require manual completion."
-        )
-
-    # ── Step 7: Wait for confirmation ─────────────────────────────────────────
-    try:
-        page.wait_for_load_state("networkidle", timeout=int(_SUBMIT_WAIT * 1000))
-    except Exception:
-        pass
-    time.sleep(2.0)
-
-    # Check for CAPTCHA/MFA that appeared after submit
-    _check_captcha_mfa(page)
-
-    # Screenshot after submit (confirmation page)
-    ss_after = os.path.join(folder_path, "submit_confirmation.png")
-    try:
-        page.screenshot(path=ss_after, full_page=False)
-    except Exception:
-        ss_after = None
-
-    final_url = page.url
-    receipt = f"PORTAL:{portal}:{final_url}"
-    logger.info(
-        "app_id=%d submitted portal=%s final_url=%s fill_errors=%d",
-        app_id, portal, final_url, len(errors),
-    )
-
-    return AutoSubmitResult(
-        success=True,
-        app_id=app_id,
-        receipt=receipt,
-        screenshot_path=ss_after,
-    )
+            logger.warning("fill error field=%r: %s", inst.label, exc)
 
 
-def _extract_apply_href(page) -> str:
-    """
-    For listing pages (RemoteOK, HN, etc.) that render Apply links via JS,
-    extract the href directly instead of clicking.
-    Returns empty string if nothing useful found.
-    """
-    _APPLY_LINK_SELECTORS = [
-        # RemoteOK specific
-        "a.apply",
-        "a.button.apply",
-        "td.apply a",
-        ".job .apply a",
-        # Generic
-        "a:text-is('Apply Now')",
-        "a:text-is('Apply')",
-        ".apply-link",
-        "[data-testid='apply-link']",
-        "a[href*='greenhouse.io/apply']",
-        "a[href*='lever.co/apply']",
-        "a[href*='ashbyhq.com']",
-        "a[href*='workday.com']",
-    ]
-    for sel in _APPLY_LINK_SELECTORS:
-        try:
-            loc = page.locator(sel).first
-            if loc.count() == 0:
-                continue
-            href = loc.get_attribute("href")
-            if href and href.startswith("http") and "remoteok.com" not in href:
-                return href
-        except Exception:
-            continue
-
-    # Last resort: find any <a> whose text contains "Apply" with an external href
-    try:
-        links = page.locator("a").all()
-        for link in links[:30]:   # cap to avoid scanning thousands
-            text = (link.text_content() or "").strip().lower()
-            href = link.get_attribute("href") or ""
-            if "apply" in text and href.startswith("http") and "remoteok.com" not in href:
-                return href
-    except Exception:
-        pass
-
-    return ""
-
-
-def _fill_if_visible(page, value: str, selectors: list[str], delay: float) -> None:
-    """Try each selector in order; fill the first visible match."""
+def _fill_if_visible(page, value: str, selectors: list, delay: float) -> None:
     if not value:
         return
     for sel in selectors:
         try:
             loc = page.locator(sel).first
             if loc.count() > 0 and loc.is_visible():
-                current = loc.input_value() if loc.input_value else ""
-                if not current:   # don't overwrite pre-filled fields
-                    loc.fill(value)
-                    time.sleep(delay)
+                try:
+                    current = loc.input_value()
+                except Exception:
+                    current = ""
+                if not current:
+                    _human_click(page, loc)
+                    _human_type(loc, value)
+                    _human_pause(delay * 0.5, delay)
                 return
         except Exception:
             continue
 
 
+def _human_click(page, locator) -> None:
+    """Hover → short pause → click (simulates human pointer movement)."""
+    try:
+        locator.hover()
+        time.sleep(random.uniform(0.15, 0.45))
+        locator.click()
+    except Exception:
+        locator.click()
+
+
+def _human_type(locator, text: str) -> None:
+    """Type character by character with variable speed."""
+    locator.click()
+    for char in text:
+        locator.type(char)
+        time.sleep(random.uniform(0.04, 0.14))
+
+
+def _human_pause(lo: float, hi: float) -> None:
+    time.sleep(random.uniform(lo, hi))
+
+
+def _screenshot(page, folder: str, name: str) -> Optional[str]:
+    path = os.path.join(folder, name)
+    try:
+        page.screenshot(path=path, full_page=False)
+        return path
+    except Exception:
+        return None
+
+
 def _check_captcha_mfa(page) -> None:
-    """Raise CaptchaDetected or MFADetected if detected on the current page."""
     for cid in StaticFillEngine.CAPTCHA_IDS:
         try:
             if page.locator(f"#{cid}").count() > 0:
