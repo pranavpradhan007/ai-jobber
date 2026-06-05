@@ -47,23 +47,117 @@ _ROLE_SEARCHES = [
     "Robotics ML Engineer simulation",
 ]
 
+# Every significant US metro area — not just 7 cities.
+# "remote" first so it always runs; the rest cover the full country.
 _US_LOCATIONS = [
+    # ── Remote (catches nationwide remote-ok postings) ──────────────────────
     "remote",
+
+    # ── Northeast ───────────────────────────────────────────────────────────
     "New York, NY",
-    "San Francisco, CA",
-    "Seattle, WA",
     "Boston, MA",
-    "Austin, TX",
+    "Philadelphia, PA",
+    "Washington, DC",
+    "Baltimore, MD",
+    "Pittsburgh, PA",
+    "Hartford, CT",
+
+    # ── Southeast ───────────────────────────────────────────────────────────
+    "Atlanta, GA",
+    "Miami, FL",
+    "Tampa, FL",
+    "Orlando, FL",
+    "Charlotte, NC",
+    "Raleigh, NC",
+    "Nashville, TN",
+    "Richmond, VA",
+    "Jacksonville, FL",
+
+    # ── Midwest ─────────────────────────────────────────────────────────────
     "Chicago, IL",
+    "Minneapolis, MN",
+    "Columbus, OH",
+    "Cleveland, OH",
+    "Cincinnati, OH",
+    "Detroit, MI",
+    "Indianapolis, IN",
+    "Milwaukee, WI",
+    "Kansas City, MO",
+    "St. Louis, MO",
+
+    # ── Southwest ───────────────────────────────────────────────────────────
+    "Austin, TX",
+    "Dallas, TX",
+    "Houston, TX",
+    "San Antonio, TX",
+    "Denver, CO",
+    "Phoenix, AZ",
+    "Tucson, AZ",
+    "Albuquerque, NM",
+    "Las Vegas, NV",
+
+    # ── West ────────────────────────────────────────────────────────────────
+    "San Francisco, CA",
+    "San Jose, CA",
+    "Los Angeles, CA",
+    "San Diego, CA",
+    "Sacramento, CA",
+    "Seattle, WA",
+    "Portland, OR",
+    "Salt Lake City, UT",
+    "Boise, ID",
+    "Reno, NV",
+
+    # ── Mountain / Plains ───────────────────────────────────────────────────
+    "Boulder, CO",
+    "Scottsdale, AZ",
+    "Provo, UT",
+    "Omaha, NE",
+    "Tulsa, OK",
+    "Oklahoma City, OK",
 ]
 
-# Build the full matrix: every role x every location
-# Deduplicated at import time so duplicates from different searches don't matter.
+# Full matrix: 12 roles × 47 locations = 564 search combinations.
+# The rotate_searches() helper spreads these across cycles so we never
+# hammer the API with all 564 at once.
 DEFAULT_SEARCHES: list[dict] = [
     {"search": role, "location": loc}
     for role in _ROLE_SEARCHES
     for loc in _US_LOCATIONS
 ]
+
+
+def rotate_searches(
+    searches: list[dict],
+    cycle: int,
+    batch_size: int = 48,
+) -> list[dict]:
+    """
+    Return the slice of searches for this cycle number.
+
+    With 564 total searches and batch_size=48, every search runs once
+    across ~12 cycles (≈6 hours at 30-min intervals).
+    'remote' searches always run — they're prepended to every batch.
+
+    Args:
+        searches:   full DEFAULT_SEARCHES list.
+        cycle:      current cycle number (0-based or 1-based, doesn't matter).
+        batch_size: how many searches to run per cycle.
+    """
+    remote = [s for s in searches if s["location"] == "remote"]
+    non_remote = [s for s in searches if s["location"] != "remote"]
+
+    # Rotate through non-remote searches
+    start = ((cycle - 1) * batch_size) % max(len(non_remote), 1)
+    end   = start + batch_size
+    if end <= len(non_remote):
+        batch = non_remote[start:end]
+    else:
+        # Wrap around
+        batch = non_remote[start:] + non_remote[: end - len(non_remote)]
+
+    # Always include remote
+    return remote + batch
 
 
 def discover_searches_for_profile(

@@ -491,11 +491,17 @@ def discover_cmd(ctx, role, location, remote_only, limit):
     req_path = actions_dir / "discover_jobs_request.json"
     req_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
+    from src.discovery.indeed import DEFAULT_SEARCHES, rotate_searches
+    total = len(DEFAULT_SEARCHES)
     locations_used = sorted({s["location"] for s in searches})
-    click.echo(f"Queued {len(searches)} searches across {len(locations_used)} location(s):")
+    click.echo(
+        f"Queued {len(searches)} searches this cycle "
+        f"({total} total in pool across {len({s['location'] for s in DEFAULT_SEARCHES})} US locations)."
+    )
+    click.echo()
     for loc in locations_used:
         n = sum(1 for s in searches if s["location"] == loc)
-        click.echo(f"  {loc:<25} {n} role searches")
+        click.echo(f"  {loc:<28} {n:>2} role searches")
     click.echo()
-    click.echo("Claude Code will execute via MCP Indeed — then run:")
-    click.echo("  job-agent run-loop --once   to process the results.")
+    click.echo("Full US rotation: every search runs once every ~10 cycles (~5 hrs at 30-min interval).")
+    click.echo("Claude Code executes via MCP Indeed — then: job-agent run-loop --once")

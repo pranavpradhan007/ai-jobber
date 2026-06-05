@@ -123,10 +123,19 @@ job-agent discover --role "Robotics ML Engineer"
 job-agent discover --role "Quantitative Researcher ML" --location "Chicago, IL"
 ```
 
-**Locations covered by default:**
-remote · New York, NY · San Francisco, CA · Seattle, WA · Boston, MA · Austin, TX · Chicago, IL
+**Coverage: 12 roles × 47 locations = 564 searches across the whole US.**
+Rotates in batches of ~60 per cycle — full pool covered every ~5 hours at 30-min intervals.
 
-**Roles searched:**
+**47 US locations covered:**
+- **Remote** (always in every cycle)
+- **Northeast:** New York, Boston, Philadelphia, Washington DC, Baltimore, Pittsburgh, Hartford
+- **Southeast:** Atlanta, Miami, Tampa, Orlando, Charlotte, Raleigh, Nashville, Richmond, Jacksonville
+- **Midwest:** Chicago, Minneapolis, Columbus, Cleveland, Cincinnati, Detroit, Indianapolis, Milwaukee, Kansas City, St. Louis
+- **Southwest:** Austin, Dallas, Houston, San Antonio, Denver, Phoenix, Tucson, Albuquerque, Las Vegas
+- **West:** San Francisco, San Jose, Los Angeles, San Diego, Sacramento, Seattle, Portland, Salt Lake City, Boise, Reno
+- **Mountain/Plains:** Boulder, Scottsdale, Provo, Omaha, Tulsa, Oklahoma City
+
+**12 roles searched:**
 Machine Learning Engineer · AI Research Engineer · Applied Scientist ML ·
 Reinforcement Learning Engineer · LLM Engineer · Research Engineer ·
 Data Scientist · MLOps Engineer · AI Engineer NLP · Scientific ML Engineer ·

@@ -105,8 +105,8 @@ def run_continuous(
         # ── 1. Queue Indeed discovery searches ──────────────────────────────
         if not skip_discover:
             try:
-                n = _queue_discovery(conn)
-                logger.info("DISCOVER: queued %d search requests for Claude Code", n)
+                n = _queue_discovery(conn, cycle=cycle)
+                logger.info("DISCOVER: queued %d searches (cycle %d) for Claude Code", n, cycle)
             except Exception as exc:
                 msg = f"discover error: {exc}"
                 logger.error(msg)
@@ -177,26 +177,36 @@ def run_continuous(
     logger.info("Continuous runner stopped after %d cycle(s).", cycle)
 
 
-def _queue_discovery(conn: sqlite3.Connection) -> int:
-    """Write a pending discovery manifest for Claude Code to execute."""
+def _queue_discovery(conn: sqlite3.Connection, cycle: int = 1) -> int:
+    """
+    Write a pending discovery manifest for Claude Code to execute.
+
+    Uses rotate_searches() so the full US coverage (564 searches) is
+    spread across cycles rather than run all at once.
+    Each cycle gets 12 remote + 48 city searches = 60 searches.
+    Full rotation completes every ~10 cycles (~5 hours at 30-min intervals).
+    """
     import json
     from pathlib import Path
-    from src.discovery.indeed import discover_searches_for_profile
+    from src.discovery.indeed import discover_searches_for_profile, rotate_searches, DEFAULT_SEARCHES
 
-    searches = discover_searches_for_profile()
+    all_searches = discover_searches_for_profile()
+    batch = rotate_searches(all_searches, cycle=cycle, batch_size=48)
+
     actions_dir = Path("gmail_actions") / "pending"
     actions_dir.mkdir(parents=True, exist_ok=True)
 
-    # One manifest per batch — overwrite if already pending
     req_path = actions_dir / "discover_jobs_request.json"
     manifest = {
-        "action":      "discover_jobs",
-        "searches":    searches,
-        "limit":       10,
-        "created_at":  datetime.now(timezone.utc).isoformat() + "Z",
-        "status":      "pending",
+        "action":     "discover_jobs",
+        "searches":   batch,
+        "cycle":      cycle,
+        "total_pool": len(DEFAULT_SEARCHES),
+        "limit":      10,
+        "created_at": datetime.now(timezone.utc).isoformat() + "Z",
+        "status":     "pending",
         "instruction": (
-            "For each search entry call MCP search_jobs (country_code='US'). "
+            "For each search call MCP search_jobs (country_code='US'). "
             "For each result call get_job_details to get the full description. "
             "Then call: from src.discovery.indeed import import_jobs; "
             "import_jobs(conn, job_dicts) with keys: url, company, title, "
@@ -204,7 +214,7 @@ def _queue_discovery(conn: sqlite3.Connection) -> int:
         ),
     }
     req_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    return len(searches)
+    return len(batch)
 
 
 def _check_approvals(conn: sqlite3.Connection, gmail_client) -> int:
