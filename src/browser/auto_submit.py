@@ -48,12 +48,17 @@ _APPLY_SELECTORS = [
     ".ia-IndeedApplyButton",         # Indeed Easy Apply
     "[data-testid='applyButton']",
     "#indeedApplyButton",
-    "button:text-is('Apply Now')",
-    "button:text-is('Apply')",
-    "a:text-is('Apply Now')",
-    "a:text-is('Apply')",
+    "[class*='IndeedApplyButton']",
+    "[data-tn-element='apply-now']",
+    "[data-tn-element='indeedApplyButton']",
+    "button[data-id*='apply']",
+    "button:has-text('Apply Now')",
+    "button:has-text('Apply')",
+    "a:has-text('Apply Now')",
+    "a:has-text('Apply')",
     ".btn-apply",
     "[data-mapped='true']",
+    "span:has-text('Apply Now')",
 ]
 
 # Selectors for the final Submit button on application forms
@@ -267,7 +272,10 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     if _chrome_cdp_reachable(cdp_port):
         try:
             logger.info("Connecting to Chrome on CDP port %d", cdp_port)
-            browser = pw.chromium.connect_over_cdp(f"http://localhost:{cdp_port}")
+            browser = pw.chromium.connect_over_cdp(
+                f"http://localhost:{cdp_port}",
+                timeout=15000,  # 15s — if not ready in 15s, fall back fast
+            )
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             return ctx
         except Exception as e:
@@ -533,6 +541,17 @@ def _click_apply(page, app_id: int) -> None:
                 return
         except Exception:
             continue
+
+    # Indeed viewjob fallback: extract jk param and navigate directly to SmartApply
+    import re as _re
+    jk_m = _re.search(r'[?&]jk=([a-f0-9]+)', page.url)
+    if jk_m and "indeed.com/viewjob" in page.url:
+        smartapply_url = f"https://www.indeed.com/apply/start?jk={jk_m.group(1)}&from=viewjobDesktop"
+        logger.info("app_id=%d Indeed viewjob fallback: navigating to SmartApply %s", app_id, smartapply_url)
+        page.goto(smartapply_url, wait_until="domcontentloaded", timeout=30_000)
+        _human_pause(2.0, 3.0)
+        return
+
     logger.info("app_id=%d no Apply button found — may already be on form page", app_id)
 
 
