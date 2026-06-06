@@ -199,6 +199,22 @@ def _submit_approved(
             logger.warning("app_id=%d screener LLM timed out — using safe defaults", app_id)
 
         from src.browser.prefill import CaptchaDetected, MFADetected, AITrapDetected  # noqa: PLC0415
+        from src.browser.captcha_notifier import send_captcha_notification, poll_for_captcha_reply  # noqa: PLC0415
+
+        def _handle_captcha_or_mfa(challenge_type: str) -> None:
+            state = "WAITING_FOR_CAPTCHA" if challenge_type == "CAPTCHA" else "WAITING_FOR_MFA"
+            transition(conn, app_id, state, reason=f"{challenge_type} encountered during portal submit")
+            stats.failed += 1
+            logger.warning("%s on app_id=%d — notifying user", challenge_type, app_id)
+            send_captcha_notification(
+                gmail_client,
+                app_id=app_id,
+                company=row["company"] or "",
+                title=row["title"] or "",
+                portal_url=row["url"] or "",
+                challenge_type=challenge_type,
+            )
+
         try:
             result = auto_submit_portal(
                 app_id, answers,
@@ -207,15 +223,10 @@ def _submit_approved(
                 dry_run=dry_run,
             )
         except CaptchaDetected:
-            transition(conn, app_id, "WAITING_FOR_CAPTCHA",
-                       reason="CAPTCHA encountered during portal submit")
-            stats.failed += 1
-            logger.warning("CAPTCHA on app_id=%d — needs human intervention", app_id)
+            _handle_captcha_or_mfa("CAPTCHA")
             return
         except MFADetected:
-            transition(conn, app_id, "WAITING_FOR_MFA",
-                       reason="MFA encountered during portal submit")
-            stats.failed += 1
+            _handle_captcha_or_mfa("MFA")
             return
         except AITrapDetected as e:
             transition(conn, app_id, "AI_TRAP_DETECTED",
@@ -239,10 +250,26 @@ def _submit_approved(
             transition(conn, app_id, "WAITING_FOR_CAPTCHA",
                        reason="CAPTCHA on portal form")
             stats.failed += 1
+            send_captcha_notification(
+                gmail_client,
+                app_id=app_id,
+                company=row["company"] or "",
+                title=row["title"] or "",
+                portal_url=row["url"] or "",
+                challenge_type="CAPTCHA",
+            )
         elif result.mfa_detected:
             transition(conn, app_id, "WAITING_FOR_MFA",
                        reason="MFA/login required on portal form")
             stats.failed += 1
+            send_captcha_notification(
+                gmail_client,
+                app_id=app_id,
+                company=row["company"] or "",
+                title=row["title"] or "",
+                portal_url=row["url"] or "",
+                challenge_type="MFA",
+            )
         elif result.ai_trap_detected:
             transition(conn, app_id, "AI_TRAP_DETECTED",
                        reason="AI trap found on portal form")

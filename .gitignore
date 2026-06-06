@@ -1,6 +1,9 @@
 # Secrets — never commit
 .env
 
+# Session cookies — contain auth tokens, never commit
+cookies/
+
 # Runtime database
 *.db
 *.db-shm

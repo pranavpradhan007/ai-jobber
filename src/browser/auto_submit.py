@@ -273,17 +273,25 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
         except Exception as e:
             logger.warning("CDP connect failed: %s", e)
 
-    # Attempt 2: isolated Chromium (no real sessions — works for non-auth portals)
+    # Attempt 2: isolated Chromium + restore saved session cookies
     logger.warning(
         "Chrome not running on CDP port %d. "
         "Run launch_chrome_debug.bat first for sites that require login (Indeed, etc.). "
         "Falling back to isolated Chromium.", cdp_port
     )
     browser = pw.chromium.launch(headless=False)
-    return browser.new_context(
+    ctx = browser.new_context(
         viewport={"width": 1280, "height": 900},
         accept_downloads=True,
     )
+    try:
+        from src.browser.session_cookies import load_cookies_into_context  # noqa: PLC0415
+        n = load_cookies_into_context(ctx, "linkedin", "indeed")
+        if n:
+            logger.info("Restored %d saved session cookies into fallback context", n)
+    except Exception as exc:
+        logger.warning("Could not load session cookies: %s", exc)
+    return ctx
 
 
 def _chrome_cdp_reachable(port: int) -> bool:
@@ -591,9 +599,8 @@ def _handle_smartapply_pages(page, app_id: int, answers: dict, folder_path: str,
         # Try Submit first — only on the review page (all SmartApply pages
         # contain "submit" in their JS source, so we gate on the URL instead)
         if "review" in page_name or "submit" in page_name:
-            # Click reCAPTCHA checkbox if present — lets Google auto-verify via
-            # browser fingerprint / account cookies (not a bypass; this IS the
-            # normal human interaction). If it triggers an image challenge instead,
+            # Click reCAPTCHA checkbox if present — same click a human makes.
+            # If Google scores it as high-risk and shows an image challenge,
             # the checkbox stays unchecked and we raise CaptchaDetected below.
             if _smartapply_has_visible_captcha(page):
                 _try_click_recaptcha_checkbox(page)
@@ -652,10 +659,9 @@ def _smartapply_has_visible_captcha(page) -> bool:
 def _try_click_recaptcha_checkbox(page) -> None:
     """Click the reCAPTCHA 'I am not a robot' checkbox.
 
-    This is the same click a human makes — it lets Google's own scoring
-    system auto-verify via browser fingerprint and account cookies.
-    If Google decides a challenge is needed the checkbox stays unchecked
-    and the caller detects that via _smartapply_has_visible_captcha again.
+    This is the same click a human makes. Google's own scoring evaluates
+    the click and may auto-verify or present a challenge. If a challenge
+    appears the checkbox stays unchecked and the caller raises CaptchaDetected.
     """
     try:
         frame = page.frame_locator("iframe[title*='recaptcha' i]").first

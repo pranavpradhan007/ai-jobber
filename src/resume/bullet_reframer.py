@@ -203,7 +203,7 @@ def _call_rephraser(
         # Rephraser expects BankItem list — wrap raw text strings
         from src.verifier.retrieval import BankItem
         items = [
-            BankItem(item_type="experience", value=t, source="ground_truth_resume", usage_level="resume")
+            BankItem(id=0, item_type="experience", content=t, source_ref="ground_truth_resume", usage_level="resume", notes=None)
             for t in originals
         ]
         try:
