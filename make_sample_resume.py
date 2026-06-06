@@ -49,59 +49,74 @@ print(f"Copied ground-truth DOCX to: {OUT_DOCX}")
 
 # ── Reframe bullets ───────────────────────────────────────────────────────────
 
-from src.resume.bullet_reframer import reframe_bullets_in_docx
-
-print(f"\nReframing bullets for: {JOB_TITLE!r}")
-print(f"Hot keywords: {', '.join(HOT_KEYWORDS[:8])}...")
+from src.resume.resume_agent import run_resume_agent
+from src.resume.ats_agent import run_ats_check
 
 CACHE = OUT_DIR / "reframe_cache.json"
-n = reframe_bullets_in_docx(
-    str(OUT_DOCX),
+
+print(f"\nRunning Resume Agent (up to 15 attempts) for: {JOB_TITLE!r}")
+print(f"Hot keywords: {', '.join(HOT_KEYWORDS[:8])}...")
+print()
+
+resume_result = run_resume_agent(
+    source_docx=SOURCE_DOCX,
+    source_pdf=r"D:\Pranav\Resume\New folder\Pranav ML-AI Resume.pdf",
+    docx_path=str(OUT_DOCX),
+    pdf_path=str(OUT_PDF),
     hot_keywords=HOT_KEYWORDS,
     job_title=JOB_TITLE,
+    raw_jd="",
     rephraser_fn=None,
     cache_path=str(CACHE) if CACHE.is_file() else None,
+    max_attempts=15,
+    score_threshold=85.0,
 )
-print(f"Reframed {n} bullets.")
 
-# ── Inject skills keywords ────────────────────────────────────────────────────
-
-from src.resume.pipeline import _inject_keywords
-
-added = _inject_keywords(str(OUT_DOCX), HOT_KEYWORDS)
-if added:
-    print(f"Injected {len(added)} new skills keywords: {', '.join(added)}")
-else:
-    print("No new keywords needed in skills line (all already present).")
-
-# ── Convert to PDF ────────────────────────────────────────────────────────────
-
-from src.resume.renderer import render_pdf
-
-print(f"\nConverting to PDF...")
-pdf_path = render_pdf(str(OUT_DOCX), str(OUT_PDF))
-print(f"PDF saved: {pdf_path}")
-
-# ── Resume checker ────────────────────────────────────────────────────────────
-
-from src.resume.checker import check_resume
-
-print("\nRunning resume checker...")
-check = check_resume(str(OUT_PDF), str(OUT_DOCX), hot_keywords=HOT_KEYWORDS)
-print(check)
+print(f"Resume Agent: success={resume_result.success}  attempts={resume_result.total_attempts}")
+for att in resume_result.all_attempts:
+    status = "PASS" if (att.checker.passed and att.score >= 85.0) else "FAIL"
+    print(f"  [{status}] attempt={att.attempt} strategy={att.strategy} "
+          f"rules={'OK' if att.checker.passed else 'FAIL'} "
+          f"score={att.score}/100 kw={att.keywords_injected}")
 
 SHOW_PDF = str(OUT_PDF)
+GT_PDF   = r"D:\Pranav\Resume\New folder\Pranav ML-AI Resume.pdf"
 
-if not check.passed:
-    print("\nChecker FAILED — falling back to ground truth PDF for display.")
-    gt_pdf = r"D:\Pranav\Resume\New folder\Pranav ML-AI Resume.pdf"
-    if pathlib.Path(gt_pdf).is_file():
-        SHOW_PDF = gt_pdf
-        print(f"Showing ground truth PDF: {SHOW_PDF}")
-    else:
-        print(f"Ground truth PDF not found at {gt_pdf}, showing tailored anyway.")
+if not resume_result.success:
+    print("\nResume Agent FAILED all 15 attempts — showing ground truth PDF.")
+    SHOW_PDF = GT_PDF
 else:
-    print("\nChecker PASSED — tailored resume is clean and 1 page.")
+    best = resume_result.best
+    print(f"\nBest resume: attempt={best.attempt} score={best.score} strategy={best.strategy}")
+
+    # Copy best artifacts to OUT_DOCX / OUT_PDF
+    if best.docx_path != str(OUT_DOCX):
+        shutil.copy2(best.docx_path, str(OUT_DOCX))
+    if best.pdf_path != str(OUT_PDF):
+        shutil.copy2(best.pdf_path, str(OUT_PDF))
+
+    # Calibrate ATS threshold against ground truth
+    from src.resume.ats_agent import ground_truth_ats_score
+    gt_ats = ground_truth_ats_score(SOURCE_DOCX, GT_PDF, HOT_KEYWORDS)
+    ats_threshold = max(60.0, gt_ats - 5.0)
+    print(f"\nGround truth ATS score: {gt_ats:.1f}")
+    print(f"ATS acceptance threshold: {ats_threshold:.1f}")
+
+    # ATS check on tailored version
+    print("\nRunning ATS Agent on tailored resume...")
+    ats = run_ats_check(
+        pdf_path=str(OUT_PDF),
+        docx_path=str(OUT_DOCX),
+        hot_keywords=HOT_KEYWORDS,
+        min_score=ats_threshold,
+    )
+    print(ats)
+
+    if ats.passed:
+        print(f"\nATS PASSED ({ats.score:.1f}/{ats_threshold:.1f}) — tailored resume accepted.")
+    else:
+        print(f"\nATS FAILED ({ats.score:.1f}/{ats_threshold:.1f}) — showing ground truth PDF.")
+        SHOW_PDF = GT_PDF
 
 # ── Open in Chrome ────────────────────────────────────────────────────────────
 

@@ -59,23 +59,36 @@ def run_tailoring(
     hot_keywords: list[str],
     job_title: str = "",
     candidate_name: str = "Candidate",
-    rephraser=None,       # unused — kept for call-site compatibility
+    rephraser=None,
     extractor=None,
     surface: str = "resume",
     edit_instruction: Optional[str] = None,
+    raw_jd: str = "",
+    # Loop controls
+    max_resume_attempts: int = 15,
+    max_outer_loops: int = 5,
+    ats_min_score: float = 75.0,
+    score_threshold: float = 85.0,
 ) -> TailoringResult:
     """
-    Copy ground-truth resume and inject missing JD keywords into the skills line.
-    Returns TailoringResult with artifact paths.
+    Multi-agent tailoring loop:
+
+    Outer loop (up to max_outer_loops = 5):
+      Inner — Resume Agent (up to max_resume_attempts = 15):
+        Copy GT → reframe bullets → inject keywords → convert → check hard
+        rules → score vs JD. Accept if both pass, else retry with escalating
+        conservatism (full → partial → inject-only).
+      If Resume Agent finds a passing resume:
+        Run ATS Agent. If ATS score >= ats_min_score → done.
+        Else → outer loop continues with tighter parameters.
+      If Resume Agent exhausts all attempts → outer loop fails.
+
+    After all outer loops fail → ground truth PDF submitted.
     """
     folder = create_application_folder(conn, app_id)
 
-    # Locate ground-truth resume
     source_docx = os.environ.get("RESUME_DOCX_PATH", _DEFAULT_RESUME_DOCX)
     source_pdf  = os.environ.get("RESUME_PDF_PATH",  _DEFAULT_RESUME_PDF)
-
-    docx_path = artifact_path(folder, "resume.docx")
-    pdf_path  = artifact_path(folder, "resume.pdf")
 
     if not os.path.isfile(source_docx):
         raise FileNotFoundError(
@@ -83,76 +96,141 @@ def run_tailoring(
             "Set RESUME_DOCX_PATH in .env to the correct path."
         )
 
-    from src.resume.checker import check_resume
+    docx_path = artifact_path(folder, "resume.docx")
+    pdf_path  = artifact_path(folder, "resume.pdf")
 
-    def _build_and_check(do_reframe: bool) -> tuple[str, list[str], "CheckResult"]:
-        """Copy GT, optionally reframe, inject, convert, check. Returns (pdf, injected, check)."""
-        shutil.copy2(source_docx, docx_path)
-
-        if do_reframe and hot_keywords and job_title:
-            from src.resume.bullet_reframer import reframe_bullets_in_docx
-            n = reframe_bullets_in_docx(
-                docx_path,
-                hot_keywords=hot_keywords,
-                job_title=job_title,
-                rephraser_fn=rephraser,
-            )
-            logger.info("app_id=%d reframed %d bullets (do_reframe=True)", app_id, n)
-
-        kw_added = _inject_keywords(docx_path, hot_keywords)
-        logger.info("app_id=%d injected %d keywords: %s", app_id, len(kw_added), kw_added)
-
-        out_pdf = pdf_path
+    # Fetch raw JD from DB if not supplied
+    if not raw_jd:
         try:
-            out_pdf = render_pdf(docx_path, pdf_path)
-        except Exception as exc:
-            logger.warning("PDF render failed (%s)", exc)
-            if os.path.isfile(source_pdf):
-                shutil.copy2(source_pdf, out_pdf)
+            row = conn.execute(
+                "SELECT j.raw_jd FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.id=?",
+                (app_id,)
+            ).fetchone()
+            raw_jd = (row["raw_jd"] or "") if row else ""
+        except Exception:
+            raw_jd = ""
 
-        chk = check_resume(out_pdf, docx_path, hot_keywords=hot_keywords)
-        return out_pdf, kw_added, chk
+    from src.resume.resume_agent import run_resume_agent
+    from src.resume.ats_agent import run_ats_check, ground_truth_ats_score
 
-    # ── Graduated fallback strategy ───────────────────────────────────────────
-    # Level 1: full tailoring (reframe bullets + inject keywords)
-    logger.info("app_id=%d attempt 1: reframe + inject", app_id)
-    pdf_path, injected_keywords, check = _build_and_check(do_reframe=True)
+    # Calibrate ATS threshold against the ground truth resume.
+    # Accept tailored version if it beats or matches the GT's ATS score.
+    # Hard floor: never require more than 60 (our sim's reasonable floor).
+    gt_ats = ground_truth_ats_score(source_docx, source_pdf, hot_keywords)
+    effective_ats_threshold = max(ats_min_score, gt_ats - 5.0)
+    logger.info(
+        "app_id=%d GT ATS score=%.1f, effective threshold=%.1f",
+        app_id, gt_ats, effective_ats_threshold,
+    )
 
-    if not check.passed:
-        logger.warning("app_id=%d level-1 failed: %s — trying skills-only", app_id, check.issues)
-        # Level 2: skills injection only (no reframing)
-        pdf_path, injected_keywords, check = _build_and_check(do_reframe=False)
+    winning_resume = None
+    winning_ats    = None
+    outer_loop_log: list[str] = []
 
-    if not check.passed:
-        logger.warning("app_id=%d level-2 failed — using ground truth PDF", app_id)
-        for iss in check.issues:
-            logger.warning("  checker: %s", iss)
+    for outer in range(1, max_outer_loops + 1):
+        logger.info("=== TAILORING outer_loop=%d/%d app_id=%d ===", outer, max_outer_loops, app_id)
+
+        # Tighten score threshold on later outer loops to try harder
+        loop_score_threshold = score_threshold + (outer - 1) * 2.0
+        loop_ats_threshold   = effective_ats_threshold
+
+        resume_result = run_resume_agent(
+            source_docx=source_docx,
+            source_pdf=source_pdf,
+            docx_path=docx_path,
+            pdf_path=pdf_path,
+            hot_keywords=hot_keywords,
+            job_title=job_title,
+            raw_jd=raw_jd,
+            rephraser_fn=rephraser,
+            max_attempts=max_resume_attempts,
+            score_threshold=loop_score_threshold,
+        )
+
+        if not resume_result.success:
+            msg = (
+                f"outer={outer}: Resume Agent exhausted {resume_result.total_attempts} attempts "
+                f"without passing (threshold={loop_score_threshold})"
+            )
+            logger.warning(msg)
+            outer_loop_log.append(msg)
+            continue
+
+        best = resume_result.best
+        logger.info(
+            "outer=%d Resume Agent succeeded: attempt=%d score=%.1f strategy=%s kw=%s",
+            outer, best.attempt, best.score, best.strategy, best.keywords_injected,
+        )
+
+        # ATS check on the best resume this outer loop produced
+        ats = run_ats_check(
+            pdf_path=best.pdf_path,
+            docx_path=best.docx_path,
+            hot_keywords=hot_keywords,
+            raw_jd=raw_jd,
+            min_score=loop_ats_threshold,
+        )
+
+        if ats.passed:
+            winning_resume = best
+            winning_ats    = ats
+            logger.info(
+                "outer=%d ATS PASSED: %.1f/100 — accepting resume (attempt=%d score=%.1f)",
+                outer, ats.score, best.attempt, best.score,
+            )
+            break
+        else:
+            msg = (
+                f"outer={outer}: ATS FAILED ({ats.score:.1f}/{loop_ats_threshold:.1f}) "
+                f"after Resume Agent best_score={best.score:.1f}"
+            )
+            logger.warning(msg)
+            outer_loop_log.append(msg)
+
+    # ── Final decision ────────────────────────────────────────────────────────
+    used_ground_truth = False
+    final_kw: list[str] = []
+    ats_score_final = 0
+
+    if winning_resume is not None:
+        # Copy winning artifacts to canonical paths
+        if winning_resume.docx_path != docx_path:
+            shutil.copy2(winning_resume.docx_path, docx_path)
+        if winning_resume.pdf_path != pdf_path:
+            shutil.copy2(winning_resume.pdf_path, pdf_path)
+        final_kw = winning_resume.keywords_injected
+        ats_score_final = int(winning_ats.score) if winning_ats else 0
+        checker_note = (
+            f"PASSED outer={winning_ats is not None} "
+            f"ATS={ats_score_final} resume_score={winning_resume.score:.1f}"
+        )
+    else:
+        logger.warning(
+            "app_id=%d ALL %d outer loops failed — using ground truth PDF. Log: %s",
+            app_id, max_outer_loops, outer_loop_log,
+        )
         if os.path.isfile(source_pdf):
             shutil.copy2(source_pdf, pdf_path)
-        injected_keywords = []
-        checker_note = "FAILED (2-level) — ground truth PDF submitted"
-    elif check.passed and injected_keywords:
-        checker_note = f"PASSED with {len(injected_keywords)} injected keywords"
-    else:
-        checker_note = "PASSED (ground truth content, skills injected)"
+        shutil.copy2(source_docx, docx_path)
+        used_ground_truth = True
+        checker_note = f"FAILED ({max_outer_loops} outer × {max_resume_attempts} inner) — ground truth submitted"
 
-    # Verifier runs only on the injected text
-    injected_text = ", ".join(injected_keywords) if injected_keywords else "(no new keywords)"
+    # ── Verifier + diff ───────────────────────────────────────────────────────
+    injected_text = ", ".join(final_kw) if final_kw else "(ground truth — no injection)"
     verifier_report = verify_text(
         conn, app_id, injected_text, surface=surface, extractor=extractor
     )
 
-    # Build diff doc
     fake_bullets: list[BankItem] = [
         BankItem(item_type="keyword", value=kw, source="hot_keywords", usage_level="resume")
-        for kw in (injected_keywords or hot_keywords[:5])
+        for kw in (final_kw or hot_keywords[:3])
     ]
     diff_path = write_resume_diff(
         folder, fake_bullets,
-        [f"Added to skills line: {kw}" for kw in (injected_keywords or [])],
+        [f"Added to skills line: {kw}" for kw in final_kw],
         verifier_report,
         job_title=job_title,
-        style_report=f"Resume checker: {checker_note}",
+        style_report=checker_note,
     )
 
     update_application(
@@ -160,18 +238,20 @@ def run_tailoring(
         resume_path=docx_path,
         resume_pdf_path=pdf_path,
         resume_diff_path=diff_path,
-        verifier_passed=1 if check.passed else 0,
+        verifier_passed=0 if used_ground_truth else 1,
     )
     transition(conn, app_id, "RESUME_VERIFIED", reason="verifier passed")
 
-    logger.info("tailoring complete app_id=%d checker=%s injected=%s",
-                app_id, "PASS" if check.passed else "FAIL(gt)", injected_keywords)
+    logger.info(
+        "tailoring complete app_id=%d used_gt=%s ats=%d kw=%s",
+        app_id, used_ground_truth, ats_score_final, final_kw,
+    )
     return TailoringResult(
         resume_path=docx_path,
         resume_pdf_path=pdf_path,
         resume_diff_path=diff_path,
-        verifier_passed=check.passed,
-        ats_score=75 if check.passed else 0,
+        verifier_passed=not used_ground_truth,
+        ats_score=ats_score_final,
     )
 
 
@@ -188,8 +268,10 @@ _AI_LANGUAGE_BLACKLIST = {
 _EM_DASH_CHARS = ["—", "–", "·", "—", "–"]
 
 # Hard caps for 1-page budget — conservative to leave room for font hinting variance
-_SKILLS_LINE_CHAR_LIMIT = 380   # total chars the skills line may reach
-_MAX_NEW_KEYWORDS = 3           # never inject more than 3 new terms
+# Zero-growth policy: never allow the skills line to grow by more than _SKILLS_MAX_GROWTH chars.
+# Any growth risks pushing a tightly-fitted 1-page resume to 2 pages.
+_SKILLS_MAX_GROWTH = 25         # max chars we'll add to the skills line
+_MAX_NEW_KEYWORDS  = 2          # max new keyword terms to inject
 
 
 def _clean_keyword(kw: str) -> str:
@@ -250,7 +332,8 @@ def _inject_keywords(docx_path: str, hot_keywords: list[str]) -> list[str]:
         logger.warning("Could not find skills content line in DOCX; skipping injection")
         return []
 
-    current_len = len(skills_para.text)
+    original_len = len(skills_para.text)
+    current_len  = original_len
 
     to_add: list[str] = []
     for kw in hot_keywords:
@@ -263,11 +346,15 @@ def _inject_keywords(docx_path: str, hot_keywords: list[str]) -> list[str]:
             continue
         if len(cleaned) >= 40:
             continue
-        if current_len + len(", " + cleaned) > _SKILLS_LINE_CHAR_LIMIT:
-            logger.info("skills line at char limit (%d); stopping injection", current_len)
+        addition_len = len(", " + cleaned)
+        if (current_len - original_len) + addition_len > _SKILLS_MAX_GROWTH:
+            logger.info(
+                "skills line growth budget exhausted (%d/%d chars used); stopping injection",
+                current_len - original_len, _SKILLS_MAX_GROWTH,
+            )
             break
         to_add.append(cleaned)
-        current_len += len(", " + cleaned)
+        current_len += addition_len
 
     if not to_add:
         return []

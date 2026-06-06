@@ -49,6 +49,7 @@ def reframe_bullets_in_docx(
     job_title: str = "",
     rephraser_fn: Optional[Callable] = None,
     cache_path: Optional[str] = None,
+    partial_only: bool = False,
 ) -> int:
     """
     Reframe all bullet points in the DOCX file at `docx_path` in-place.
@@ -70,6 +71,16 @@ def reframe_bullets_in_docx(
 
     # Build raw texts
     originals = [_para_text(p) for _, p in bullet_paras]
+    kw_lower = [k.lower() for k in hot_keywords]
+
+    # partial_only: only reframe bullets that contain none of the hot keywords
+    if partial_only:
+        reframe_mask = [
+            not any(kw in text.lower() for kw in kw_lower)
+            for text in originals
+        ]
+    else:
+        reframe_mask = [True] * len(originals)
 
     # Load from cache file if provided (used for interactive/demo runs)
     if cache_path:
@@ -97,7 +108,9 @@ def reframe_bullets_in_docx(
         return 0
 
     changed = 0
-    for (idx, para), new_text in zip(bullet_paras, reframed):
+    for (idx, para), new_text, do_reframe in zip(bullet_paras, reframed, reframe_mask):
+        if not do_reframe:
+            continue
         new_text = _clean(new_text)
         old_text = _para_text(para)
         if not new_text.strip() or new_text == old_text:
