@@ -81,6 +81,16 @@ _SMARTAPPLY_CONTINUE_SELECTORS = [
     "button:has-text('Next')",
     "button[data-testid='IndeedApplyButton']",
     "[data-automation-id='continue-button']",
+    "button[data-tn-element='continue-button']",
+    "button[data-tn-element='apply-now']",
+    ".ia-continueButton",
+    ".ia-Button--primary",
+    "[role='button']:has-text('Continue')",
+    "a:has-text('Continue')",
+    "button:has-text('Apply')",
+    "button:has-text('Start')",
+    # Catch-all: any primary/cta button not labelled cancel/back/close
+    "button[type='submit']:not([aria-label*='cancel' i]):not([aria-label*='back' i])",
 ]
 
 _SMARTAPPLY_SUBMIT_SELECTORS = [
@@ -88,6 +98,7 @@ _SMARTAPPLY_SUBMIT_SELECTORS = [
     "button:has-text('Submit Application')",
     "button:has-text('Submit')",
     "button[aria-label*='submit' i]",
+    "[role='button']:has-text('Submit')",
 ]
 
 _SMARTAPPLY_HOST = "smartapply.indeed.com"
@@ -589,6 +600,11 @@ def _handle_smartapply_pages(page, app_id: int, answers: dict, folder_path: str,
     max_steps = 12
     for step in range(max_steps):
         page_transition_pause()
+        # Wait for page to be interactive (SmartApply uses SPA routing)
+        try:
+            page.wait_for_load_state("networkidle", timeout=8000)
+        except Exception:
+            pass
         _check_auth_wall(page)
         # Note: SmartApply embeds an invisible reCAPTCHA on every page.
         # _check_captcha_mfa would false-positive on it. We only check for the
@@ -740,6 +756,15 @@ def _smartapply_click_button(page, selectors: list) -> bool:
                     pass
         except Exception:
             continue
+    # Log all buttons on page to help debug missed selectors
+    try:
+        btns = page.evaluate("""
+            () => [...document.querySelectorAll('button,[role=button],a[href]')].slice(0,15)
+                    .map(b => b.tagName + '|' + (b.textContent||'').trim().slice(0,40) + '|' + (b.className||'').slice(0,30))
+        """)
+        logger.debug("_smartapply_click_button found no match; page buttons: %s", btns)
+    except Exception:
+        pass
     return False
 
 
@@ -930,9 +955,13 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
     from src.db.connection import get_connection
 
     conn = get_connection()
-    candidate_row = conn.execute(
-        "SELECT name, email, phone, city, state, zip_code FROM candidates LIMIT 1"
-    ).fetchone()
+    candidate_row = None
+    try:
+        candidate_row = conn.execute(
+            "SELECT name, email, phone, city, state, zip_code FROM candidates LIMIT 1"
+        ).fetchone()
+    except Exception:
+        pass
     conn.close()
 
     candidate = {}
