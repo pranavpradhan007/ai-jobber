@@ -222,19 +222,15 @@ def _anthropic_reframe(
     hot_keywords: list[str],
     job_title: str,
 ) -> list[str]:
-    """Call Anthropic API to reframe bullets. Falls back to originals on error."""
-    import json, os
+    """
+    Reframe bullets via LLM.
 
-    try:
-        import anthropic
-    except ImportError:
-        logger.warning("anthropic not installed; returning originals unchanged")
-        return originals
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        logger.warning("ANTHROPIC_API_KEY not set; returning originals unchanged")
-        return originals
+    Priority:
+      1. USE_CLAUDE_CODE_FOR_LLM=true → queue task via Claude Code bridge (no API key needed)
+      2. ANTHROPIC_API_KEY set         → direct SDK call
+      3. Neither                        → return originals unchanged
+    """
+    import json
 
     prompt = f"""Reframe these resume bullets for a {job_title!r} role.
 Emphasise these JD keywords where they fit naturally: {hot_keywords}.
@@ -257,6 +253,41 @@ STRICT RULES — any violation means the output is REJECTED:
 Bullets to reframe:
 {json.dumps(originals, indent=2)}"""
 
+    def _parse(raw: str) -> list[str]:
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        if m:
+            parsed = json.loads(m.group(0))
+            if isinstance(parsed, list) and len(parsed) == len(originals):
+                return [str(x) for x in parsed]
+        return []
+
+    # ── Path 1: Claude Code bridge (preferred — no API key needed) ────────────
+    from src.llm.claude_code_bridge import should_use_claude_code, queue_llm_task
+    if should_use_claude_code():
+        try:
+            raw = queue_llm_task("rephrase", prompt, timeout_seconds=120)
+            if raw:
+                result = _parse(raw)
+                if result:
+                    return result
+            logger.warning("Claude Code bridge returned empty/invalid result; using originals")
+        except Exception as exc:
+            logger.warning("Claude Code bridge failed: %s; using originals", exc)
+        return originals
+
+    # ── Path 2: Direct Anthropic SDK ──────────────────────────────────────────
+    import os
+    try:
+        import anthropic
+    except ImportError:
+        logger.warning("anthropic not installed; returning originals unchanged")
+        return originals
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY not set and USE_CLAUDE_CODE_FOR_LLM not true; returning originals")
+        return originals
+
     try:
         from src.config import DEFAULT_MODEL
         model = DEFAULT_MODEL
@@ -270,13 +301,9 @@ Bullets to reframe:
             max_tokens=2048,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = msg.content[0].text.strip()
-        # Extract JSON array
-        m = re.search(r"\[.*\]", raw, re.DOTALL)
-        if m:
-            parsed = json.loads(m.group(0))
-            if isinstance(parsed, list) and len(parsed) == len(originals):
-                return [str(x) for x in parsed]
+        result = _parse(msg.content[0].text.strip())
+        if result:
+            return result
         logger.warning("Unexpected rephraser output shape; using originals")
     except Exception as exc:
         logger.error("Anthropic reframe failed: %s", exc)
