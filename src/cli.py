@@ -9,6 +9,9 @@ import os
 import sys
 
 import click
+from dotenv import load_dotenv
+
+load_dotenv()  # load .env into os.environ before any command runs
 
 from src.db.connection import get_connection
 
