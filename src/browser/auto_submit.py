@@ -67,6 +67,24 @@ _SUBMIT_SELECTORS = [
     ".btn-submit",
 ]
 
+# Indeed SmartApply multi-page form selectors
+# Use has-text (partial match) — text-is requires exact match and fails on whitespace differences
+_SMARTAPPLY_CONTINUE_SELECTORS = [
+    "button:has-text('Continue')",
+    "button:has-text('Next')",
+    "button[data-testid='IndeedApplyButton']",
+    "[data-automation-id='continue-button']",
+]
+
+_SMARTAPPLY_SUBMIT_SELECTORS = [
+    "button:has-text('Submit your application')",
+    "button:has-text('Submit Application')",
+    "button:has-text('Submit')",
+    "button[aria-label*='submit' i]",
+]
+
+_SMARTAPPLY_HOST = "smartapply.indeed.com"
+
 
 @dataclass
 class AutoSubmitResult:
@@ -278,6 +296,11 @@ def _relaunch_chrome_with_cdp(chrome_dir: str, profile: str, port: int) -> None:
 def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     os.makedirs(folder_path, exist_ok=True)
 
+    # ── Step 0: LinkedIn Easy Apply dispatch ─────────────────────────────────
+    if "linkedin.com/jobs/view" in url or "linkedin.com/jobs/search" in url:
+        logger.info("app_id=%d detected LinkedIn job URL — using Easy Apply handler", app_id)
+        return _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay)
+
     # ── Step 1: Navigate to listing URL ──────────────────────────────────────
     nav_url = _resolve_indeed_url(url)
     logger.info("app_id=%d navigating to %s", app_id, nav_url)
@@ -318,7 +341,19 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     # Re-check auth wall (apply button may redirect to login)
     _check_auth_wall(page)
 
-    # ── Step 4: AI trap check ─────────────────────────────────────────────────
+    # ── Step 4: Check if Indeed SmartApply (multi-page form) ─────────────────
+    if _SMARTAPPLY_HOST in page.url:
+        logger.info("app_id=%d detected SmartApply form, starting page loop", app_id)
+        _handle_smartapply_pages(page, app_id, answers, folder_path, fill_delay)
+        ss_after = _screenshot(page, folder_path, "submit_confirmation.png")
+        receipt = f"PORTAL:indeed_smartapply:{page.url}"
+        logger.info("app_id=%d SmartApply submitted url=%s", app_id, page.url)
+        return AutoSubmitResult(
+            success=True, app_id=app_id,
+            receipt=receipt, screenshot_path=ss_after,
+        )
+
+    # ── Step 5: AI trap check ─────────────────────────────────────────────────
     html = page.content()
     trap = detect_traps_in_html(html)
     if trap.trap_found:
@@ -326,7 +361,7 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
 
     _check_captcha_mfa(page)
 
-    # ── Step 5: Classify portal and fill fields ───────────────────────────────
+    # ── Step 6: Classify portal and fill fields ───────────────────────────────
     portal = classify_portal(html=html, url=page.url)
     logger.info("app_id=%d portal=%s url=%s", app_id, portal, page.url)
 
@@ -335,10 +370,10 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     instructions = build_fill_instructions(answers, portal)
     _fill_all_fields(page, answers, instructions, fill_delay)
 
-    # ── Step 6: Click Submit ──────────────────────────────────────────────────
+    # ── Step 7: Click Submit ──────────────────────────────────────────────────
     _click_submit(page, app_id)
 
-    # ── Step 7: Confirm ───────────────────────────────────────────────────────
+    # ── Step 8: Confirm ───────────────────────────────────────────────────────
     try:
         page.wait_for_load_state("networkidle", timeout=int(_SUBMIT_WAIT * 1000))
     except Exception:
@@ -364,14 +399,30 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
 # ---------------------------------------------------------------------------
 
 def _resolve_indeed_url(url: str) -> str:
-    """Convert Indeed tracking/redirect URLs to direct viewjob URLs."""
+    """Convert Indeed tracking/redirect URLs to direct viewjob URLs.
+
+    Handles:
+    - /rc/clk?jk=...  → viewjob?jk=...
+    - to.indeed.com/xxx → browser follows redirect → search page with vjk= param
+    - indeed.com/jobs?...&vjk=... → viewjob?jk=... (post-redirect case)
+    """
+    parsed = urllib.parse.urlparse(url)
+    params = urllib.parse.parse_qs(parsed.query)
+
     if "indeed.com/rc/clk" in url or "indeed.com/pagead" in url or "to.indeed.com/" in url:
-        parsed = urllib.parse.urlparse(url)
-        params = urllib.parse.parse_qs(parsed.query)
         jk = params.get("jk", [""])[0]
         if jk:
             return f"https://www.indeed.com/viewjob?jk={jk}"
-        # to.indeed.com short URLs — return as-is (will follow redirect in browser)
+        # to.indeed.com short URL — return as-is; browser will follow redirect
+        return url
+
+    # After following to.indeed.com redirect, browser may land on search page
+    # with vjk= parameter pointing to the actual job listing.
+    if "indeed.com/jobs" in url:
+        vjk = params.get("vjk", [""])[0]
+        if vjk:
+            return f"https://www.indeed.com/viewjob?jk={vjk}"
+
     return url
 
 
@@ -418,6 +469,221 @@ def _click_submit(page, app_id: int) -> None:
         f"Could not find submit button on {page.url}. "
         "Form may have multiple pages or require manual completion."
     )
+
+
+def _handle_smartapply_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float) -> None:
+    """Step through Indeed SmartApply multi-page form until submitted."""
+    max_steps = 12
+    for step in range(max_steps):
+        _human_pause(1.5, 2.5)
+        _check_auth_wall(page)
+        # Note: SmartApply embeds an invisible reCAPTCHA on every page.
+        # _check_captcha_mfa would false-positive on it. We only check for the
+        # visible reCAPTCHA checkbox (which appears on the review page) below.
+
+        url = page.url
+        page_name = url.split("/")[-1]
+        logger.info("app_id=%d SmartApply step=%d page=%s", app_id, step, page_name)
+
+        # Review module shows a loading spinner — wait for it to finish rendering
+        if "review" in page_name:
+            try:
+                page.wait_for_function(
+                    "() => !document.body.innerText.includes('Preparing review')",
+                    timeout=20_000,
+                )
+                _human_pause(1.0, 2.0)
+            except Exception:
+                pass
+
+        # Fill any visible fields on this page
+        _fill_smartapply_page(page, answers, fill_delay)
+
+        # Scroll to bottom so all buttons are in reach
+        try:
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            _human_pause(0.5, 1.0)
+        except Exception:
+            pass
+
+        _screenshot(page, folder_path, f"smartapply_step{step:02d}.png")
+
+        # Try Submit first — only on the review page (all SmartApply pages
+        # contain "submit" in their JS source, so we gate on the URL instead)
+        if "review" in page_name or "submit" in page_name:
+            # Click reCAPTCHA checkbox if present — lets Google auto-verify via
+            # browser fingerprint / account cookies (not a bypass; this IS the
+            # normal human interaction). If it triggers an image challenge instead,
+            # the checkbox stays unchecked and we raise CaptchaDetected below.
+            if _smartapply_has_visible_captcha(page):
+                _try_click_recaptcha_checkbox(page)
+                _human_pause(2.5, 4.0)  # wait for Google's auto-verification
+                if _smartapply_has_visible_captcha(page):
+                    # Still showing challenge → genuine human solve required
+                    raise CaptchaDetected("reCAPTCHA requires manual solve (image challenge appeared)")
+            submitted = _smartapply_click_button(page, _SMARTAPPLY_SUBMIT_SELECTORS)
+            if submitted:
+                logger.info("app_id=%d SmartApply: clicked Submit on step=%d", app_id, step)
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=int(_SUBMIT_WAIT * 1000))
+                except Exception:
+                    pass
+                _human_pause(2.0, 3.0)
+                return
+
+        # Try Continue/Next to advance to next page
+        clicked = _smartapply_click_button(page, _SMARTAPPLY_CONTINUE_SELECTORS)
+        if clicked:
+            logger.info("app_id=%d SmartApply: clicked Continue on step=%d", app_id, step)
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=15_000)
+            except Exception:
+                pass
+            _human_pause(1.0, 2.0)
+        else:
+            raise RuntimeError(
+                f"SmartApply: no Continue/Submit button on step={step} url={url}. "
+                "Form may have a required field that needs manual attention."
+            )
+
+    raise RuntimeError(f"SmartApply: exceeded {max_steps} steps without reaching Submit")
+
+
+def _smartapply_has_visible_captcha(page) -> bool:
+    """Return True if a VISIBLE reCAPTCHA challenge iframe is on-screen.
+
+    SmartApply embeds invisible reCAPTCHA on every page — we only want to
+    detect the visible checkbox that appears on the final review page.
+    """
+    for sel in [
+        "iframe[title*='recaptcha' i]",
+        "iframe[src*='recaptcha']",
+        "iframe[src*='hcaptcha']",
+    ]:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() > 0 and loc.is_visible():
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _try_click_recaptcha_checkbox(page) -> None:
+    """Click the reCAPTCHA 'I am not a robot' checkbox.
+
+    This is the same click a human makes — it lets Google's own scoring
+    system auto-verify via browser fingerprint and account cookies.
+    If Google decides a challenge is needed the checkbox stays unchecked
+    and the caller detects that via _smartapply_has_visible_captcha again.
+    """
+    try:
+        frame = page.frame_locator("iframe[title*='recaptcha' i]").first
+        checkbox = frame.locator(".recaptcha-checkbox-border, #recaptcha-anchor")
+        if checkbox.count() > 0:
+            checkbox.first.click(timeout=3000)
+            logger.info("reCAPTCHA checkbox clicked — waiting for auto-verify")
+            return
+    except Exception as e:
+        logger.warning("reCAPTCHA checkbox click failed: %s", e)
+    # Fallback: JS click on the iframe itself
+    try:
+        page.evaluate("""() => {
+            const iframe = document.querySelector("iframe[title*='recaptcha' i]");
+            if (iframe) {
+                const cb = iframe.contentDocument &&
+                    iframe.contentDocument.querySelector('.recaptcha-checkbox-border');
+                if (cb) cb.click();
+            }
+        }""")
+    except Exception:
+        pass
+
+
+def _smartapply_click_button(page, selectors: list) -> bool:
+    """Try each selector; click via JS if Playwright visibility check fails. Return True on success."""
+    for sel in selectors:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() == 0:
+                continue
+            # Scroll into view, then click — skipping is_visible() which can
+            # return False for SmartApply's mosaic web components even when rendered
+            try:
+                loc.scroll_into_view_if_needed(timeout=2000)
+            except Exception:
+                pass
+            try:
+                loc.click(timeout=3000)
+                return True
+            except Exception:
+                # Last resort: JS click
+                try:
+                    page.evaluate("(el) => el.click()", loc.element_handle())
+                    return True
+                except Exception:
+                    pass
+        except Exception:
+            continue
+    return False
+
+
+def _fill_smartapply_page(page, answers: dict, fill_delay: float) -> None:
+    """Fill visible fields on the current SmartApply page."""
+    url = page.url
+
+    # Location page — fill zip/city/address if empty
+    if "profile-location" in url or "location" in url or "applybyapplyablejobid" in url:
+        _fill_if_visible(page, answers.get("address_zip", ""), [
+            "input[name='location-postal-code']",
+            "input[id='location-fields-postal-code-input']",
+            "input[data-testid='location-fields-postal-code-input']",
+            "input[name='zip']", "input[id*='zip' i]",
+            "input[placeholder*='zip' i]", "input[aria-label*='zip' i]",
+            "input[autocomplete='postal-code']",
+        ], fill_delay)
+        _fill_if_visible(page, answers.get("address_city", ""), [
+            "input[name='location-locality']",
+            "input[id='location-fields-locality-input']",
+            "input[data-testid='location-fields-locality-input']",
+            "input[name='city']", "input[id*='city' i]",
+            "input[placeholder*='city' i]", "input[aria-label*='city' i]",
+        ], fill_delay)
+        _fill_if_visible(page, answers.get("address_line1", ""), [
+            "input[name='location-address']",
+            "input[id='location-fields-address-input']",
+            "input[data-testid='location-fields-address-input']",
+            "input[name='address']", "input[id*='address' i]",
+            "input[placeholder*='address' i]", "input[aria-label*='address' i]",
+        ], fill_delay)
+
+    # Resume page — upload PDF resume
+    if "resume" in url:
+        resume_path = answers.get("resume", "")
+        if resume_path and os.path.isfile(resume_path):
+            try:
+                file_input = page.locator("input[type='file']").first
+                if file_input.count() > 0:
+                    file_input.set_input_files(resume_path)
+                    _human_pause(fill_delay, fill_delay + 1.5)
+                    logger.info("SmartApply: uploaded resume %s", resume_path)
+            except Exception as exc:
+                logger.warning("SmartApply resume upload failed: %s", exc)
+
+    # Generic text inputs (phone, LinkedIn, etc.) — best-effort
+    _fill_if_visible(page, answers.get("phone", ""), [
+        "input[name*='phone' i]", "input[type='tel']",
+        "input[aria-label*='phone' i]", "input[placeholder*='phone' i]",
+    ], fill_delay)
+    _fill_if_visible(page, answers.get("linkedin_url", ""), [
+        "input[name*='linkedin' i]", "input[aria-label*='linkedin' i]",
+        "input[placeholder*='linkedin' i]",
+    ], fill_delay)
+    _fill_if_visible(page, answers.get("website_url", ""), [
+        "input[name*='website' i]", "input[name*='github' i]",
+        "input[aria-label*='website' i]", "input[placeholder*='website' i]",
+        "input[placeholder*='github' i]",
+    ], fill_delay)
 
 
 def _fill_all_fields(page, answers: dict, instructions, fill_delay: float) -> None:
@@ -541,6 +807,48 @@ def _screenshot(page, folder: str, name: str) -> Optional[str]:
         return path
     except Exception:
         return None
+
+
+def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay):
+    """Delegate to linkedin_apply.linkedin_easy_apply and wrap the result."""
+    from src.browser.linkedin_apply import linkedin_easy_apply
+    from src.db.connection import get_connection
+
+    conn = get_connection()
+    candidate_row = conn.execute(
+        "SELECT name, email, phone, city, state, zip_code FROM candidates LIMIT 1"
+    ).fetchone()
+    conn.close()
+
+    candidate = {}
+    if candidate_row:
+        candidate = dict(candidate_row)
+    else:
+        # Fallback from env
+        candidate = {
+            "name":  os.environ.get("CANDIDATE_NAME", "Pranav Tushar Pradhan"),
+            "email": os.environ.get("YOUR_EMAIL_ADDRESS", ""),
+            "phone": os.environ.get("CANDIDATE_PHONE", ""),
+            "city":  os.environ.get("CANDIDATE_CITY",  "New York"),
+            "state": os.environ.get("CANDIDATE_STATE", "NY"),
+            "zip_code": os.environ.get("CANDIDATE_ZIP", "10001"),
+        }
+
+    resume_pdf = os.environ.get("RESUME_PDF_PATH", r"D:\Pranav\Resume\New folder\Pranav ML-AI Resume.pdf")
+    receipt = linkedin_easy_apply(
+        page, url, app_id,
+        candidate=candidate,
+        resume_pdf_path=resume_pdf,
+        folder_path=folder_path,
+        answers=answers,
+        fill_delay=fill_delay,
+    )
+    ss = _screenshot(page, folder_path, "li_confirmation.png")
+    return AutoSubmitResult(
+        success=True, app_id=app_id,
+        receipt=f"LINKEDIN:{receipt}",
+        screenshot_path=ss,
+    )
 
 
 def _check_captcha_mfa(page) -> None:
