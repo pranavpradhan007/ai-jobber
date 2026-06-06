@@ -147,7 +147,7 @@ def _submit_approved(
       folder so the user can apply manually with the tailored resume.
     """
     cur = conn.execute(
-        "SELECT j.platform, j.url, j.company, j.title, a.folder_path, a.resume_path "
+        "SELECT j.platform, j.url, j.company, j.title, j.clean_jd, j.raw_jd, a.folder_path, a.resume_path "
         "FROM applications a JOIN jobs j ON a.job_id=j.id WHERE a.id=?",
         (app_id,),
     )
@@ -184,7 +184,7 @@ def _submit_approved(
             app_id=app_id,
             job_title=row["title"] or "",
             company=row["company"] or "",
-            clean_jd=row.get("clean_jd") or row.get("raw_jd") or "",
+            clean_jd=row["clean_jd"] or row["raw_jd"] or "",
             candidate_answers=base_answers,
             cache_dir=folder,
         )
