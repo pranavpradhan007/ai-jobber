@@ -171,8 +171,8 @@ def _submit_approved(
         # Portal-based job: use Playwright browser automation to navigate + submit
         folder = (row["folder_path"] or "").replace("/", os.sep)
         if not folder:
-            from src.storage.folders import get_or_create_folder  # noqa: PLC0415
-            folder = get_or_create_folder(app_id, conn).replace("/", os.sep)
+            from src.storage.folders import create_application_folder  # noqa: PLC0415
+            folder = create_application_folder(conn, app_id).replace("/", os.sep)
 
         # Pre-compute screener answers BEFORE the browser session opens
         # — eliminates all LLM latency from the hot fill path
