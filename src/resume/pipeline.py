@@ -83,11 +83,23 @@ def run_tailoring(
             "Set RESUME_DOCX_PATH in .env to the correct path."
         )
 
-    # Copy the DOCX as-is
+    # Copy the DOCX — ground truth is NEVER modified
     shutil.copy2(source_docx, docx_path)
     logger.info("app_id=%d copied ground-truth DOCX → %s", app_id, docx_path)
 
-    # Inject missing keywords into the skills line
+    # Reframe bullets on the COPY to match JD emphasis
+    # (format, design, fonts, and all factual content are preserved)
+    if hot_keywords and job_title:
+        from src.resume.bullet_reframer import reframe_bullets_in_docx
+        n_reframed = reframe_bullets_in_docx(
+            docx_path,
+            hot_keywords=hot_keywords,
+            job_title=job_title,
+            rephraser_fn=rephraser,
+        )
+        logger.info("app_id=%d reframed %d bullets", app_id, n_reframed)
+
+    # Inject missing JD keywords into the skills line only
     injected_keywords = _inject_keywords(docx_path, hot_keywords)
     logger.info(
         "app_id=%d injected %d new keywords: %s",
