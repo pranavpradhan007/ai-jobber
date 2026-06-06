@@ -29,11 +29,13 @@ from src.browser.prefill import CaptchaDetected, MFADetected, AITrapDetected, St
 from src.browser.trap_detector import detect_traps_in_html
 from src.browser.portal import classify_portal
 from src.browser.field_mapper import build_fill_instructions, FILL_DELAY_SECONDS
+from src.browser.human_mouse import reading_pause, page_transition_pause
 
 logger = logging.getLogger(__name__)
 
-_APPLY_WAIT  = 5.0
-_SUBMIT_WAIT = 8.0
+_APPLY_WAIT   = 5.0
+_SUBMIT_WAIT  = 8.0
+FAST_FILL_DELAY = 0.15   # inter-field pause in fast path (replaces 2.0 s)
 
 # Default Chrome user-data-dir on Windows
 _DEFAULT_CHROME_DIR = os.path.join(
@@ -98,15 +100,38 @@ class AutoSubmitResult:
     ai_trap_detected: bool = False
 
 
+_cached_profile: dict | None = None
+
+
+def _load_application_answers() -> dict:
+    """Load application_answers.json once and cache in memory."""
+    global _cached_profile
+    if _cached_profile is not None:
+        return _cached_profile
+    profile_path = os.path.join(
+        os.path.dirname(__file__), "..", "..",
+        "knowledge_base", "profile", "application_answers.json",
+    )
+    try:
+        import json as _json
+        with open(profile_path, encoding="utf-8") as fh:
+            _cached_profile = _json.load(fh)
+    except Exception:
+        _cached_profile = {}
+    return _cached_profile
+
+
 def build_candidate_answers(
     app_id: int,
     job_title: str = "",
     company: str = "",
     resume_path: str = "",
+    *,
+    screener_answers: dict | None = None,
 ) -> dict:
     """
-    Build the answers dict from env vars and profile data.
-    All values come from .env (set by the user — never invented).
+    Build the answers dict from env vars, application_answers.json, and optional
+    pre-computed screener answers. Env-var values always win for core contact fields.
     """
     email     = os.environ.get("YOUR_EMAIL_ADDRESS", "").strip()
     phone     = os.environ.get("PHONE_NUMBER", "").strip()
@@ -128,9 +153,10 @@ def build_candidate_answers(
         "I look forward to contributing to your team."
     ) if job_title and company else ""
 
-    return {
+    answers: dict = {
         "first_name":         "Pranav",
         "last_name":          "Pradhan",
+        "full_name":          "Pranav Tushar Pradhan",
         "email":              email,
         "phone":              phone,
         "linkedin_url":       linkedin,
@@ -142,8 +168,29 @@ def build_candidate_answers(
         "address_zip":        zipcode,
         "address_country":    country,
         "cover_letter":       cover,
+        "cover_letter_default": cover,
         "resume":             resume_path,
     }
+
+    # Merge static profile data from application_answers.json (lower priority than env)
+    profile = _load_application_answers()
+    for key in (
+        "github_url", "portfolio_url", "salary_expectation", "salary_display",
+        "years_experience", "requires_sponsorship", "us_citizen_or_pr", "visa_status",
+        "education_degree", "education_school", "graduation_year", "current_title",
+        "willing_to_relocate", "remote_preference", "linkedin_headline",
+        "full_name", "location",
+    ):
+        if key in profile and profile[key] and not answers.get(key):
+            answers[key] = profile[key]
+
+    # Merge pre-computed screener answers at lowest priority (open-ended Q answers)
+    if screener_answers:
+        for k, v in screener_answers.items():
+            if v and not answers.get(k):
+                answers[k] = v
+
+    return answers
 
 
 def auto_submit_portal(
@@ -305,7 +352,7 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     nav_url = _resolve_indeed_url(url)
     logger.info("app_id=%d navigating to %s", app_id, nav_url)
     page.goto(nav_url, wait_until="domcontentloaded", timeout=30_000)
-    _human_pause(2.0, 3.5)
+    reading_pause()   # 1.5-3.5 s — simulate reading the page
 
     # After navigation the browser may have followed redirects — re-resolve
     # e.g. to.indeed.com/xxx → www.indeed.com/rc/clk?jk=... → viewjob
@@ -367,8 +414,35 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
 
     _screenshot(page, folder_path, "submit_before.png")
 
-    instructions = build_fill_instructions(answers, portal)
-    _fill_all_fields(page, answers, instructions, fill_delay)
+    # Fast universal path: JS-detected fields → human-like fill
+    from src.browser.form_detector import extract_form_fields
+    from src.browser.fast_autofill import fast_fill_form, verify_form_complete
+
+    detected = extract_form_fields(page)
+    if detected:
+        logger.info("app_id=%d fast-fill: %d fields detected", app_id, len(detected))
+        ff = fast_fill_form(page, detected, answers)
+        logger.info(
+            "app_id=%d fast-fill: filled=%d skipped=%d unmatched=%d unmatched_labels=%s",
+            app_id, ff.fields_filled, ff.fields_skipped, ff.fields_unmatched,
+            ff.unmatched_labels[:5],
+        )
+        # Fall back to legacy selector-based fill for any remaining unmatched fields
+        if ff.fields_unmatched > 3:
+            logger.info("app_id=%d unmatched fields > 3, running legacy fill as supplement", app_id)
+            instructions = build_fill_instructions(answers, portal)
+            _fill_all_fields(page, answers, instructions, FAST_FILL_DELAY)
+    else:
+        # form_detector returned nothing — use legacy selector-based fill
+        logger.info("app_id=%d form_detector found 0 fields, using legacy fill", app_id)
+        instructions = build_fill_instructions(answers, portal)
+        _fill_all_fields(page, answers, instructions, fill_delay)
+
+    # Verify form is complete before attempting submit
+    complete, issues = verify_form_complete(page)
+    if not complete:
+        logger.warning("app_id=%d form completion check: %s", app_id, issues)
+        _screenshot(page, folder_path, "submit_incomplete.png")
 
     # ── Step 7: Click Submit ──────────────────────────────────────────────────
     _click_submit(page, app_id)
@@ -473,9 +547,11 @@ def _click_submit(page, app_id: int) -> None:
 
 def _handle_smartapply_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float) -> None:
     """Step through Indeed SmartApply multi-page form until submitted."""
+    from src.browser.form_detector import extract_form_fields
+    from src.browser.fast_autofill import fast_fill_form, verify_form_complete
     max_steps = 12
     for step in range(max_steps):
-        _human_pause(1.5, 2.5)
+        page_transition_pause()
         _check_auth_wall(page)
         # Note: SmartApply embeds an invisible reCAPTCHA on every page.
         # _check_captcha_mfa would false-positive on it. We only check for the
@@ -496,8 +572,12 @@ def _handle_smartapply_pages(page, app_id: int, answers: dict, folder_path: str,
             except Exception:
                 pass
 
-        # Fill any visible fields on this page
-        _fill_smartapply_page(page, answers, fill_delay)
+        # Fill visible fields: fast universal path first, legacy as supplement
+        detected = extract_form_fields(page)
+        if detected:
+            fast_fill_form(page, detected, answers)
+        else:
+            _fill_smartapply_page(page, answers, fill_delay)
 
         # Scroll to bottom so all buttons are in reach
         try:

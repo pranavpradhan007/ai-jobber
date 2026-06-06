@@ -169,13 +169,34 @@ def _submit_approved(
             logger.error("submit failed approved app_id=%d error=%s", app_id, result.error)
     else:
         # Portal-based job: use Playwright browser automation to navigate + submit
-        answers = build_candidate_answers(
+        folder = (row["folder_path"] or "").replace("/", os.sep)
+
+        # Pre-compute screener answers BEFORE the browser session opens
+        # — eliminates all LLM latency from the hot fill path
+        from src.browser.screener_engine import precompute_screener_answers  # noqa: PLC0415
+        base_answers = build_candidate_answers(
             app_id,
             job_title=row["title"] or "",
             company=row["company"] or "",
             resume_path=row["resume_path"] or "",
         )
-        folder = (row["folder_path"] or "").replace("/", os.sep)
+        screener = precompute_screener_answers(
+            app_id=app_id,
+            job_title=row["title"] or "",
+            company=row["company"] or "",
+            clean_jd=row.get("clean_jd") or row.get("raw_jd") or "",
+            candidate_answers=base_answers,
+            cache_dir=folder,
+        )
+        answers = build_candidate_answers(
+            app_id,
+            job_title=row["title"] or "",
+            company=row["company"] or "",
+            resume_path=row["resume_path"] or "",
+            screener_answers=screener.answers,
+        )
+        if screener.llm_timed_out:
+            logger.warning("app_id=%d screener LLM timed out — using safe defaults", app_id)
 
         from src.browser.prefill import CaptchaDetected, MFADetected, AITrapDetected  # noqa: PLC0415
         try:

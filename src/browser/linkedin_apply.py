@@ -20,12 +20,18 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from src.browser.prefill import CaptchaDetected, MFADetected, AITrapDetected  # noqa: F401
 from src.browser.auto_submit import (
-    CaptchaDetected,
-    MFARequired,
     _human_pause,
     _screenshot,
     _check_auth_wall,
+)
+from src.browser.human_mouse import (
+    human_fill,
+    human_fill_select,
+    inter_field_pause,
+    page_transition_pause,
+    reading_pause,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,7 +70,7 @@ def linkedin_easy_apply(
     resume_pdf_path: str,
     folder_path: str,
     answers: dict | None = None,
-    fill_delay: float = 0.08,
+    fill_delay: float = 0.15,
 ) -> str:
     """
     Attempt LinkedIn Easy Apply for the given job URL.
@@ -79,7 +85,7 @@ def linkedin_easy_apply(
 
     # Navigate to job page
     page.goto(job_url, timeout=25_000, wait_until="domcontentloaded")
-    _human_pause(1.5, 3.0)
+    reading_pause()
     _check_auth_wall(page)
     _screenshot(page, folder_path, "li_01_job_page.png")
 
@@ -93,7 +99,7 @@ def linkedin_easy_apply(
     # Work through modal steps
     max_steps = 15
     for step in range(max_steps):
-        _human_pause(1.0, 2.0)
+        page_transition_pause()
         _check_auth_wall(page)
         _check_li_captcha(page)
         _screenshot(page, folder_path, f"li_step{step:02d}.png")
@@ -157,18 +163,13 @@ def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: di
 
 
 def _fill_field(page, selector: str, value: str, delay: float):
-    """Fill a text input if visible and value non-empty."""
+    """Fill a text input with human-like interaction (instant fill + events)."""
     if not value:
         return
     try:
         el = page.locator(selector).first
         if el.count() > 0 and el.is_visible():
-            el.click()
-            el.fill("")
-            for ch in value:
-                el.press(ch)
-                if delay > 0:
-                    time.sleep(delay)
+            human_fill(page, el, value, long_text=False)
     except Exception as exc:
         logger.debug("fill_field selector=%r error: %s", selector, exc)
 
@@ -262,7 +263,8 @@ def _fill_selects(page, answers: dict):
 
 
 def _fill_text_questions(page, answers: dict):
-    """Fill open-text questions using answers dict or smart defaults."""
+    """Fill open-text questions using pre-computed screener answers + smart defaults."""
+    from src.browser.screener_engine import match_question_to_category
     try:
         textareas = page.locator("textarea:visible").all()
         for ta in textareas:
@@ -276,12 +278,34 @@ def _fill_text_questions(page, answers: dict):
                         label_text = lbl.inner_text().lower().strip()
 
                 key = label_text or placeholder
-                if key and key in answers:
-                    ta.fill(answers[key])
-                elif "cover letter" in key:
-                    ta.fill("")  # skip cover letters — not required
-                elif "salary" in key:
-                    ta.fill(answers.get("salary_expectation", "80000"))
+                if not key:
+                    continue
+
+                # Direct key match in answers
+                if key in answers:
+                    human_fill(page, ta, str(answers[key]), long_text=True)
+                    inter_field_pause()
+                    continue
+
+                # screener_engine category match
+                match = match_question_to_category(key)
+                if match:
+                    cat, answer_key = match
+                    val = answers.get(cat) or answers.get(answer_key)
+                    if val:
+                        human_fill(page, ta, str(val), long_text=True)
+                        inter_field_pause()
+                        continue
+
+                # Skip cover letters (not required on LinkedIn)
+                if "cover letter" in key:
+                    continue
+
+                # Salary fallback
+                if "salary" in key:
+                    human_fill(page, ta, answers.get("salary_expectation", "80000"), long_text=False)
+                    inter_field_pause()
+
             except Exception:
                 pass
     except Exception:
