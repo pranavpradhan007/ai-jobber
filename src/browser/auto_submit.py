@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 import os
 import random
+import socket
+import subprocess
 import time
 import urllib.parse
 from dataclasses import dataclass
@@ -157,34 +159,10 @@ def auto_submit_portal(
     chrome_dir  = os.environ.get("CHROME_USER_DATA_DIR", _DEFAULT_CHROME_DIR)
     chrome_profile = os.environ.get("CHROME_PROFILE", "Default")
 
-    with sync_playwright() as pw:
-        try:
-            context = pw.chromium.launch_persistent_context(
-                user_data_dir=chrome_dir,
-                channel="chrome",          # real Chrome binary, not bundled Chromium
-                headless=False,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    f"--profile-directory={chrome_profile}",
-                ],
-                viewport={"width": 1280, "height": 900},
-                accept_downloads=True,
-                slow_mo=80,                # base human-like pacing
-            )
-        except Exception as exc:
-            # Chrome profile in use — fall back to isolated Chromium as last resort
-            logger.warning(
-                "Could not open real Chrome profile (%s). Chrome may be open. "
-                "Falling back to isolated Chromium. Error: %s", chrome_dir, exc
-            )
-            browser = pw.chromium.launch(headless=False)
-            context = browser.new_context(
-                viewport={"width": 1280, "height": 900},
-                accept_downloads=True,
-            )
+    cdp_port = int(os.environ.get("CHROME_CDP_PORT", "9222"))
 
+    with sync_playwright() as pw:
+        context = _open_chrome_context(pw, chrome_dir, chrome_profile, cdp_port)
         page = context.new_page()
         try:
             return _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay)
@@ -202,9 +180,101 @@ def auto_submit_portal(
             return AutoSubmitResult(success=False, app_id=app_id, error=str(exc))
         finally:
             try:
-                context.close()
+                page.close()
             except Exception:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Chrome startup helpers
+# ---------------------------------------------------------------------------
+
+def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
+    """
+    Open (or connect to) real Chrome with the user's profile.
+
+    Strategy:
+      1. Try connecting to already-running Chrome on cdp_port.
+      2. If that fails, kill Chrome, relaunch it with --remote-debugging-port,
+         and connect via CDP.
+      3. Last resort: fallback to an isolated Playwright Chromium window.
+
+    Using CDP (not launch_persistent_context) avoids Playwright injecting
+    --enable-automation and --disable-extensions, so the browser looks real.
+    """
+    # Attempt 1: connect to already-running Chrome
+    try:
+        if _chrome_cdp_reachable(cdp_port):
+            logger.info("Connecting to existing Chrome on CDP port %d", cdp_port)
+            browser = pw.chromium.connect_over_cdp(f"http://localhost:{cdp_port}")
+            return browser.contexts[0] if browser.contexts else browser.new_context()
+    except Exception as e:
+        logger.debug("CDP connect failed: %s", e)
+
+    # Attempt 2: kill Chrome, relaunch with CDP port, then connect
+    try:
+        _relaunch_chrome_with_cdp(chrome_dir, profile, cdp_port)
+        browser = pw.chromium.connect_over_cdp(f"http://localhost:{cdp_port}")
+        return browser.contexts[0] if browser.contexts else browser.new_context()
+    except Exception as e:
+        logger.warning("CDP relaunch failed (%s) — falling back to isolated Chromium", e)
+
+    # Attempt 3: isolated Chromium (no real profile, no cookies)
+    browser = pw.chromium.launch(headless=False)
+    return browser.new_context(
+        viewport={"width": 1280, "height": 900},
+        accept_downloads=True,
+    )
+
+
+def _chrome_cdp_reachable(port: int) -> bool:
+    """Return True if Chrome's CDP debug endpoint is listening."""
+    try:
+        s = socket.create_connection(("localhost", port), timeout=1.5)
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+def _relaunch_chrome_with_cdp(chrome_dir: str, profile: str, port: int) -> None:
+    """Gracefully kill Chrome then relaunch with the CDP debug port open."""
+    # Graceful close first; /F force-kill only if needed
+    subprocess.run(["taskkill", "/IM", "chrome.exe"], capture_output=True)
+    time.sleep(1.5)
+    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], capture_output=True)
+    time.sleep(1.5)
+
+    chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    if not os.path.isfile(chrome_exe):
+        # Try common alternative locations
+        for alt in [
+            os.path.expandvars(r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+        ]:
+            if os.path.isfile(alt):
+                chrome_exe = alt
+                break
+        else:
+            raise FileNotFoundError("chrome.exe not found")
+
+    subprocess.Popen([
+        chrome_exe,
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={chrome_dir}",
+        f"--profile-directory={profile}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-background-mode",
+    ])
+
+    # Wait for CDP to become reachable (up to 15 s)
+    for _ in range(15):
+        if _chrome_cdp_reachable(port):
+            time.sleep(1.0)   # extra settle time
+            return
+        time.sleep(1.0)
+    raise RuntimeError(f"Chrome did not expose CDP on port {port} within 15s")
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +289,14 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     logger.info("app_id=%d navigating to %s", app_id, nav_url)
     page.goto(nav_url, wait_until="domcontentloaded", timeout=30_000)
     _human_pause(2.0, 3.5)
+
+    # After navigation the browser may have followed redirects — re-resolve
+    # e.g. to.indeed.com/xxx → www.indeed.com/rc/clk?jk=... → viewjob
+    resolved = _resolve_indeed_url(page.url)
+    if resolved != page.url:
+        logger.info("app_id=%d Indeed post-redirect: navigating to %s", app_id, resolved)
+        page.goto(resolved, wait_until="domcontentloaded", timeout=30_000)
+        _human_pause(2.0, 3.0)
 
     # ── Step 2: Detect auth walls early ──────────────────────────────────────
     _check_auth_wall(page)

@@ -25,7 +25,7 @@ LEGAL_TRANSITIONS: dict[str, set[str]] = {
     "RESUME_VERIFIED":            {"PACKAGING"},
     "PACKAGING":                  {"READY_TO_SUBMIT"},
     "READY_TO_SUBMIT":            {"SUBMITTING", "WAITING_FOR_USER_APPROVAL", "AI_TRAP_DETECTED"},
-    "WAITING_FOR_USER_APPROVAL":  {"SUBMITTING", "SKIPPED", "TAILORING", "SNOOZED", "AI_TRAP_DETECTED"},
+    "WAITING_FOR_USER_APPROVAL":  {"SUBMITTING", "SKIPPED", "TAILORING", "SNOOZED", "AI_TRAP_DETECTED", "WAITING_FOR_MFA", "WAITING_FOR_CAPTCHA"},
     "SUBMITTING":                 {
                                       "SUBMITTED",
                                       "WAITING_FOR_CAPTCHA",
