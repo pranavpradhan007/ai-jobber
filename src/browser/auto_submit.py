@@ -405,7 +405,17 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     _check_auth_wall(page)
 
     # ── Step 4: Check if Indeed SmartApply (multi-page form) ─────────────────
-    if _SMARTAPPLY_HOST in page.url:
+    _is_smartapply = (
+        _SMARTAPPLY_HOST in page.url
+        or "indeed.com/apply" in page.url
+        or "indeed.com/viewjob" not in page.url and "indeed.com" in page.url and "/apply" in page.url
+    )
+    if _is_smartapply:
+        # Wait up to 5s for SmartApply SPA to finish rendering
+        try:
+            page.wait_for_load_state("networkidle", timeout=5000)
+        except Exception:
+            pass
         logger.info("app_id=%d detected SmartApply form, starting page loop", app_id)
         _handle_smartapply_pages(page, app_id, answers, folder_path, fill_delay)
         ss_after = _screenshot(page, folder_path, "submit_confirmation.png")
