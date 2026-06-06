@@ -100,7 +100,12 @@ def reframe_bullets_in_docx(
     for (idx, para), new_text in zip(bullet_paras, reframed):
         new_text = _clean(new_text)
         old_text = _para_text(para)
-        if new_text == old_text or not new_text.strip():
+        if not new_text.strip() or new_text == old_text:
+            continue
+        # Never let a reframed bullet grow longer than the original —
+        # that directly risks pushing the resume to 2 pages
+        if len(new_text) > len(old_text) + 10:
+            logger.debug("bullet[%d] reframe rejected (grew %d→%d chars)", idx, len(old_text), len(new_text))
             continue
         _write_text_to_para(para, new_text)
         changed += 1

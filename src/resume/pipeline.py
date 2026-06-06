@@ -83,47 +83,66 @@ def run_tailoring(
             "Set RESUME_DOCX_PATH in .env to the correct path."
         )
 
-    # Copy the DOCX — ground truth is NEVER modified
-    shutil.copy2(source_docx, docx_path)
-    logger.info("app_id=%d copied ground-truth DOCX → %s", app_id, docx_path)
+    from src.resume.checker import check_resume
 
-    # Reframe bullets on the COPY to match JD emphasis
-    # (format, design, fonts, and all factual content are preserved)
-    if hot_keywords and job_title:
-        from src.resume.bullet_reframer import reframe_bullets_in_docx
-        n_reframed = reframe_bullets_in_docx(
-            docx_path,
-            hot_keywords=hot_keywords,
-            job_title=job_title,
-            rephraser_fn=rephraser,
-        )
-        logger.info("app_id=%d reframed %d bullets", app_id, n_reframed)
+    def _build_and_check(do_reframe: bool) -> tuple[str, list[str], "CheckResult"]:
+        """Copy GT, optionally reframe, inject, convert, check. Returns (pdf, injected, check)."""
+        shutil.copy2(source_docx, docx_path)
 
-    # Inject missing JD keywords into the skills line only
-    injected_keywords = _inject_keywords(docx_path, hot_keywords)
-    logger.info(
-        "app_id=%d injected %d new keywords: %s",
-        app_id, len(injected_keywords), injected_keywords,
-    )
+        if do_reframe and hot_keywords and job_title:
+            from src.resume.bullet_reframer import reframe_bullets_in_docx
+            n = reframe_bullets_in_docx(
+                docx_path,
+                hot_keywords=hot_keywords,
+                job_title=job_title,
+                rephraser_fn=rephraser,
+            )
+            logger.info("app_id=%d reframed %d bullets (do_reframe=True)", app_id, n)
 
-    # Convert to PDF
-    try:
-        pdf_path = render_pdf(docx_path, pdf_path)
-    except Exception as exc:
-        # If PDF conversion fails, fall back to copying the original PDF
-        logger.warning("PDF conversion failed (%s); copying source PDF", exc)
+        kw_added = _inject_keywords(docx_path, hot_keywords)
+        logger.info("app_id=%d injected %d keywords: %s", app_id, len(kw_added), kw_added)
+
+        out_pdf = pdf_path
+        try:
+            out_pdf = render_pdf(docx_path, pdf_path)
+        except Exception as exc:
+            logger.warning("PDF render failed (%s)", exc)
+            if os.path.isfile(source_pdf):
+                shutil.copy2(source_pdf, out_pdf)
+
+        chk = check_resume(out_pdf, docx_path, hot_keywords=hot_keywords)
+        return out_pdf, kw_added, chk
+
+    # ── Graduated fallback strategy ───────────────────────────────────────────
+    # Level 1: full tailoring (reframe bullets + inject keywords)
+    logger.info("app_id=%d attempt 1: reframe + inject", app_id)
+    pdf_path, injected_keywords, check = _build_and_check(do_reframe=True)
+
+    if not check.passed:
+        logger.warning("app_id=%d level-1 failed: %s — trying skills-only", app_id, check.issues)
+        # Level 2: skills injection only (no reframing)
+        pdf_path, injected_keywords, check = _build_and_check(do_reframe=False)
+
+    if not check.passed:
+        logger.warning("app_id=%d level-2 failed — using ground truth PDF", app_id)
+        for iss in check.issues:
+            logger.warning("  checker: %s", iss)
         if os.path.isfile(source_pdf):
             shutil.copy2(source_pdf, pdf_path)
-        else:
-            pdf_path = ""
+        injected_keywords = []
+        checker_note = "FAILED (2-level) — ground truth PDF submitted"
+    elif check.passed and injected_keywords:
+        checker_note = f"PASSED with {len(injected_keywords)} injected keywords"
+    else:
+        checker_note = "PASSED (ground truth content, skills injected)"
 
-    # Verifier runs only on the injected text (ground-truth bullets are pre-verified)
+    # Verifier runs only on the injected text
     injected_text = ", ".join(injected_keywords) if injected_keywords else "(no new keywords)"
     verifier_report = verify_text(
         conn, app_id, injected_text, surface=surface, extractor=extractor
     )
 
-    # Build a minimal diff doc
+    # Build diff doc
     fake_bullets: list[BankItem] = [
         BankItem(item_type="keyword", value=kw, source="hot_keywords", usage_level="resume")
         for kw in (injected_keywords or hot_keywords[:5])
@@ -133,7 +152,7 @@ def run_tailoring(
         [f"Added to skills line: {kw}" for kw in (injected_keywords or [])],
         verifier_report,
         job_title=job_title,
-        style_report="Style check: OK (ground-truth resume used as-is)",
+        style_report=f"Resume checker: {checker_note}",
     )
 
     update_application(
@@ -141,17 +160,18 @@ def run_tailoring(
         resume_path=docx_path,
         resume_pdf_path=pdf_path,
         resume_diff_path=diff_path,
-        verifier_passed=1,
+        verifier_passed=1 if check.passed else 0,
     )
     transition(conn, app_id, "RESUME_VERIFIED", reason="verifier passed")
 
-    logger.info("tailoring complete app_id=%d injected=%s", app_id, injected_keywords)
+    logger.info("tailoring complete app_id=%d checker=%s injected=%s",
+                app_id, "PASS" if check.passed else "FAIL(gt)", injected_keywords)
     return TailoringResult(
         resume_path=docx_path,
         resume_pdf_path=pdf_path,
         resume_diff_path=diff_path,
-        verifier_passed=True,
-        ats_score=75,
+        verifier_passed=check.passed,
+        ats_score=75 if check.passed else 0,
     )
 
 
@@ -167,9 +187,9 @@ _AI_LANGUAGE_BLACKLIST = {
 # Em dash variants to strip from any injected text
 _EM_DASH_CHARS = ["—", "–", "·", "—", "–"]
 
-# Hard cap: if adding keywords makes the skills line longer than this many chars,
-# stop adding to stay within 1-page budget
-_SKILLS_LINE_CHAR_LIMIT = 420
+# Hard caps for 1-page budget — conservative to leave room for font hinting variance
+_SKILLS_LINE_CHAR_LIMIT = 380   # total chars the skills line may reach
+_MAX_NEW_KEYWORDS = 3           # never inject more than 3 new terms
 
 
 def _clean_keyword(kw: str) -> str:
@@ -185,48 +205,63 @@ def _clean_keyword(kw: str) -> str:
 
 def _inject_keywords(docx_path: str, hot_keywords: list[str]) -> list[str]:
     """
-    Find the Technical Skills paragraph in the DOCX and append any
-    hot_keywords not already present.  Returns the list of newly added keywords.
-    Edits the file in-place.
+    Find the Technical Skills CONTENT paragraph (not the heading) and append
+    any hot_keywords not already present in the whole document.
+    Returns the list of newly added keywords. Edits the file in-place.
 
     Rules enforced:
-    - No em dashes
-    - No AI language / buzzwords
-    - Total skills line stays under _SKILLS_LINE_CHAR_LIMIT to preserve 1-page layout
+    - Target must be a Normal/body paragraph, NOT a Heading paragraph
+    - No em dashes or AI buzzwords
+    - Cap at _MAX_NEW_KEYWORDS terms and _SKILLS_LINE_CHAR_LIMIT chars
+    - New run is added with explicit formatting (no underline, same font size)
+      so heading styles never bleed into injected text
     """
     try:
         from docx import Document
+        from docx.shared import Pt
     except ImportError:
         logger.warning("python-docx not installed; skipping keyword injection")
         return []
 
     doc = Document(docx_path)
 
+    # Build full-document text for duplicate detection
+    full_doc_text = " ".join(p.text for p in doc.paragraphs).lower()
+
+    # Find the skills CONTENT paragraph:
+    # Must NOT be a Heading style, must start with a skills category label
+    # (e.g. "Languages:", "Cloud", "Libraries:")
+    _CONTENT_MARKERS = [
+        "languages:", "cloud", "libraries:", "database:", "frameworks:",
+        "tools:", "programming languages",
+    ]
+    _HEADING_STYLES = {"Heading 1", "Heading 2", "Heading 3", "Title"}
+
     skills_para = None
     for para in doc.paragraphs:
-        text_lower = para.text.lower()
-        if any(marker in text_lower for marker in [
-            "technical skills", "skills", "technologies", "tools",
-            "programming languages", "frameworks",
-        ]):
+        if para.style.name in _HEADING_STYLES:
+            continue
+        text_lower = para.text.lower().strip()
+        if any(text_lower.startswith(m) or (f" {m}" in text_lower) for m in _CONTENT_MARKERS):
             skills_para = para
             break
 
     if skills_para is None:
-        logger.warning("Could not find skills line in DOCX; skipping injection")
+        logger.warning("Could not find skills content line in DOCX; skipping injection")
         return []
 
-    existing_text = skills_para.text.lower()
     current_len = len(skills_para.text)
 
     to_add: list[str] = []
     for kw in hot_keywords:
+        if len(to_add) >= _MAX_NEW_KEYWORDS:
+            break
         cleaned = _clean_keyword(kw)
         if not cleaned:
             continue
-        if cleaned.lower() in existing_text:
+        if cleaned.lower() in full_doc_text:
             continue
-        if len(cleaned) >= 40:  # skip suspiciously long tokens
+        if len(cleaned) >= 40:
             continue
         if current_len + len(", " + cleaned) > _SKILLS_LINE_CHAR_LIMIT:
             logger.info("skills line at char limit (%d); stopping injection", current_len)
@@ -237,12 +272,18 @@ def _inject_keywords(docx_path: str, hot_keywords: list[str]) -> list[str]:
     if not to_add:
         return []
 
-    # Append to the last run (preserves formatting of that run)
-    addition = ", " + ", ".join(to_add)
-    if skills_para.runs:
-        skills_para.runs[-1].text += addition
-    else:
-        skills_para.add_run(addition)
+    # Infer font size from existing runs (copy from last non-empty run)
+    ref_run = next((r for r in reversed(skills_para.runs) if r.text.strip()), None)
+    ref_size = ref_run.font.size if ref_run else None
+
+    # Add a NEW run so we control its formatting completely
+    # (never modify the last existing run — it may carry heading/underline styles)
+    new_run = skills_para.add_run(", " + ", ".join(to_add))
+    new_run.bold = False
+    new_run.italic = False
+    new_run.underline = False
+    if ref_size:
+        new_run.font.size = ref_size
 
     doc.save(docx_path)
     return to_add

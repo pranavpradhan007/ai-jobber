@@ -79,41 +79,39 @@ else:
 from src.resume.renderer import render_pdf
 
 print(f"\nConverting to PDF...")
-try:
-    pdf_path = render_pdf(str(OUT_DOCX), str(OUT_PDF))
-    print(f"PDF saved: {pdf_path}")
-except Exception as exc:
-    # Fallback: try LibreOffice
-    print(f"render_pdf failed ({exc}), trying LibreOffice...")
-    try:
-        subprocess.run(
-            ["soffice", "--headless", "--convert-to", "pdf",
-             "--outdir", str(OUT_DIR), str(OUT_DOCX)],
-            check=True, capture_output=True,
-        )
-        # LibreOffice names it after the DOCX stem
-        lo_out = OUT_DIR / "resume_sample.pdf"
-        pdf_path = str(lo_out) if lo_out.is_file() else ""
-        if pdf_path:
-            print(f"PDF saved via LibreOffice: {pdf_path}")
-        else:
-            print("LibreOffice conversion produced no output file.")
-            sys.exit(1)
-    except Exception as exc2:
-        print(f"LibreOffice also failed: {exc2}")
-        print(f"\nThe DOCX is ready at: {OUT_DOCX}")
-        print("Open it in Word to view.")
-        sys.exit(0)
+pdf_path = render_pdf(str(OUT_DOCX), str(OUT_PDF))
+print(f"PDF saved: {pdf_path}")
+
+# ── Resume checker ────────────────────────────────────────────────────────────
+
+from src.resume.checker import check_resume
+
+print("\nRunning resume checker...")
+check = check_resume(str(OUT_PDF), str(OUT_DOCX), hot_keywords=HOT_KEYWORDS)
+print(check)
+
+SHOW_PDF = str(OUT_PDF)
+
+if not check.passed:
+    print("\nChecker FAILED — falling back to ground truth PDF for display.")
+    gt_pdf = r"D:\Pranav\Resume\New folder\Pranav ML-AI Resume.pdf"
+    if pathlib.Path(gt_pdf).is_file():
+        SHOW_PDF = gt_pdf
+        print(f"Showing ground truth PDF: {SHOW_PDF}")
+    else:
+        print(f"Ground truth PDF not found at {gt_pdf}, showing tailored anyway.")
+else:
+    print("\nChecker PASSED — tailored resume is clean and 1 page.")
 
 # ── Open in Chrome ────────────────────────────────────────────────────────────
 
 chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-abs_pdf = str(pathlib.Path(pdf_path).resolve())
+abs_pdf = str(pathlib.Path(SHOW_PDF).resolve())
 
 print(f"\nOpening PDF in Chrome: {abs_pdf}")
 try:
     subprocess.Popen([chrome_exe, abs_pdf])
-    print("Chrome launched — review your tailored resume.")
+    print("Chrome launched — review your resume.")
 except Exception as exc:
     print(f"Could not open Chrome ({exc}).")
     print(f"Open this file manually: {abs_pdf}")
