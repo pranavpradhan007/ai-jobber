@@ -191,35 +191,29 @@ def auto_submit_portal(
 
 def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     """
-    Open (or connect to) real Chrome with the user's profile.
+    Connect to real Chrome for application submission.
 
-    Strategy:
-      1. Try connecting to already-running Chrome on cdp_port.
-      2. If that fails, kill Chrome, relaunch it with --remote-debugging-port,
-         and connect via CDP.
-      3. Last resort: fallback to an isolated Playwright Chromium window.
+    Preferred path: connect to Chrome already running with --remote-debugging-port.
+    The user launches Chrome via launch_chrome_debug.bat before running the agent.
 
-    Using CDP (not launch_persistent_context) avoids Playwright injecting
-    --enable-automation and --disable-extensions, so the browser looks real.
+    Fallback: isolated Playwright Chromium (no saved sessions — Indeed will require login).
     """
-    # Attempt 1: connect to already-running Chrome
-    try:
-        if _chrome_cdp_reachable(cdp_port):
-            logger.info("Connecting to existing Chrome on CDP port %d", cdp_port)
+    # Attempt 1: connect to already-running Chrome with CDP port open
+    if _chrome_cdp_reachable(cdp_port):
+        try:
+            logger.info("Connecting to Chrome on CDP port %d", cdp_port)
             browser = pw.chromium.connect_over_cdp(f"http://localhost:{cdp_port}")
-            return browser.contexts[0] if browser.contexts else browser.new_context()
-    except Exception as e:
-        logger.debug("CDP connect failed: %s", e)
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            return ctx
+        except Exception as e:
+            logger.warning("CDP connect failed: %s", e)
 
-    # Attempt 2: kill Chrome, relaunch with CDP port, then connect
-    try:
-        _relaunch_chrome_with_cdp(chrome_dir, profile, cdp_port)
-        browser = pw.chromium.connect_over_cdp(f"http://localhost:{cdp_port}")
-        return browser.contexts[0] if browser.contexts else browser.new_context()
-    except Exception as e:
-        logger.warning("CDP relaunch failed (%s) — falling back to isolated Chromium", e)
-
-    # Attempt 3: isolated Chromium (no real profile, no cookies)
+    # Attempt 2: isolated Chromium (no real sessions — works for non-auth portals)
+    logger.warning(
+        "Chrome not running on CDP port %d. "
+        "Run launch_chrome_debug.bat first for sites that require login (Indeed, etc.). "
+        "Falling back to isolated Chromium.", cdp_port
+    )
     browser = pw.chromium.launch(headless=False)
     return browser.new_context(
         viewport={"width": 1280, "height": 900},
