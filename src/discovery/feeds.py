@@ -56,31 +56,14 @@ def queue_feed_fetches() -> list[str]:
     """
     Write pending action manifests for Claude Code to fetch all external feeds.
     Returns list of request_ids queued.
+
+    RemoteOK is intentionally excluded — bot detection is too aggressive for
+    reliable auto-submission. Jobs from that source would never submit.
     """
     pending = _ACTIONS_DIR / "pending"
     pending.mkdir(parents=True, exist_ok=True)
 
     ids = []
-
-    # RemoteOK (one request per tag batch)
-    tags_str = ",".join(REMOTEOK_TAGS[:3])  # top 3 tags
-    req_id = f"feed_remoteok_{_ts()}"
-    _write_manifest(pending / f"{req_id}.json", {
-        "action":     "fetch_feed",
-        "source":     "remoteok",
-        "request_id": req_id,
-        "urls":       [f"https://remoteok.com/api?tag={t}" for t in REMOTEOK_TAGS],
-        "instruction": (
-            "Fetch each URL with WebFetch. Each returns a JSON array. "
-            "The first element is metadata — skip it. "
-            "For each job entry extract: position (title), company, location, "
-            "url, description (tags joined). "
-            "Deduplicate by url. "
-            "Then call: from src.discovery.feeds import write_feed_results; "
-            f"write_feed_results('{req_id}', 'remoteok', job_list)"
-        ),
-    })
-    ids.append(req_id)
 
     # We Work Remotely RSS
     req_id = f"feed_wwr_{_ts()}"

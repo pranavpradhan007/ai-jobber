@@ -160,11 +160,20 @@ def process_inbox(
     Fetch unread monitoring emails and process them against active applications.
     Matches emails to applications by looking up application receipts / thread IDs.
     """
-    # Get all MONITORING applications
+    # Load MONITORING apps with company + title for real matching
     cur = conn.execute(
-        "SELECT id, receipt FROM applications WHERE state='MONITORING'"
+        "SELECT a.id, a.receipt, j.company, j.title "
+        "FROM applications a JOIN jobs j ON a.job_id=j.id "
+        "WHERE a.state='MONITORING'"
     )
-    monitoring_apps = {row["id"]: row["receipt"] for row in cur.fetchall()}
+    monitoring_apps = {
+        row["id"]: {
+            "receipt": row["receipt"],
+            "company": (row["company"] or "").lower(),
+            "title":   (row["title"]   or "").lower(),
+        }
+        for row in cur.fetchall()
+    }
 
     if not monitoring_apps:
         logger.info("No MONITORING applications — inbox check skipped")
@@ -175,7 +184,6 @@ def process_inbox(
     results = []
 
     for msg in messages:
-        # Simple heuristic: match by app_id mentioned in subject or body
         matched_app_id = _match_message_to_app(msg, monitoring_apps)
         if matched_app_id is None:
             logger.debug("No matching application for email: %r", msg.subject)
@@ -195,12 +203,34 @@ def process_inbox(
 
 
 def _match_message_to_app(msg, monitoring_apps: dict) -> Optional[int]:
-    """Match an inbound email to an application by receipt tag in subject."""
+    """
+    Match an inbound email to an application.
+
+    Priority:
+    1. Internal tag APP-N anywhere in subject/body (exact)
+    2. Company name: significant words (4+ chars) from company appear in email
+    3. Title words as tie-breaker between multiple company matches
+    """
     combined = (msg.subject + " " + msg.body).lower()
+
+    # 1. Exact internal tag
     for app_id in monitoring_apps:
-        if f"app #{app_id}" in combined or f"app-{app_id}" in combined:
+        if f"app-{app_id}" in combined or f"app #{app_id}" in combined:
             return app_id
-    return None
+
+    # 2. Company name word match
+    best_id, best_score = None, 0
+    for app_id, meta in monitoring_apps.items():
+        company_words = [w for w in meta["company"].split() if len(w) >= 4]
+        title_words   = [w for w in meta["title"].split()   if len(w) >= 4]
+        company_hits  = sum(1 for w in company_words if w in combined)
+        title_hits    = sum(1 for w in title_words   if w in combined)
+        score = company_hits * 3 + title_hits   # company match weighted higher
+        if score > best_score:
+            best_score = score
+            best_id = app_id
+
+    return best_id if best_score >= 3 else None  # require at least 1 company word
 
 
 def _send_notification(

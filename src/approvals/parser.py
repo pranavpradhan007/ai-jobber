@@ -24,6 +24,7 @@ Rules:
   - Commands are applied top-to-bottom; duplicates overwrite.
 """
 from __future__ import annotations
+import json
 import logging
 import re
 import sqlite3
@@ -68,6 +69,99 @@ class ApplyResult:
     success: bool
     error: Optional[str] = None
     detail: Optional[str] = None
+
+
+def parse_reply_natural(text: str, conn: sqlite3.Connection) -> list[ParsedCommand]:
+    """
+    Parse a free-form natural language reply using the LLM bridge.
+
+    Falls back to parse_reply() if LLM is unavailable or times out.
+    Requires conn so we can embed the current pending-app list in the prompt.
+    """
+    try:
+        from src.llm.claude_code_bridge import should_use_claude_code, queue_llm_task  # noqa: PLC0415
+        if not should_use_claude_code():
+            return parse_reply(text, conn)
+    except ImportError:
+        return parse_reply(text, conn)
+
+    # Build context: list of pending apps the user can act on
+    pending_rows = conn.execute(
+        "SELECT a.id, j.company, j.title FROM applications a "
+        "JOIN jobs j ON a.job_id=j.id "
+        "WHERE a.state='WAITING_FOR_USER_APPROVAL' AND a.approved_by_user=0"
+    ).fetchall()
+    app_list = "\n".join(
+        f"  APP-{r['id']}: {r['company']} — {r['title']}"
+        for r in pending_rows
+    )
+
+    prompt = f"""You are a job application assistant. The user replied to a digest email in natural language.
+Convert their reply into structured commands. Output ONLY valid JSON — a list of command objects.
+
+Pending applications the user can act on:
+{app_list}
+
+Valid commands:
+  {{"app_id": N, "command": "APPROVE"}}
+  {{"app_id": N, "command": "REJECT"}}
+  {{"app_id": N, "command": "SNOOZE", "snooze_days": 1}}
+  {{"app_id": N, "command": "EDIT", "edit_instruction": "their note"}}
+  {{"app_id": null, "command": "APPROVE", "all": true}}
+  {{"app_id": null, "command": "REJECT", "all": true}}
+
+Rules:
+- Match the user's intent to specific APP-IDs using company/title names if mentioned.
+- "apply to X" or "go ahead with X" or "yes to X" = APPROVE for that company.
+- "skip X" or "not X" or "don't apply to X" = REJECT.
+- "remind me tomorrow" or "later" = SNOOZE.
+- "approve all" or "all good" or "apply to everything" = APPROVE ALL.
+- If the message is a question or general comment with no actionable command, return [].
+- Never invent app_ids not in the list above.
+
+User reply:
+\"\"\"
+{text}
+\"\"\"
+
+Output only the JSON array, nothing else."""
+
+    try:
+        raw = queue_llm_task("parse_reply", prompt, timeout_seconds=60)
+        if not raw:
+            return parse_reply(text, conn)
+        # Extract JSON array from response
+        m = re.search(r'\[.*\]', raw, re.DOTALL)
+        if not m:
+            return parse_reply(text, conn)
+        parsed = json.loads(m.group(0))
+        commands = []
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            cmd_str = (item.get("command") or "").upper()
+            if cmd_str not in VALID_COMMANDS:
+                continue
+            if item.get("all"):
+                rows = conn.execute(
+                    "SELECT id FROM applications WHERE state='WAITING_FOR_USER_APPROVAL'"
+                ).fetchall()
+                for row in rows:
+                    commands.append(ParsedCommand(
+                        app_id=row[0], command=cmd_str, raw_line=f"{cmd_str} ALL (NL)",
+                    ))
+            elif item.get("app_id"):
+                commands.append(ParsedCommand(
+                    app_id=int(item["app_id"]),
+                    command=cmd_str,
+                    raw_line=f"NL: {text[:60]}",
+                    edit_instruction=item.get("edit_instruction"),
+                    snooze_days=int(item.get("snooze_days") or 1),
+                ))
+        return commands if commands else parse_reply(text, conn)
+    except Exception as exc:
+        logger.warning("NL reply parse failed (%s) — falling back to regex parser", exc)
+        return parse_reply(text, conn)
 
 
 def parse_reply(text: str, conn: sqlite3.Connection = None) -> list[ParsedCommand]:

@@ -61,9 +61,23 @@ def build_digest(
     Build and (MCP-)queue the morning digest email.
     Returns the action_id / message_id, or None if nothing pending.
     """
-    pending = get_applications_by_state(conn, "WAITING_FOR_USER_APPROVAL")
+    all_pending = get_applications_by_state(conn, "WAITING_FOR_USER_APPROVAL")
+    # Exclude already-approved apps (awaiting submission, not user decision)
+    # and RemoteOK jobs (bot detection too strong — cannot auto-submit)
+    pending = []
+    for app in all_pending:
+        row = conn.execute(
+            "SELECT j.platform, a.approved_by_user FROM applications a "
+            "JOIN jobs j ON a.job_id=j.id WHERE a.id=?", (app.id,)
+        ).fetchone()
+        if row and row["approved_by_user"]:
+            continue
+        if row and (row["platform"] or "").lower() == "remoteok":
+            continue
+        pending.append(app)
+
     if not pending:
-        logger.info("No WAITING_FOR_USER_APPROVAL apps — skipping digest")
+        logger.info("No actionable WAITING_FOR_USER_APPROVAL apps — skipping digest")
         return None
 
     if is_quiet_hours():

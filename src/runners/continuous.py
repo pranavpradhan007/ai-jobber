@@ -246,21 +246,63 @@ def _run_pipeline(
 
 def _run_approvals(conn, gmail_client) -> int:
     from src.gmail.reply_watcher import watch_for_replies, mark_digest_processed
-    from src.approvals.parser import parse_reply, apply_commands
+    from src.approvals.parser import parse_reply_natural, apply_commands
+    import os
     try:
         cached = watch_for_replies(conn, gmail_client=gmail_client)
         total = 0
         for did, text in cached.items():
-            cmds = parse_reply(text)
+            cmds = parse_reply_natural(text, conn)
             if cmds:
                 results = apply_commands(conn, cmds)
                 n = sum(1 for r in results if r.success)
                 total += n
                 mark_digest_processed(conn, did)
+                _send_approval_confirmation(conn, gmail_client, results, os.environ.get("YOUR_EMAIL_ADDRESS", ""))
         return total
     except Exception as exc:
         logger.warning("approvals: %s", exc)
         return 0
+
+
+def _send_approval_confirmation(conn, gmail_client, results, recipient: str) -> None:
+    """Email the user a plain-English summary of what was actioned from their reply."""
+    if not recipient or not results:
+        return
+    try:
+        import sqlite3 as _sq
+        lines = []
+        for r in results:
+            if not r.success:
+                lines.append(f"  Could not action APP-{r.app_id}: {r.error}")
+                continue
+            if r.app_id:
+                row = conn.execute(
+                    "SELECT j.company, j.title FROM applications a "
+                    "JOIN jobs j ON a.job_id=j.id WHERE a.id=?", (r.app_id,)
+                ).fetchone()
+                company = row["company"] if row else f"APP-{r.app_id}"
+                title   = row["title"]   if row else ""
+                cmd_map = {
+                    "APPROVE": f"Approved — will submit: {company} ({title})",
+                    "REJECT":  f"Rejected: {company} ({title})",
+                    "SKIP":    f"Skipped: {company} ({title})",
+                    "EDIT":    f"Re-tailoring: {company} ({title}){' — ' + r.detail if r.detail else ''}",
+                    "SNOOZE":  f"Snoozed: {company} ({title}){' — ' + r.detail if r.detail else ''}",
+                }
+                lines.append("  " + cmd_map.get(r.command, f"{r.command}: {company}"))
+        if not lines:
+            return
+        body = "Got it — here is what I actioned from your reply:\n\n" + "\n".join(lines)
+        body += "\n\nApproved jobs will be submitted on the next overnight run.\nReply again any time to change a decision.\n\n-- ai-jobber"
+        gmail_client.send_email(
+            to=recipient,
+            subject="[ai-jobber] Confirmed: your decisions",
+            body=body,
+        )
+        logger.info("Sent approval confirmation to %s (%d actions)", recipient, len(results))
+    except Exception as exc:
+        logger.warning("Could not send approval confirmation: %s", exc)
 
 
 def _send_digest(conn, recipient, gmail_client) -> None:

@@ -4,17 +4,17 @@ echo ============================================================
 echo  Job Agent - Chrome Debug Launcher
 echo ============================================================
 echo.
-echo This opens a real Chrome window with remote debugging enabled.
-echo After Chrome opens:
-echo   1. Log into Indeed (indeed.com) if not already logged in
-echo   2. Keep this Chrome window open
-echo   3. Run: python run_live_overnight.py
+echo Opens a SEPARATE Chrome window for job applications.
+echo Your normal Chrome keeps running unaffected.
 echo.
-echo Chrome will use your Default profile (all your logins intact).
+echo First time only: log into Indeed in this window.
+echo After that: sessions are saved here automatically.
 echo.
 
 set CHROME="C:\Program Files\Google\Chrome\Application\chrome.exe"
-set USERDATA=%LOCALAPPDATA%\Google\Chrome\User Data
+
+REM Dedicated profile dir — completely separate from your normal Chrome
+set JOBAGENT_DIR=%LOCALAPPDATA%\Google\Chrome\JobAgent
 
 if not exist %CHROME% (
     echo ERROR: Chrome not found at %CHROME%
@@ -23,9 +23,24 @@ if not exist %CHROME% (
     exit /b 1
 )
 
-echo Starting Chrome on debug port 9222...
-start "" %CHROME% --remote-debugging-port=9222 --user-data-dir=%USERDATA% --profile-directory=Default --no-first-run --no-default-browser-check
+REM Create the JobAgent dir if this is the first run
+if not exist "%JOBAGENT_DIR%" (
+    mkdir "%JOBAGENT_DIR%"
+    echo Created job agent profile at %JOBAGENT_DIR%
+)
+
+echo Starting Job Agent Chrome on debug port 9222...
+start "" %CHROME% ^
+    --remote-debugging-port=9222 ^
+    --user-data-dir="%JOBAGENT_DIR%" ^
+    --profile-directory=Default ^
+    --no-first-run ^
+    --no-default-browser-check ^
+    --window-size=1280,900 ^
+    --window-position=0,0
 
 echo.
-echo Chrome started. Log into Indeed, then run the overnight runner.
+echo Job Agent Chrome started (port 9222).
+echo First time: log into Indeed in that window, then run the overnight runner.
+echo Later runs: Indeed login is already saved, just run the overnight runner.
 echo.
