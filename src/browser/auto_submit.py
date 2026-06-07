@@ -1926,6 +1926,8 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
          answers.get("eeo_veteran", "I am not a protected veteran")),
         (["disability", "disabled", "ada coverage", "disabled or veteran"],
          answers.get("eeo_disability", "I don't wish to answer")),
+        (["hispanic or latino", "hispanic/latino", "indicate if you are hispanic", "hispanic", "latino"],
+         answers.get("eeo_hispanic", "No, Not Hispanic or Latino")),
     ]
 
     filled = 0
@@ -2002,6 +2004,39 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
         logger.debug("_fill_workday_screener_questions: %s", exc)
 
     # Also attempt native <select> fill (some Workday instances do use native selects)
+    # EEO questions on Voluntary Disclosures use native <select> with varying option text.
+    # We try exact match first, then fuzzy-match against available option texts.
+    def _fill_native_select(sel_loc, chosen: str) -> bool:
+        try:
+            sel_loc.select_option(label=chosen, timeout=2000)
+            return True
+        except Exception:
+            pass
+        # Fuzzy: get all options, find best match
+        try:
+            all_opts = sel_loc.evaluate("el => [...el.options].map(o => o.text.trim())")
+            chosen_lower = chosen.lower()
+            chosen_words = [w for w in chosen_lower.split() if len(w) > 3]
+            for opt_text in all_opts:
+                opt_lower = opt_text.lower()
+                if opt_lower in ("", "select one", "please select", "-- select --"):
+                    continue
+                if chosen_lower in opt_lower:
+                    sel_loc.select_option(label=opt_text, timeout=2000)
+                    return True
+                if chosen_words and all(w in opt_lower for w in chosen_words[:2]):
+                    sel_loc.select_option(label=opt_text, timeout=2000)
+                    return True
+            # Last resort: pick any "not" / "decline" / "choose not" option
+            for opt_text in all_opts:
+                opt_lower = opt_text.lower()
+                if any(kw in opt_lower for kw in ("not a protected", "choose not", "decline", "prefer not")):
+                    sel_loc.select_option(label=opt_text, timeout=2000)
+                    return True
+        except Exception:
+            pass
+        return False
+
     try:
         selects = page.locator("select").all()
         for sel_loc in selects:
@@ -2024,12 +2059,9 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
                         break
                 if chosen is None:
                     continue
-                try:
-                    sel_loc.select_option(label=chosen, timeout=2000)
+                if _fill_native_select(sel_loc, chosen):
                     logger.info("Workday screener (native select): '%s' → %s", label_text[:60], chosen)
                     filled += 1
-                except Exception:
-                    pass
             except Exception:
                 pass
     except Exception:
