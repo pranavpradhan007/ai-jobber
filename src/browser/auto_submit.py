@@ -2219,7 +2219,7 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
     raise RuntimeError(f"WhiteCarrot: exceeded {MAX_STEPS} steps without submitting")
 
 
-def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 150) -> None:
+def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 300) -> None:
     """Step through Workday applyManually multi-page wizard until submitted.
 
     Workday's applyManually form has up to 6 named steps:
