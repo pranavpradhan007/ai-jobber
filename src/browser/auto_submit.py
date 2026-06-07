@@ -325,27 +325,42 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
 def _release_profile_lock(profile_dir: str) -> None:
     """Kill any Chrome/Chromium processes holding a lock on this profile dir."""
     import subprocess
+    # Normalize to forward slashes for comparison — wmic WQL LIKE doesn't handle backslashes
+    profile_norm = profile_dir.replace("\\", "/").lower()
     try:
+        # Dump all process command lines — avoids WQL backslash escaping issues
         result = subprocess.run(
-            ["wmic", "process", "where",
-             f"CommandLine like '%{profile_dir}%' and Name like '%chrome%'",
-             "get", "ProcessId", "/format:list"],
-            capture_output=True, text=True, timeout=5,
+            ["wmic", "process", "get", "ProcessId,CommandLine", "/format:csv"],
+            capture_output=True, text=True, timeout=10,
         )
+        killed = 0
         for line in result.stdout.splitlines():
-            if line.startswith("ProcessId="):
-                pid = line.split("=", 1)[1].strip()
-                if pid.isdigit():
-                    subprocess.run(["taskkill", "/F", "/PID", pid],
+            line_lower = line.replace("\\", "/").lower()
+            if "chrome" not in line_lower:
+                continue
+            if profile_norm not in line_lower:
+                continue
+            # CSV: Node,CommandLine,ProcessId
+            parts = line.split(",")
+            if len(parts) >= 3:
+                pid_str = parts[-1].strip()
+                if pid_str.isdigit():
+                    subprocess.run(["taskkill", "/F", "/PID", pid_str],
                                    capture_output=True, timeout=5)
-                    logger.info("Killed stale browser process PID=%s holding profile", pid)
-        # Also remove Chrome's SingletonLock file if present
+                    logger.info("Killed stale browser process PID=%s holding profile", pid_str)
+                    killed += 1
+        if killed == 0:
+            logger.debug("_release_profile_lock: no matching chrome processes found")
+    except Exception as exc:
+        logger.debug("_release_profile_lock enumerate: %s", exc)
+    # Remove Chrome's SingletonLock file unconditionally
+    try:
         lock = os.path.join(profile_dir, "SingletonLock")
         if os.path.exists(lock):
             os.remove(lock)
             logger.info("Removed SingletonLock from profile dir")
     except Exception as exc:
-        logger.debug("_release_profile_lock: %s", exc)
+        logger.debug("_release_profile_lock lock file: %s", exc)
 
 
 def _chrome_cdp_reachable(port: int) -> bool:
