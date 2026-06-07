@@ -623,6 +623,8 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
             logger.info("app_id=%d WhiteCarrot post-gate body: %s", app_id, body_snippet)
         except Exception:
             pass
+        # WhiteCarrot form_detector finds 0 fields — use dedicated direct-fill
+        _fill_whitecarrot_form(page, answers, folder_path)
 
     # Detect fields in main page first, then fall back to iframes (Comeet et al.)
     fill_page = page
@@ -1317,9 +1319,24 @@ def _fill_workday_my_info(page, answers: dict) -> None:
     """
     import re as _re
 
+    # Diagnostic: log all data-automation-id values so we can see Danaher's IDs
+    try:
+        all_ids = page.evaluate("""
+            () => Array.from(document.querySelectorAll('[data-automation-id]'))
+                  .map(el => el.getAttribute('data-automation-id'))
+                  .filter(Boolean)
+        """) or []
+        logger.info("Workday automation IDs on page: %s", all_ids[:60])
+    except Exception as _de:
+        logger.debug("Workday automation ID scan: %s", _de)
+
     # ── Phone Device Type ─────────────────────────────────────────────────────
     try:
-        pdt = page.locator("[data-automation-id='phoneDeviceType']").first
+        pdt = page.locator(
+            "[data-automation-id='phoneDeviceType'], "
+            "[data-automation-id='phoneDeviceTypeSection'], "
+            "[data-automation-id='phoneType']"
+        ).first
         if pdt.count() > 0:
             current_text = pdt.inner_text() or ""
             if "Mobile" not in current_text:
@@ -1349,9 +1366,47 @@ def _fill_workday_my_info(page, answers: dict) -> None:
     except Exception as exc:
         logger.warning("Workday phoneDeviceType: %s", exc)
 
+    # ── Phone Device Type — JS label fallback (for Danaher/alternate Workday IDs) ──
+    try:
+        pdt_js = page.evaluate("""
+            () => {
+                // Find button/select near a label that mentions "Phone Device Type"
+                for (const el of document.querySelectorAll('label, span, legend, div[aria-label]')) {
+                    if (el.textContent.trim() === 'Phone Device Type' || (el.getAttribute && el.getAttribute('aria-label') === 'Phone Device Type')) {
+                        const container = el.closest('div, fieldset, li') || el.parentElement;
+                        if (!container) continue;
+                        const btn = container.querySelector('button, select, [role="combobox"], [role="listbox"]');
+                        if (btn) {
+                            return btn.getAttribute('data-automation-id') || btn.tagName.toLowerCase() + ':' + (btn.id || btn.name || 'found');
+                        }
+                    }
+                }
+                return null;
+            }
+        """)
+        if pdt_js:
+            logger.info("Workday phoneDeviceType JS-found element: %s", pdt_js)
+            # Try to click the element and select Mobile
+            try:
+                pdt_el = page.locator(f"[data-automation-id='{pdt_js}']").first if not pdt_js.startswith("button:") and ":" not in pdt_js else None
+                if pdt_el and pdt_el.count() > 0:
+                    pdt_el.click(timeout=3000)
+                    _human_pause(0.5, 1.0)
+                    opt = page.locator("[data-automation-id='promptOption']:has-text('Mobile'), [role='option']:has-text('Mobile'), li:has-text('Mobile')").first
+                    if opt.count() > 0:
+                        opt.click(timeout=3000)
+                        logger.info("Workday: set Phone Device Type = Mobile (JS-label path)")
+            except Exception as exc_js:
+                logger.warning("Workday phoneDeviceType JS click: %s", exc_js)
+    except Exception as exc:
+        logger.debug("Workday phoneDeviceType JS fallback: %s", exc)
+
     # ── Country Phone Code ────────────────────────────────────────────────────
     try:
-        code_container = page.locator("[data-automation-id='countryPhoneCode']").first
+        code_container = page.locator(
+            "[data-automation-id='countryPhoneCode'], "
+            "[data-automation-id='phoneCountryCode']"
+        ).first
         if code_container.count() > 0:
             current = code_container.inner_text() or ""
             if "United States" not in current:
@@ -1405,27 +1460,37 @@ def _fill_workday_my_info(page, answers: dict) -> None:
         if len(digits) == 11 and digits.startswith("1"):
             digits = digits[1:]
         if len(digits) == 10:
-            try:
-                phone_input = page.locator(
-                    "[data-automation-id='phone'] input, "
-                    "[data-automation-id='phoneNumber'] input, "
-                    "input[data-automation-id='phone']"
-                ).first
-                if phone_input.count() > 0:
-                    phone_input.scroll_into_view_if_needed(timeout=3000)
-                    phone_input.click(click_count=3, timeout=3000)
-                    _human_pause(0.1, 0.2)
-                    # type() fires React keyboard events — fill() doesn't
-                    phone_input.type(digits, delay=40)
-                    logger.info("Workday: set Phone = %s", digits)
-            except Exception as exc:
-                logger.warning("Workday phone: %s", exc)
+            _phone_filled = False
+            for phone_sel in [
+                "[data-automation-id='phone'] input",
+                "[data-automation-id='phoneNumber'] input",
+                "input[data-automation-id='phone']",
+                "input[data-automation-id='phoneNumber']",
+                "input[type='tel']",
+                "input[name*='phone' i]",
+                "input[id*='phone' i]",
+            ]:
+                try:
+                    phone_input = page.locator(phone_sel).first
+                    if phone_input.count() > 0 and phone_input.is_visible():
+                        phone_input.scroll_into_view_if_needed(timeout=3000)
+                        phone_input.click(click_count=3, timeout=3000)
+                        _human_pause(0.1, 0.2)
+                        phone_input.type(digits, delay=40)
+                        logger.info("Workday: set Phone = %s (sel=%r)", digits, phone_sel)
+                        _phone_filled = True
+                        break
+                except Exception:
+                    continue
+            if not _phone_filled:
+                logger.warning("Workday phone: no matching input found for selectors tried")
 
     # ── State / Region ────────────────────────────────────────────────────────
     state_val = answers.get("address_state", "") or "New York"
     try:
         state_container = page.locator(
             "[data-automation-id='addressSection-stateProvince'], "
+            "[data-automation-id='stateProvince'], "
             "[data-automation-id='state']"
         ).first
         if state_container.count() > 0:
@@ -1441,6 +1506,7 @@ def _fill_workday_my_info(page, answers: dict) -> None:
                     _human_pause(0.4, 0.7)
                     inner = page.locator(
                         "[data-automation-id='addressSection-stateProvince'] input, "
+                        "[data-automation-id='stateProvince'] input, "
                         "[data-automation-id='state'] input, "
                         "[data-automation-id='searchText']"
                     ).first
@@ -1517,6 +1583,106 @@ def _handle_whitecarrot_email_entry(page, answers: dict) -> None:
         logger.info("WhiteCarrot: past email-entry, now on: %s", page.url)
     except Exception as exc:
         logger.warning("WhiteCarrot email-entry handling: %s", exc)
+
+
+def _fill_whitecarrot_form(page, answers: dict, folder_path: str) -> None:
+    """Direct-fill WhiteCarrot profile-builder form using concrete selectors.
+
+    form_detector finds 0 fields on WhiteCarrot because it uses non-standard
+    React components. This function fills: First name, Last name, Phone,
+    LinkedIn, and uploads the resume via the file input.
+    """
+    import re as _re
+    try:
+        _human_pause(0.5, 1.0)
+
+        # ── First Name ────────────────────────────────────────────────────────
+        first_name = answers.get("first_name", "") or "Pranav"
+        for sel in [
+            "input[placeholder*='First name' i]",
+            "input[placeholder*='First' i]",
+            "input[name*='first' i]",
+            "input[id*='first' i]",
+        ]:
+            inp = page.locator(sel).first
+            if inp.count() > 0 and inp.is_visible():
+                inp.click(click_count=3, timeout=3000)
+                inp.type(first_name, delay=40)
+                logger.info("WhiteCarrot: filled First Name = %s", first_name)
+                _human_pause(0.2, 0.4)
+                break
+
+        # ── Last Name ─────────────────────────────────────────────────────────
+        last_name = answers.get("last_name", "") or "Pradhan"
+        for sel in [
+            "input[placeholder*='Last name' i]",
+            "input[placeholder*='Last' i]",
+            "input[name*='last' i]",
+            "input[id*='last' i]",
+        ]:
+            inp = page.locator(sel).first
+            if inp.count() > 0 and inp.is_visible():
+                inp.click(click_count=3, timeout=3000)
+                inp.type(last_name, delay=40)
+                logger.info("WhiteCarrot: filled Last Name = %s", last_name)
+                _human_pause(0.2, 0.4)
+                break
+
+        # ── Phone Number ──────────────────────────────────────────────────────
+        raw_phone = answers.get("phone", "")
+        if raw_phone:
+            digits = _re.sub(r"[^\d]", "", raw_phone)
+            if len(digits) == 11 and digits.startswith("1"):
+                digits = digits[1:]
+            for sel in [
+                "input[placeholder*='phone' i]",
+                "input[type='tel']",
+                "input[name*='phone' i]",
+                "input[id*='phone' i]",
+            ]:
+                inp = page.locator(sel).first
+                if inp.count() > 0 and inp.is_visible():
+                    inp.click(click_count=3, timeout=3000)
+                    inp.type(digits, delay=40)
+                    logger.info("WhiteCarrot: filled Phone = %s", digits)
+                    _human_pause(0.2, 0.4)
+                    break
+
+        # ── LinkedIn URL ──────────────────────────────────────────────────────
+        linkedin_url = answers.get("linkedin_url", "")
+        if linkedin_url:
+            for sel in [
+                "input[placeholder*='linkedin' i]",
+                "input[name*='linkedin' i]",
+                "input[id*='linkedin' i]",
+            ]:
+                inp = page.locator(sel).first
+                if inp.count() > 0 and inp.is_visible():
+                    try:
+                        cur = inp.input_value()
+                        if cur and "linkedin.com/in/" in cur and len(cur) > 20:
+                            break  # already filled with a real profile URL
+                    except Exception:
+                        pass
+                    inp.click(click_count=3, timeout=3000)
+                    inp.type(linkedin_url, delay=40)
+                    logger.info("WhiteCarrot: filled LinkedIn = %s", linkedin_url)
+                    _human_pause(0.2, 0.4)
+                    break
+
+        # ── Resume Upload ─────────────────────────────────────────────────────
+        resume_path = answers.get("resume_pdf_path", "") or os.environ.get("RESUME_PDF_PATH", "")
+        if resume_path and os.path.isfile(resume_path):
+            file_inp = page.locator("input[type='file']").first
+            if file_inp.count() > 0:
+                file_inp.set_input_files(resume_path)
+                logger.info("WhiteCarrot: uploaded resume %s", resume_path)
+                _human_pause(2.0, 3.0)
+
+        _screenshot(page, folder_path, "whitecarrot_filled.png")
+        logger.info("WhiteCarrot: direct-fill complete")
+    except Exception as exc:
+        logger.warning("_fill_whitecarrot_form: %s", exc)
 
 
 def _fill_greenhouse_location(page, answers: dict) -> None:
@@ -1596,7 +1762,8 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
             fast_fill_form(page, detected, answers)
 
         # Fix Workday-specific fields that fast_fill handles incorrectly.
-        # Only run on the "My Information" page (contains phoneDeviceType or countryPhoneCode).
+        # Detect My Information page via data-automation-id (standard Workday) OR
+        # body text (Danaher and other Workday instances use different automation IDs).
         try:
             _workday_on_my_info = bool(
                 page.locator(
@@ -1604,6 +1771,16 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                     "[data-automation-id='countryPhoneCode']"
                 ).count()
             )
+            if not _workday_on_my_info:
+                body_text = page.evaluate("() => document.body.innerText") or ""
+                _workday_on_my_info = (
+                    "Phone Device Type" in body_text
+                    or "Country Phone Code" in body_text
+                    or ("Zip Code" in body_text and "State" in body_text)
+                    or ("Phone Number" in body_text and "Address" in body_text)
+                )
+                if _workday_on_my_info:
+                    logger.info("app_id=%d Workday: My Info page detected via body text (step=%d)", app_id, step)
         except Exception:
             _workday_on_my_info = False
         if _workday_on_my_info:
