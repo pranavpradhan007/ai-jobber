@@ -81,9 +81,16 @@ _SUBMIT_SELECTORS = [
     "button:has-text('Complete Application')",
     # Workday
     "[data-automation-id='bottom-navigation-next-button']",
-    # WhiteCarrot profile-builder
+    # WhiteCarrot profile-builder (various button texts)
     "button:has-text('Submit Application')",
     "button:has-text('Submit Profile')",
+    "button:has-text('Apply Now')",
+    "button:has-text('Apply now')",
+    "button:has-text('Apply for this')",
+    "button:has-text('Apply to')",
+    "button:has-text('Finish')",
+    "button:has-text('Complete')",
+    "button:has-text('Save & Apply')",
     # Other portals
     "button:text-is('Apply')",
     "#submit_app_button",
@@ -696,6 +703,15 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
             raise
         except Exception:
             pass
+        # WhiteCarrot: scroll to bottom to reveal any Submit/Apply button that
+        # only appears after filling mandatory fields.
+        try:
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            _human_pause(1.0, 2.0)
+            page.wait_for_load_state("networkidle", timeout=5_000)
+        except Exception:
+            pass
+        _screenshot(page, folder_path, "whitecarrot_presubmit.png")
     # Try the fill_page frame first (iframe forms), then fall back to main page
     try:
         _click_submit(fill_page, app_id)
@@ -1331,80 +1347,73 @@ def _fill_workday_my_info(page, answers: dict) -> None:
         logger.debug("Workday automation ID scan: %s", _de)
 
     # ── Phone Device Type ─────────────────────────────────────────────────────
+    # Danaher Workday uses formField-phoneType (outer container).
+    # The interactive button is inside it — never clickable via the outer div.
+    _pdt_set = False
     try:
-        pdt = page.locator(
+        # Container check — any variant
+        pdt_container = page.locator(
             "[data-automation-id='phoneDeviceType'], "
-            "[data-automation-id='phoneDeviceTypeSection'], "
-            "[data-automation-id='phoneType']"
+            "[data-automation-id='phoneType'], "
+            "[data-automation-id='formField-phoneType'], "
+            "[data-automation-id='phoneDeviceTypeSection']"
         ).first
-        if pdt.count() > 0:
-            current_text = pdt.inner_text() or ""
-            if "Mobile" not in current_text:
-                # Try native <select> first
+        if pdt_container.count() > 0:
+            current_text = pdt_container.inner_text() or ""
+            if "Mobile" in current_text:
+                _pdt_set = True  # already Mobile
+            else:
+                # Try native select
                 try:
-                    pdt.select_option("Mobile", timeout=2000)
+                    pdt_container.select_option("Mobile", timeout=1500)
                     logger.info("Workday: set Phone Device Type = Mobile (native select)")
+                    _pdt_set = True
                 except Exception:
-                    # Fall back to Workday custom dropdown: click → wait for list → click option
-                    pdt.scroll_into_view_if_needed(timeout=3000)
-                    pdt.click(timeout=3000)
-                    _human_pause(0.5, 1.0)
-                    try:
-                        opt = page.locator(
-                            "[data-automation-id='promptOption']:has-text('Mobile'), "
-                            "li:has-text('Mobile'), [role='option']:has-text('Mobile')"
-                        ).first
-                        page.wait_for_selector(
-                            "[data-automation-id='promptOption']:has-text('Mobile'), "
-                            "li:has-text('Mobile'), [role='option']:has-text('Mobile')",
-                            state="visible", timeout=4000,
-                        )
-                        opt.click(timeout=3000)
-                        logger.info("Workday: set Phone Device Type = Mobile (custom dropdown)")
-                    except Exception as exc2:
-                        logger.warning("Workday phoneDeviceType dropdown: %s", exc2)
+                    pass
     except Exception as exc:
-        logger.warning("Workday phoneDeviceType: %s", exc)
+        logger.debug("Workday phoneDeviceType container: %s", exc)
 
-    # ── Phone Device Type — JS label fallback (for Danaher/alternate Workday IDs) ──
-    try:
-        pdt_js = page.evaluate("""
-            () => {
-                // Find button/select near a label that mentions "Phone Device Type"
-                for (const el of document.querySelectorAll('label, span, legend, div[aria-label]')) {
-                    if (el.textContent.trim() === 'Phone Device Type' || (el.getAttribute && el.getAttribute('aria-label') === 'Phone Device Type')) {
-                        const container = el.closest('div, fieldset, li') || el.parentElement;
-                        if (!container) continue;
-                        const btn = container.querySelector('button, select, [role="combobox"], [role="listbox"]');
-                        if (btn) {
-                            return btn.getAttribute('data-automation-id') || btn.tagName.toLowerCase() + ':' + (btn.id || btn.name || 'found');
-                        }
-                    }
-                }
-                return null;
-            }
-        """)
-        if pdt_js:
-            logger.info("Workday phoneDeviceType JS-found element: %s", pdt_js)
-            # Try to click the element and select Mobile
+    if not _pdt_set:
+        # Click the INNER button inside formField-phoneType (Danaher pattern)
+        for pdt_btn_sel in [
+            "[data-automation-id='formField-phoneType'] button",
+            "[data-automation-id='phoneType'] button",
+            "[data-automation-id='formField-phoneType'] [role='button']",
+            "[data-automation-id='formField-phoneType'] [role='combobox']",
+            # Fall back to any button in a group containing "Phone Device Type" text
+        ]:
             try:
-                pdt_el = page.locator(f"[data-automation-id='{pdt_js}']").first if not pdt_js.startswith("button:") and ":" not in pdt_js else None
-                if pdt_el and pdt_el.count() > 0:
-                    pdt_el.click(timeout=3000)
+                btn = page.locator(pdt_btn_sel).first
+                if btn.count() > 0 and btn.is_visible():
+                    btn.scroll_into_view_if_needed(timeout=3000)
+                    btn.click(timeout=3000)
                     _human_pause(0.5, 1.0)
-                    opt = page.locator("[data-automation-id='promptOption']:has-text('Mobile'), [role='option']:has-text('Mobile'), li:has-text('Mobile')").first
-                    if opt.count() > 0:
+                    # Wait for dropdown options
+                    opt_sel = (
+                        "[data-automation-id='promptOption']:has-text('Mobile'), "
+                        "li:has-text('Mobile'), [role='option']:has-text('Mobile')"
+                    )
+                    try:
+                        page.wait_for_selector(opt_sel, state="visible", timeout=3000)
+                        opt = page.locator(opt_sel).first
                         opt.click(timeout=3000)
-                        logger.info("Workday: set Phone Device Type = Mobile (JS-label path)")
-            except Exception as exc_js:
-                logger.warning("Workday phoneDeviceType JS click: %s", exc_js)
-    except Exception as exc:
-        logger.debug("Workday phoneDeviceType JS fallback: %s", exc)
+                        logger.info("Workday: set Phone Device Type = Mobile (btn=%r)", pdt_btn_sel)
+                        _pdt_set = True
+                    except Exception:
+                        pass
+                    break
+            except Exception:
+                continue
+
+    if not _pdt_set:
+        logger.warning("Workday phoneDeviceType: could not set to Mobile")
 
     # ── Country Phone Code ────────────────────────────────────────────────────
+    # Danaher Workday uses formField-countryPhoneCode (outer div)
     try:
         code_container = page.locator(
             "[data-automation-id='countryPhoneCode'], "
+            "[data-automation-id='formField-countryPhoneCode'], "
             "[data-automation-id='phoneCountryCode']"
         ).first
         if code_container.count() > 0:
@@ -1486,52 +1495,92 @@ def _fill_workday_my_info(page, answers: dict) -> None:
                 logger.warning("Workday phone: no matching input found for selectors tried")
 
     # ── State / Region ────────────────────────────────────────────────────────
-    state_val = answers.get("address_state", "") or "New York"
+    # Danaher Workday uses formField-countryRegion (outer container).
+    # The interactive inner button must be clicked to open the combobox.
+    _STATE_ABBR = {
+        "NY": "New York", "CA": "California", "TX": "Texas", "FL": "Florida",
+        "WA": "Washington", "IL": "Illinois", "MA": "Massachusetts", "NJ": "New Jersey",
+        "PA": "Pennsylvania", "OH": "Ohio", "GA": "Georgia", "NC": "North Carolina",
+        "VA": "Virginia", "CO": "Colorado", "AZ": "Arizona", "MN": "Minnesota",
+    }
+    state_raw = answers.get("address_state", "") or "New York"
+    state_full = _STATE_ABBR.get(state_raw, state_raw)
+    _state_set = False
     try:
         state_container = page.locator(
+            "[data-automation-id='formField-countryRegion'], "
             "[data-automation-id='addressSection-stateProvince'], "
             "[data-automation-id='stateProvince'], "
             "[data-automation-id='state']"
         ).first
         if state_container.count() > 0:
             current = state_container.inner_text() or ""
-            if not current.strip() or "Select One" in current:
-                # Try native <select> first
-                try:
-                    state_container.select_option(state_val, timeout=2000)
-                    logger.info("Workday: set State = %s (native select)", state_val)
-                except Exception:
-                    state_container.scroll_into_view_if_needed(timeout=3000)
-                    state_container.click(timeout=3000)
-                    _human_pause(0.4, 0.7)
-                    inner = page.locator(
-                        "[data-automation-id='addressSection-stateProvince'] input, "
-                        "[data-automation-id='stateProvince'] input, "
-                        "[data-automation-id='state'] input, "
-                        "[data-automation-id='searchText']"
-                    ).first
-                    if inner.count() > 0 and inner.is_visible():
-                        inner.fill("")
-                        inner.type(state_val, delay=55)
-                    else:
-                        page.keyboard.type(state_val, delay=55)
-                    _human_pause(0.7, 1.2)
+            # Check if already has a valid state value (not empty / not default)
+            if state_full in current or state_raw in current:
+                _state_set = True
+            else:
+                # Try native select first
+                for sv in [state_raw, state_full]:
                     try:
-                        page.wait_for_selector(
-                            f"[data-automation-id='promptOption']:has-text('{state_val}'), "
-                            f"[role='option']:has-text('{state_val}')",
-                            state="visible", timeout=4000,
-                        )
-                        opt = page.locator(
-                            f"[data-automation-id='promptOption']:has-text('{state_val}'), "
-                            f"[role='option']:has-text('{state_val}')"
-                        ).first
-                        opt.click(timeout=3000)
-                        logger.info("Workday: set State = %s (combobox)", state_val)
-                    except Exception as exc2:
-                        logger.warning("Workday state option click: %s", exc2)
+                        state_container.select_option(sv, timeout=1500)
+                        logger.info("Workday: set State = %s (native select)", sv)
+                        _state_set = True
+                        break
+                    except Exception:
+                        pass
     except Exception as exc:
-        logger.warning("Workday state: %s", exc)
+        logger.debug("Workday state container: %s", exc)
+
+    if not _state_set:
+        # Click the inner button within formField-countryRegion (Danaher pattern)
+        for st_btn_sel in [
+            "[data-automation-id='formField-countryRegion'] button",
+            "[data-automation-id='stateProvince'] button",
+            "[data-automation-id='formField-countryRegion'] [role='combobox']",
+            "[data-automation-id='formField-countryRegion'] [role='button']",
+        ]:
+            try:
+                btn = page.locator(st_btn_sel).first
+                if btn.count() > 0 and btn.is_visible():
+                    btn.scroll_into_view_if_needed(timeout=3000)
+                    btn.click(timeout=3000)
+                    _human_pause(0.5, 0.9)
+                    # Type into search box that appears after click
+                    for search_sel in [
+                        "[data-automation-id='monikerSearchBox'] input",
+                        "[data-automation-id='searchBox'] input",
+                        "[data-automation-id='searchText']",
+                        "[data-automation-id='formField-countryRegion'] input",
+                    ]:
+                        search_inp = page.locator(search_sel).first
+                        if search_inp.count() > 0 and search_inp.is_visible():
+                            search_inp.fill("")
+                            search_inp.type(state_full, delay=55)
+                            _human_pause(0.7, 1.2)
+                            break
+                    else:
+                        page.keyboard.type(state_full, delay=55)
+                        _human_pause(0.7, 1.2)
+                    # Select matching option
+                    for sv in [state_full, state_raw]:
+                        opt_sel = (
+                            f"[data-automation-id='promptOption']:has-text('{sv}'), "
+                            f"[role='option']:has-text('{sv}')"
+                        )
+                        try:
+                            page.wait_for_selector(opt_sel, state="visible", timeout=4000)
+                            page.locator(opt_sel).first.click(timeout=3000)
+                            logger.info("Workday: set State = %s (combobox btn=%r)", sv, st_btn_sel)
+                            _state_set = True
+                            break
+                        except Exception:
+                            pass
+                    break
+            except Exception:
+                continue
+
+    if not _state_set:
+        logger.warning("Workday state: could not set to %s / %s", state_raw, state_full)
 
 
 def _screenshot(page, folder: str, name: str) -> Optional[str]:
