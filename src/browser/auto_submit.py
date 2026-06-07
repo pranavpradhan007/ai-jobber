@@ -52,6 +52,10 @@ _APPLY_SELECTORS = [
     "[data-tn-element='apply-now']",
     "[data-tn-element='indeedApplyButton']",
     "button[data-id*='apply']",
+    # eightfold.ai / Phenom People career portals (NYL, many enterprise firms)
+    "button[data-ph-at-id='apply-btn']",
+    "a[data-ph-at-id='apply-btn']",
+    ".apply-btn",
     "button:has-text('Apply Now')",
     "button:has-text('Apply')",
     "a:has-text('Apply Now')",
@@ -488,6 +492,10 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     # ── Step 2: Detect auth walls early ──────────────────────────────────────
     _check_auth_wall(page)
 
+    # ── Step 2b: Dismiss cookie / consent modals ──────────────────────────────
+    # Cookie banners intercept clicks on Apply buttons (e.g. eightfold.ai portals).
+    _dismiss_cookie_modals(page)
+
     # ── Step 3: Find and click Apply button ──────────────────────────────────
     _click_apply(page, app_id)
 
@@ -564,6 +572,9 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     from src.browser.form_detector import extract_form_fields
     from src.browser.fast_autofill import fast_fill_form, verify_form_complete
 
+    # Dismiss cookie modals that may have appeared after navigating to the ATS
+    _dismiss_cookie_modals(page)
+
     # Wait extra for JS-rendered forms (Comeet, NYL, other SPAs) — networkidle
     # confirms async field rendering is complete before we scan the DOM.
     try:
@@ -571,10 +582,35 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     except Exception:
         pass
 
+    # Detect fields in main page first, then fall back to iframes (Comeet et al.)
+    fill_page = page
     detected = extract_form_fields(page)
+
+    if not detected:
+        # Some portals (Comeet) embed the application form inside an <iframe>.
+        # page.evaluate() doesn't cross iframe boundaries, so scan each frame.
+        for frame in page.frames:
+            if frame == page.main_frame:
+                continue
+            frame_url = frame.url or ""
+            if frame_url in ("", "about:blank"):
+                continue
+            try:
+                frame_fields = extract_form_fields(frame)
+                if frame_fields:
+                    logger.info(
+                        "app_id=%d iframe form: %d fields in %s",
+                        app_id, len(frame_fields), frame_url,
+                    )
+                    detected = frame_fields
+                    fill_page = frame
+                    break
+            except Exception as exc:
+                logger.debug("app_id=%d iframe scan %s: %s", app_id, frame_url, exc)
+
     if detected:
         logger.info("app_id=%d fast-fill: %d fields detected", app_id, len(detected))
-        ff = fast_fill_form(page, detected, answers)
+        ff = fast_fill_form(fill_page, detected, answers)
         logger.info(
             "app_id=%d fast-fill: filled=%d skipped=%d unmatched=%d unmatched_labels=%s",
             app_id, ff.fields_filled, ff.fields_skipped, ff.fields_unmatched,
@@ -584,21 +620,29 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
         if ff.fields_unmatched > 3:
             logger.info("app_id=%d unmatched fields > 3, running legacy fill as supplement", app_id)
             instructions = build_fill_instructions(answers, portal)
-            _fill_all_fields(page, answers, instructions, FAST_FILL_DELAY)
+            _fill_all_fields(fill_page, answers, instructions, FAST_FILL_DELAY)
     else:
         # form_detector returned nothing — use legacy selector-based fill
         logger.info("app_id=%d form_detector found 0 fields, using legacy fill", app_id)
         instructions = build_fill_instructions(answers, portal)
-        _fill_all_fields(page, answers, instructions, fill_delay)
+        _fill_all_fields(fill_page, answers, instructions, fill_delay)
 
     # Verify form is complete before attempting submit
-    complete, issues = verify_form_complete(page)
+    complete, issues = verify_form_complete(fill_page)
     if not complete:
         logger.warning("app_id=%d form completion check: %s", app_id, issues)
         _screenshot(page, folder_path, "submit_incomplete.png")
 
     # ── Step 7: Click Submit ──────────────────────────────────────────────────
-    _click_submit(page, app_id)
+    # Try the fill_page frame first (iframe forms), then fall back to main page
+    try:
+        _click_submit(fill_page, app_id)
+    except RuntimeError:
+        if fill_page is not page:
+            logger.info("app_id=%d submit not found in iframe, trying main page", app_id)
+            _click_submit(page, app_id)
+        else:
+            raise
 
     # ── Step 8: Confirm ───────────────────────────────────────────────────────
     try:
@@ -1284,11 +1328,17 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
         # Click and capture new tab (LinkedIn opens in _blank) or same-tab navigation
         try:
             ctx = page.context
-            pages_before = set(id(p) for p in ctx.pages)
-            with ctx.expect_page(timeout=8000) as new_page_info:
+            with ctx.expect_page(timeout=12000) as new_page_info:
                 el.click()
             new_page = new_page_info.value
-            new_page.wait_for_load_state("domcontentloaded", timeout=15000)
+            new_page.wait_for_load_state("domcontentloaded", timeout=20000)
+            # LinkedIn sometimes uses a relay URL (linkedin.com/apply-redirect/…)
+            # that JS-redirects to the external ATS. Wait for the final URL.
+            if "linkedin.com" in new_page.url:
+                try:
+                    new_page.wait_for_load_state("networkidle", timeout=15000)
+                except Exception:
+                    pass
             new_url = new_page.url
             if "linkedin.com" not in new_url:
                 external_url = new_url
@@ -1299,7 +1349,7 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
             new_page.close()
         except Exception:
             # No new tab — check if same-tab navigated
-            _human_pause(1.0, 2.0)
+            _human_pause(1.5, 2.5)
             if "linkedin.com" not in page.url:
                 external_url = page.url
                 break
@@ -1316,6 +1366,46 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
         return _run_submit_flow(page, app_id, answers, external_url, folder_path, fill_delay)
 
     raise RuntimeError(f"LinkedIn: no Easy Apply and no external Apply link found on {url}")
+
+
+def _dismiss_cookie_modals(page) -> None:
+    """Click common cookie consent / privacy-policy dismiss buttons.
+
+    Called before any Apply or form interaction so overlays don't intercept clicks.
+    Covers: NYL/eightfold.ai, OneTrust, Cookiebot, TrustArc, custom banners.
+    Never raises — failure is silently ignored.
+    """
+    _consent_selectors = [
+        "button:has-text('I Understand')",
+        "button:has-text('I understand')",
+        "button:has-text('Accept All')",
+        "button:has-text('Accept all')",
+        "button:has-text('Accept All Cookies')",
+        "button:has-text('Accept Cookies')",
+        "button:has-text('Accept')",
+        "button:has-text('Agree')",
+        "button:has-text('Agree and Proceed')",
+        "button:has-text('Got it')",
+        "button:has-text('OK')",
+        "button:has-text('Close')",
+        "button#onetrust-accept-btn-handler",
+        "button.cc-btn.cc-dismiss",
+        "[data-testid='cookie-accept']",
+        "[aria-label='Accept cookies']",
+        "[aria-label='Close cookie banner']",
+        ".cookie-banner button",
+        "#cookie-banner button",
+    ]
+    for sel in _consent_selectors:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() > 0 and loc.is_visible():
+                loc.click(timeout=2000)
+                _human_pause(0.5, 1.0)
+                logger.info("Dismissed cookie modal via %r", sel)
+                return  # one dismissal is usually enough
+        except Exception:
+            continue
 
 
 def _check_captcha_mfa(page) -> None:
