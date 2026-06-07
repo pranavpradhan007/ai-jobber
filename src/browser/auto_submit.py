@@ -326,6 +326,10 @@ _ANTI_DETECT_ARGS = [
     "--no-sandbox",
     "--disable-blink-features=AutomationControlled",
     "--disable-features=IsolateOrigins,site-per-process",
+    # Suppress crash-recovery dialogs that pause automation when the previous
+    # Chrome session was killed (e.g. by _release_profile_lock between apps).
+    "--disable-session-crashed-bubble",
+    "--disable-restore-session-state",
 ]
 
 _ANTI_DETECT_IGNORE = ["--enable-automation"]
@@ -356,6 +360,10 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     profile_dir = os.path.abspath(_BROWSER_PROFILE_DIR)
     os.makedirs(profile_dir, exist_ok=True)
     _release_profile_lock(profile_dir)
+    # Give any killed Chrome processes 2 s to fully flush the profile to disk
+    # before we launch a new instance. Without this, the new launch sometimes
+    # gets a half-written profile and the first page immediately closes.
+    time.sleep(2)
     logger.info("Using persistent browser profile at %s", profile_dir)
     ctx = pw.chromium.launch_persistent_context(
         user_data_dir=profile_dir,
@@ -1153,49 +1161,22 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
 
         _check_auth_wall(page)
 
-        # Detect review/submit page by URL segment or page heading
-        is_review = False
-        try:
-            page_text = page.evaluate("() => document.body.innerText") or ""
-            if any(x in page_text for x in ("Review", "Submit Application")):
-                is_review = True
-        except Exception:
-            pass
-        if any(x in url.lower() for x in ("review", "submit")):
-            is_review = True
-
         # Fill current page fields
         detected = extract_form_fields(page)
         if detected:
             fast_fill_form(page, detected, answers)
 
-        # Scroll to bottom so buttons are reachable
+        # Scroll to bottom so all nav buttons are in reach
         try:
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             _human_pause(0.5, 1.0)
         except Exception:
             pass
 
-        if is_review:
-            # Click Submit
-            for sel in _WORKDAY_SUBMIT_SELECTORS:
-                try:
-                    loc = page.locator(sel).first
-                    if loc.count() > 0 and loc.is_visible():
-                        _human_click(page, loc)
-                        logger.info("app_id=%d Workday: clicked Submit step=%d sel=%r", app_id, step, sel)
-                        try:
-                            page.wait_for_load_state("domcontentloaded", timeout=int(_SUBMIT_WAIT * 1000))
-                        except Exception:
-                            pass
-                        _human_pause(2.0, 3.0)
-                        return
-                except Exception:
-                    continue
-            raise RuntimeError(f"Workday: on review page but no Submit button found step={step} url={url}")
-
-        # Click Next to advance to the next step
-        clicked = False
+        # Strategy: try Next first. Workday's sidebar always shows "Review" as a
+        # future step name, so checking page text for "Review" false-positives on
+        # every page. Instead we only attempt Submit when Next is absent.
+        clicked_next = False
         for sel in _WORKDAY_NEXT_SELECTORS:
             try:
                 loc = page.locator(sel).first
@@ -1205,27 +1186,61 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                     continue
                 _human_click(page, loc)
                 logger.info("app_id=%d Workday: clicked Next step=%d sel=%r", app_id, step, sel)
-                clicked = True
+                clicked_next = True
                 break
             except Exception:
                 continue
 
-        if not clicked:
-            # Log all buttons to help diagnose selector mismatches
+        if clicked_next:
             try:
-                btns = page.evaluate("""
-                    () => [...document.querySelectorAll('button,[role=button]')].slice(0,15)
-                            .map(b => (b.textContent||'').trim().slice(0,40) + '|' + (b.getAttribute('data-automation-id')||'') + '|' + (b.getAttribute('aria-label')||''))
-                """)
-                logger.warning("app_id=%d Workday: no Next button found step=%d; page buttons: %s", app_id, step, btns)
+                page.wait_for_load_state("domcontentloaded", timeout=15_000)
             except Exception:
                 pass
-            raise RuntimeError(f"Workday: no Next/Submit button found on step={step} url={url}")
+            # Detect if clicking "Next" actually submitted (Workday reuses the
+            # bottom-navigation-next-button ID on the final Review step).
+            new_url = page.url.lower()
+            if any(x in new_url for x in ("thankyou", "thank-you", "confirmation", "submitted", "success")):
+                logger.info("app_id=%d Workday: submission confirmed (url=%s)", app_id, page.url)
+                return
+            try:
+                body = page.evaluate("() => document.body.innerText") or ""
+                if any(x in body for x in (
+                    "Application Submitted", "Thank you", "Thank You",
+                    "We have received your application", "successfully submitted",
+                )):
+                    logger.info("app_id=%d Workday: submission confirmed via page text", app_id)
+                    return
+            except Exception:
+                pass
+            continue  # next iteration of the step loop
 
+        # No Next found — we must be on the final Review/Submit page
+        logger.info("app_id=%d Workday: no Next button — trying Submit on step=%d url=%s", app_id, step, url)
+        for sel in _WORKDAY_SUBMIT_SELECTORS:
+            try:
+                loc = page.locator(sel).first
+                if loc.count() > 0 and loc.is_visible():
+                    _human_click(page, loc)
+                    logger.info("app_id=%d Workday: clicked Submit step=%d sel=%r", app_id, step, sel)
+                    try:
+                        page.wait_for_load_state("domcontentloaded", timeout=int(_SUBMIT_WAIT * 1000))
+                    except Exception:
+                        pass
+                    _human_pause(2.0, 3.0)
+                    return
+            except Exception:
+                continue
+
+        # Log all buttons to help diagnose selector mismatches
         try:
-            page.wait_for_load_state("domcontentloaded", timeout=15_000)
+            btns = page.evaluate("""
+                () => [...document.querySelectorAll('button,[role=button]')].slice(0,15)
+                        .map(b => (b.textContent||'').trim().slice(0,40) + '|' + (b.getAttribute('data-automation-id')||'') + '|' + (b.getAttribute('aria-label')||''))
+            """)
+            logger.warning("app_id=%d Workday: no Next or Submit found step=%d; page buttons: %s", app_id, step, btns)
         except Exception:
             pass
+        raise RuntimeError(f"Workday: no Next or Submit button found on step={step} url={url}")
 
     raise RuntimeError(f"Workday: exceeded {max_steps} steps without reaching Submit")
 
