@@ -49,6 +49,8 @@ _LABEL_ALIASES: dict[str, str] = {
     "email address":            "email",
     "your email":               "email",
     "email id":                 "email",
+    "enter your email":         "email",
+    "enter email":              "email",
     "mobile":                   "phone",
     "mobile number":            "phone",
     "telephone":                "phone",

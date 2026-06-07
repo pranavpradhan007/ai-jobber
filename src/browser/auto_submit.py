@@ -303,6 +303,13 @@ def auto_submit_portal(
 
     with sync_playwright() as pw:
         context = _open_chrome_context(pw, chrome_dir, chrome_profile, cdp_port)
+        # Close stale pages left from previous sessions — they hold memory and
+        # can cause ERR_INSUFFICIENT_RESOURCES on the next navigation.
+        for stale in list(context.pages):
+            try:
+                stale.close()
+            except Exception:
+                pass
         page = context.new_page()
         try:
             return _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay)
@@ -661,6 +668,20 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
         _screenshot(page, folder_path, "submit_incomplete.png")
 
     # ── Step 7: Click Submit ──────────────────────────────────────────────────
+    # Guard: if still on WhiteCarrot email-entry page, the email wasn't filled
+    # and we must not click the "Get started" button as a false Submit.
+    if "whitecarrot.io" in page.url:
+        try:
+            body_check = page.evaluate("() => document.body.innerText") or ""
+            if "enter your email" in body_check.lower():
+                raise RuntimeError(
+                    f"app_id={app_id} WhiteCarrot still on email-entry page — "
+                    "email fill failed, refusing to false-submit"
+                )
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
     # Try the fill_page frame first (iframe forms), then fall back to main page
     try:
         _click_submit(fill_page, app_id)
@@ -1380,7 +1401,7 @@ def _fill_workday_my_info(page, answers: dict) -> None:
                 ).first
                 if phone_input.count() > 0:
                     phone_input.scroll_into_view_if_needed(timeout=3000)
-                    phone_input.triple_click(timeout=3000)
+                    phone_input.click(click_count=3, timeout=3000)
                     _human_pause(0.1, 0.2)
                     # type() fires React keyboard events — fill() doesn't
                     phone_input.type(digits, delay=40)
@@ -1464,7 +1485,7 @@ def _handle_whitecarrot_email_entry(page, answers: dict) -> None:
             "input[type='email'], input[placeholder*='email' i]"
         ).first
         if email_input.count() > 0 and email_input.is_visible():
-            email_input.triple_click(timeout=3000)
+            email_input.click(click_count=3, timeout=3000)
             email_input.type(email, delay=50)
             logger.info("WhiteCarrot: filled email on entry page")
             _human_pause(0.4, 0.7)
@@ -1508,7 +1529,7 @@ def _fill_greenhouse_location(page, answers: dict) -> None:
         except Exception:
             pass
         loc_input.scroll_into_view_if_needed(timeout=3000)
-        loc_input.triple_click(timeout=3000)
+        loc_input.click(click_count=3, timeout=3000)
         _human_pause(0.1, 0.2)
         loc_input.type(city, delay=50)
         _human_pause(1.2, 2.0)  # wait for autocomplete dropdown
