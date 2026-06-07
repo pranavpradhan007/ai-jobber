@@ -101,7 +101,9 @@ def human_fill(page, locator, value: str, *, long_text: bool = False) -> None:
     Fill a text field with human-like behaviour.
 
     Short fields (name, email, phone, URL):
-        scroll → Bezier move → click → locator.fill() → dispatch events
+        scroll → Bezier move → click → clear → type() char-by-char
+        Using type() instead of fill() fires real keydown/input/keyup events
+        per character so React/Vue SPA synthetic event handlers update state.
         Delay after: 0.3-1.0 s
 
     Long text (cover letter, open-ended screener answer):
@@ -128,8 +130,11 @@ def human_fill(page, locator, value: str, *, long_text: bool = False) -> None:
                 if random.random() < 0.12:       # occasional thinking pause
                     time.sleep(random.uniform(0.25, 0.75))
         else:
-            locator.fill(value)
-            _dispatch_events(page, locator)
+            # Clear then type char-by-char so React/Vue sees every keystroke.
+            # fill() sets the DOM value but bypasses React's synthetic event
+            # system; type() fires keydown/input/keyup and updates React state.
+            locator.fill("")
+            locator.type(value, delay=random.randint(25, 55))
 
         time.sleep(random.uniform(0.3, 1.0) if not long_text else random.uniform(0.5, 1.5))
 

@@ -84,8 +84,6 @@ _SUBMIT_SELECTORS = [
     # WhiteCarrot profile-builder
     "button:has-text('Submit Application')",
     "button:has-text('Submit Profile')",
-    "button:has-text('Continue')",
-    "button:has-text('Finish')",
     # Other portals
     "button:text-is('Apply')",
     "#submit_app_button",
@@ -208,6 +206,13 @@ def build_candidate_answers(
         "I look forward to contributing to your team."
     ) if job_title and company else ""
 
+    # Fallback resume PDF: DB path → RESUME_PDF_PATH env var → hardcoded default
+    resume_pdf_fallback = os.environ.get(
+        "RESUME_PDF_PATH",
+        r"D:\Pranav\Resume\New folder\Pranav ML-AI Resume.pdf",
+    )
+    effective_resume = resume_path or resume_pdf_fallback
+
     answers: dict = {
         "first_name":         "Pranav",
         "last_name":          "Pradhan",
@@ -224,7 +229,8 @@ def build_candidate_answers(
         "address_country":    country,
         "cover_letter":       cover,
         "cover_letter_default": cover,
-        "resume":             resume_path,
+        "resume":             effective_resume,
+        "resume_path":        effective_resume,
     }
 
     # Merge static profile data from application_answers.json (lower priority than env)
@@ -595,6 +601,10 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     except Exception:
         pass
 
+    # WhiteCarrot: handle email-entry page (gated behind email before the form loads)
+    if "whitecarrot.io" in page.url:
+        _handle_whitecarrot_email_entry(page, answers)
+
     # Detect fields in main page first, then fall back to iframes (Comeet et al.)
     fill_page = page
     detected = extract_form_fields(page)
@@ -639,6 +649,10 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
         logger.info("app_id=%d form_detector found 0 fields, using legacy fill", app_id)
         instructions = build_fill_instructions(answers, portal)
         _fill_all_fields(fill_page, answers, instructions, fill_delay)
+
+    # Greenhouse: location field is a react-select combobox — needs special handling
+    if "greenhouse.io" in page.url or "grnh.se" in page.url:
+        _fill_greenhouse_location(page, answers)
 
     # Verify form is complete before attempting submit
     complete, issues = verify_form_complete(fill_page)
@@ -1263,47 +1277,98 @@ def _workday_dropdown_select(page, automation_id: str, value: str) -> bool:
 def _fill_workday_my_info(page, answers: dict) -> None:
     """Fill Workday 'My Information' page fields that fast_fill misses.
 
-    Handles: Phone Device Type (custom dropdown), Country Phone Code (combobox —
+    Handles: Phone Device Type (dropdown), Country Phone Code (combobox —
     clears wrong selection like Albania and sets United States), Phone Number
     (10 digits only — country code is separate), and State/Region (combobox).
+    Uses type() for React inputs and tries select_option() before click+type.
     """
-    # Phone Device Type — select "Mobile" (Workday custom dropdown)
+    import re as _re
+
+    # ── Phone Device Type ─────────────────────────────────────────────────────
     try:
         pdt = page.locator("[data-automation-id='phoneDeviceType']").first
         if pdt.count() > 0:
             current_text = pdt.inner_text() or ""
-            if "Select One" in current_text or not current_text.strip():
-                _workday_dropdown_select(page, "phoneDeviceType", "Mobile")
-                logger.info("Workday: set Phone Device Type = Mobile")
+            if "Mobile" not in current_text:
+                # Try native <select> first
+                try:
+                    pdt.select_option("Mobile", timeout=2000)
+                    logger.info("Workday: set Phone Device Type = Mobile (native select)")
+                except Exception:
+                    # Fall back to Workday custom dropdown: click → wait for list → click option
+                    pdt.scroll_into_view_if_needed(timeout=3000)
+                    pdt.click(timeout=3000)
+                    _human_pause(0.5, 1.0)
+                    try:
+                        opt = page.locator(
+                            "[data-automation-id='promptOption']:has-text('Mobile'), "
+                            "li:has-text('Mobile'), [role='option']:has-text('Mobile')"
+                        ).first
+                        page.wait_for_selector(
+                            "[data-automation-id='promptOption']:has-text('Mobile'), "
+                            "li:has-text('Mobile'), [role='option']:has-text('Mobile')",
+                            state="visible", timeout=4000,
+                        )
+                        opt.click(timeout=3000)
+                        logger.info("Workday: set Phone Device Type = Mobile (custom dropdown)")
+                    except Exception as exc2:
+                        logger.warning("Workday phoneDeviceType dropdown: %s", exc2)
     except Exception as exc:
-        logger.debug("Workday phoneDeviceType: %s", exc)
+        logger.warning("Workday phoneDeviceType: %s", exc)
 
-    # Country Phone Code — remove any wrong selection (e.g. Albania) then set US
+    # ── Country Phone Code ────────────────────────────────────────────────────
     try:
-        # Remove existing selections by clicking × buttons
-        for x_btn in page.locator(
-            "[data-automation-id='countryPhoneCode'] [data-automation-id='DELETE_charm'], "
-            "[data-automation-id='countryPhoneCode'] button[aria-label*='Remove'], "
-            "[data-automation-id='countryPhoneCode'] button[aria-label*='remove']"
-        ).all():
-            try:
-                x_btn.click(timeout=2000)
-                _human_pause(0.2, 0.4)
-            except Exception:
-                pass
-        # Now select United States
-        ok = _workday_combobox_select(page, "countryPhoneCode", "United States")
-        if ok:
-            logger.info("Workday: set Country Phone Code = United States")
+        code_container = page.locator("[data-automation-id='countryPhoneCode']").first
+        if code_container.count() > 0:
+            current = code_container.inner_text() or ""
+            if "United States" not in current:
+                # Remove existing selections (× chips)
+                for x_btn in page.locator(
+                    "[data-automation-id='countryPhoneCode'] [data-automation-id='DELETE_charm'], "
+                    "[data-automation-id='countryPhoneCode'] button[aria-label*='emove']"
+                ).all():
+                    try:
+                        x_btn.click(timeout=2000)
+                        _human_pause(0.2, 0.3)
+                    except Exception:
+                        pass
+                # Click to open
+                code_container.scroll_into_view_if_needed(timeout=3000)
+                code_container.click(timeout=3000)
+                _human_pause(0.4, 0.7)
+                # Type into the inner search input that appears after click
+                inner = page.locator(
+                    "[data-automation-id='countryPhoneCode'] input, "
+                    "[data-automation-id='searchText']"
+                ).first
+                if inner.count() > 0 and inner.is_visible():
+                    inner.fill("")
+                    inner.type("United States", delay=55)
+                else:
+                    page.keyboard.type("United States", delay=55)
+                _human_pause(0.7, 1.2)
+                try:
+                    page.wait_for_selector(
+                        "[data-automation-id='promptOption']:has-text('United States'), "
+                        "[role='option']:has-text('United States')",
+                        state="visible", timeout=4000,
+                    )
+                    opt = page.locator(
+                        "[data-automation-id='promptOption']:has-text('United States (+1)'), "
+                        "[data-automation-id='promptOption']:has-text('United States'), "
+                        "[role='option']:has-text('United States')"
+                    ).first
+                    opt.click(timeout=3000)
+                    logger.info("Workday: set Country Phone Code = United States")
+                except Exception as exc2:
+                    logger.warning("Workday countryPhoneCode option click: %s", exc2)
     except Exception as exc:
-        logger.debug("Workday countryPhoneCode: %s", exc)
+        logger.warning("Workday countryPhoneCode: %s", exc)
 
-    # Phone Number — enter just the 10-digit number (no +1 country code prefix)
+    # ── Phone Number — 10 digits, no country code prefix ─────────────────────
     raw_phone = answers.get("phone", "")
     if raw_phone:
-        import re as _re
         digits = _re.sub(r"[^\d]", "", raw_phone)
-        # Strip leading "1" if it's a US number (11 digits starting with 1)
         if len(digits) == 11 and digits.startswith("1"):
             digits = digits[1:]
         if len(digits) == 10:
@@ -1314,27 +1379,60 @@ def _fill_workday_my_info(page, answers: dict) -> None:
                     "input[data-automation-id='phone']"
                 ).first
                 if phone_input.count() > 0:
-                    phone_input.fill("")
-                    phone_input.fill(digits)
+                    phone_input.scroll_into_view_if_needed(timeout=3000)
+                    phone_input.triple_click(timeout=3000)
+                    _human_pause(0.1, 0.2)
+                    # type() fires React keyboard events — fill() doesn't
+                    phone_input.type(digits, delay=40)
                     logger.info("Workday: set Phone = %s", digits)
             except Exception as exc:
-                logger.debug("Workday phone: %s", exc)
+                logger.warning("Workday phone: %s", exc)
 
-    # State / Region — type "New York" and click the first match
-    state_val = answers.get("address_state", "")
-    if state_val:
-        try:
-            state_sel = page.locator(
-                "[data-automation-id='addressSection-stateProvince'], "
-                "[data-automation-id='state']"
-            ).first
-            if state_sel.count() > 0:
-                current = state_sel.inner_text() or ""
-                if not current.strip() or "Select One" in current:
-                    _workday_combobox_select(page, "addressSection-stateProvince", state_val)
-                    logger.info("Workday: set State = %s", state_val)
-        except Exception as exc:
-            logger.debug("Workday state: %s", exc)
+    # ── State / Region ────────────────────────────────────────────────────────
+    state_val = answers.get("address_state", "") or "New York"
+    try:
+        state_container = page.locator(
+            "[data-automation-id='addressSection-stateProvince'], "
+            "[data-automation-id='state']"
+        ).first
+        if state_container.count() > 0:
+            current = state_container.inner_text() or ""
+            if not current.strip() or "Select One" in current:
+                # Try native <select> first
+                try:
+                    state_container.select_option(state_val, timeout=2000)
+                    logger.info("Workday: set State = %s (native select)", state_val)
+                except Exception:
+                    state_container.scroll_into_view_if_needed(timeout=3000)
+                    state_container.click(timeout=3000)
+                    _human_pause(0.4, 0.7)
+                    inner = page.locator(
+                        "[data-automation-id='addressSection-stateProvince'] input, "
+                        "[data-automation-id='state'] input, "
+                        "[data-automation-id='searchText']"
+                    ).first
+                    if inner.count() > 0 and inner.is_visible():
+                        inner.fill("")
+                        inner.type(state_val, delay=55)
+                    else:
+                        page.keyboard.type(state_val, delay=55)
+                    _human_pause(0.7, 1.2)
+                    try:
+                        page.wait_for_selector(
+                            f"[data-automation-id='promptOption']:has-text('{state_val}'), "
+                            f"[role='option']:has-text('{state_val}')",
+                            state="visible", timeout=4000,
+                        )
+                        opt = page.locator(
+                            f"[data-automation-id='promptOption']:has-text('{state_val}'), "
+                            f"[role='option']:has-text('{state_val}')"
+                        ).first
+                        opt.click(timeout=3000)
+                        logger.info("Workday: set State = %s (combobox)", state_val)
+                    except Exception as exc2:
+                        logger.warning("Workday state option click: %s", exc2)
+    except Exception as exc:
+        logger.warning("Workday state: %s", exc)
 
 
 def _screenshot(page, folder: str, name: str) -> Optional[str]:
@@ -1346,7 +1444,94 @@ def _screenshot(page, folder: str, name: str) -> Optional[str]:
         return None
 
 
-def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 12) -> None:
+def _handle_whitecarrot_email_entry(page, answers: dict) -> None:
+    """Handle WhiteCarrot email-entry gate page before the actual application form.
+
+    WhiteCarrot shows "Please enter your email to start or resume your application"
+    before showing the real form. We fill the email, click Get started, and wait
+    for the form to load so the rest of the fill pipeline sees the actual fields.
+    """
+    try:
+        body = page.evaluate("() => document.body.innerText") or ""
+        if "enter your email" not in body.lower():
+            return  # Already past the email-entry step
+        email = answers.get("email", "")
+        if not email:
+            logger.warning("WhiteCarrot email-entry: no email in answers")
+            return
+        # Fill the email input
+        email_input = page.locator(
+            "input[type='email'], input[placeholder*='email' i]"
+        ).first
+        if email_input.count() > 0 and email_input.is_visible():
+            email_input.triple_click(timeout=3000)
+            email_input.type(email, delay=50)
+            logger.info("WhiteCarrot: filled email on entry page")
+            _human_pause(0.4, 0.7)
+        # Click "Get started" (not a submit button — it loads the actual form)
+        for btn_text in ("Get started", "Continue", "Start"):
+            btn = page.locator(f"button:has-text('{btn_text}')").first
+            if btn.count() > 0 and btn.is_visible():
+                _human_click(page, btn)
+                logger.info("WhiteCarrot: clicked '%s' on entry page", btn_text)
+                break
+        # Wait for the actual form to load
+        try:
+            page.wait_for_load_state("networkidle", timeout=12_000)
+        except Exception:
+            pass
+        _human_pause(1.5, 2.5)
+        logger.info("WhiteCarrot: past email-entry, now on: %s", page.url)
+    except Exception as exc:
+        logger.warning("WhiteCarrot email-entry handling: %s", exc)
+
+
+def _fill_greenhouse_location(page, answers: dict) -> None:
+    """Fill the Greenhouse 'Location (City)' react-select combobox.
+
+    Greenhouse uses a custom typeahead (#location input) that shows a dropdown
+    of matching city options after typing. fill() and type() alone don't select
+    an option — we must click the first dropdown result.
+    """
+    city = answers.get("address_city", "") or "Brooklyn"
+    try:
+        loc_input = page.locator(
+            "#location, input[id='location'], input[name='location']"
+        ).first
+        if loc_input.count() == 0 or not loc_input.is_visible():
+            return
+        # Check current value — skip if already filled
+        try:
+            cur = loc_input.input_value()
+            if cur and len(cur) > 2:
+                return
+        except Exception:
+            pass
+        loc_input.scroll_into_view_if_needed(timeout=3000)
+        loc_input.triple_click(timeout=3000)
+        _human_pause(0.1, 0.2)
+        loc_input.type(city, delay=50)
+        _human_pause(1.2, 2.0)  # wait for autocomplete dropdown
+        # Click the first autocomplete suggestion
+        for opt_sel in [
+            "[data-qa='select-item']",
+            ".select__option",
+            "li[role='option']",
+            "[role='option']",
+            ".dropdown-item",
+        ]:
+            opt = page.locator(opt_sel).first
+            if opt.count() > 0 and opt.is_visible():
+                _human_click(page, opt)
+                logger.info("Greenhouse: set Location = %s (clicked '%s')", city, opt_sel)
+                return
+        # No dropdown appeared — the typed text might be accepted directly
+        logger.info("Greenhouse: no location dropdown, left text as typed: %s", city)
+    except Exception as exc:
+        logger.warning("Greenhouse location fill: %s", exc)
+
+
+def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 20) -> None:
     """Step through Workday applyManually multi-page wizard until submitted.
 
     Workday's applyManually form has up to 6 named steps:
@@ -1377,9 +1562,19 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
         if detected:
             fast_fill_form(page, detected, answers)
 
-        # Fix Workday-specific fields that fast_fill handles incorrectly:
-        # phone device type, country phone code (Albania → US), phone format, state
-        _fill_workday_my_info(page, answers)
+        # Fix Workday-specific fields that fast_fill handles incorrectly.
+        # Only run on the "My Information" page (contains phoneDeviceType or countryPhoneCode).
+        try:
+            _workday_on_my_info = bool(
+                page.locator(
+                    "[data-automation-id='phoneDeviceType'], "
+                    "[data-automation-id='countryPhoneCode']"
+                ).count()
+            )
+        except Exception:
+            _workday_on_my_info = False
+        if _workday_on_my_info:
+            _fill_workday_my_info(page, answers)
 
         # Scroll to bottom so all nav buttons are in reach
         try:
