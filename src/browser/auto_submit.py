@@ -379,6 +379,8 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     os.makedirs(folder_path, exist_ok=True)
 
     # ── Step 0: LinkedIn Easy Apply dispatch ─────────────────────────────────
+    # Only dispatch to LinkedIn handler for original job-view URLs, not when
+    # called recursively from the external-apply fallback path.
     if "linkedin.com/jobs/view" in url or "linkedin.com/jobs/search" in url:
         logger.info("app_id=%d detected LinkedIn job URL — using Easy Apply handler", app_id)
         return _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay)
@@ -958,7 +960,10 @@ def _screenshot(page, folder: str, name: str) -> Optional[str]:
 
 
 def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay):
-    """Delegate to linkedin_apply.linkedin_easy_apply and wrap the result."""
+    """
+    Attempt LinkedIn Easy Apply. If Easy Apply button is not found (external apply
+    job), follow the external Apply link and fall through to the generic form flow.
+    """
     from src.browser.linkedin_apply import linkedin_easy_apply
     from src.db.connection import get_connection
 
@@ -976,7 +981,6 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
     if candidate_row:
         candidate = dict(candidate_row)
     else:
-        # Fallback from env
         candidate = {
             "name":  os.environ.get("CANDIDATE_NAME", "Pranav Tushar Pradhan"),
             "email": os.environ.get("YOUR_EMAIL_ADDRESS", ""),
@@ -987,20 +991,76 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
         }
 
     resume_pdf = os.environ.get("RESUME_PDF_PATH", r"D:\Pranav\Resume\New folder\Pranav ML-AI Resume.pdf")
-    receipt = linkedin_easy_apply(
-        page, url, app_id,
-        candidate=candidate,
-        resume_pdf_path=resume_pdf,
-        folder_path=folder_path,
-        answers=answers,
-        fill_delay=fill_delay,
-    )
-    ss = _screenshot(page, folder_path, "li_confirmation.png")
-    return AutoSubmitResult(
-        success=True, app_id=app_id,
-        receipt=f"LINKEDIN:{receipt}",
-        screenshot_path=ss,
-    )
+
+    # Navigate to job page first so we can inspect it
+    page.goto(url, wait_until="domcontentloaded", timeout=25_000)
+    reading_pause()
+    _screenshot(page, folder_path, "li_job_page.png")
+
+    # Check if job is closed
+    page_text = page.evaluate("() => document.body.innerText") or ""
+    if "No longer accepting applications" in page_text:
+        raise RuntimeError(f"LinkedIn job is closed (no longer accepting applications): {url}")
+
+    # Try Easy Apply first
+    try:
+        receipt = linkedin_easy_apply(
+            page, url, app_id,
+            candidate=candidate,
+            resume_pdf_path=resume_pdf,
+            folder_path=folder_path,
+            answers=answers,
+            fill_delay=fill_delay,
+        )
+        ss = _screenshot(page, folder_path, "li_confirmation.png")
+        return AutoSubmitResult(
+            success=True, app_id=app_id,
+            receipt=f"LINKEDIN:{receipt}",
+            screenshot_path=ss,
+        )
+    except RuntimeError as e:
+        if "Easy Apply button not found" not in str(e):
+            raise
+        logger.info("app_id=%d no Easy Apply — looking for external Apply link", app_id)
+
+    # External apply fallback: find Apply link and follow it
+    external_url = None
+    for sel in [
+        "a[aria-label*='Apply']",
+        "a:has-text('Apply')",
+        "button[aria-label*='Apply']",
+        ".jobs-apply-button",
+    ]:
+        el = page.locator(sel).first
+        if el.count() > 0:
+            href = el.get_attribute("href") or ""
+            if href and "linkedin.com" not in href:
+                external_url = href
+                break
+            # Try clicking to get the redirect target
+            try:
+                with page.expect_navigation(timeout=8000):
+                    el.click()
+                if "linkedin.com" not in page.url:
+                    external_url = page.url
+                break
+            except Exception:
+                if "linkedin.com" not in page.url:
+                    external_url = page.url
+                    break
+
+    if not external_url and "linkedin.com" not in page.url:
+        external_url = page.url
+
+    if external_url:
+        logger.info("app_id=%d LinkedIn external apply: navigating to %s", app_id, external_url)
+        if page.url != external_url:
+            page.goto(external_url, wait_until="domcontentloaded", timeout=30_000)
+            _human_pause(2.0, 3.0)
+        # Hand off to generic form flow
+        return _run_submit_flow(page, app_id, answers, external_url, folder_path, fill_delay)
+
+    raise RuntimeError(f"LinkedIn: no Easy Apply and no external Apply link found on {url}")
 
 
 def _check_captcha_mfa(page) -> None:
