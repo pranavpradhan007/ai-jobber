@@ -615,10 +615,9 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     except Exception:
         pass
 
-    # WhiteCarrot: handle email-entry page (gated behind email before the form loads)
+    # WhiteCarrot: handle email-entry page, then multi-step profile-builder
     if "whitecarrot.io" in page.url:
         _handle_whitecarrot_email_entry(page, answers)
-        # Extra wait: WhiteCarrot profile-builder SPA needs time to render after "Get started"
         try:
             page.wait_for_load_state("networkidle", timeout=8_000)
         except Exception:
@@ -630,8 +629,9 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
             logger.info("app_id=%d WhiteCarrot post-gate body: %s", app_id, body_snippet)
         except Exception:
             pass
-        # WhiteCarrot form_detector finds 0 fields — use dedicated direct-fill
-        _fill_whitecarrot_form(page, answers, folder_path)
+        # WhiteCarrot is multi-step — hand off to dedicated loop handler
+        _handle_whitecarrot_multistep(page, answers, folder_path)
+        return  # submit handled inside multistep loop
 
     # Detect fields in main page first, then fall back to iframes (Comeet et al.)
     fill_page = page
@@ -1677,6 +1677,26 @@ def _fill_whitecarrot_form(page, answers: dict, folder_path: str) -> None:
                 _human_pause(0.2, 0.4)
                 break
 
+        # ── Phone Country Code → switch to US (+1) ───────────────────────────
+        # Default country is UAE (+971). The library uses a hidden <select> for
+        # the country code (react-phone-number-input pattern).
+        try:
+            for cc_sel in [
+                "select.PhoneInputCountrySelect",
+                "select[aria-label*='country' i]",
+                "select[class*='country' i]",
+                "select[class*='Country' i]",
+                "select[class*='phone' i]",
+            ]:
+                cc = page.locator(cc_sel).first
+                if cc.count() > 0:
+                    cc.select_option(value="US", timeout=2000)
+                    logger.info("WhiteCarrot: set phone country code to US")
+                    _human_pause(0.3, 0.6)
+                    break
+        except Exception as _cce:
+            logger.debug("WhiteCarrot phone country: %s", _cce)
+
         # ── Phone Number ──────────────────────────────────────────────────────
         raw_phone = answers.get("phone", "")
         if raw_phone:
@@ -1684,8 +1704,8 @@ def _fill_whitecarrot_form(page, answers: dict, folder_path: str) -> None:
             if len(digits) == 11 and digits.startswith("1"):
                 digits = digits[1:]
             for sel in [
-                "input[placeholder*='phone' i]",
                 "input[type='tel']",
+                "input[placeholder*='phone' i]",
                 "input[name*='phone' i]",
                 "input[id*='phone' i]",
             ]:
@@ -1779,7 +1799,213 @@ def _fill_greenhouse_location(page, answers: dict) -> None:
         logger.warning("Greenhouse location fill: %s", exc)
 
 
-def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 35) -> None:
+def _fill_workday_screener_questions(page, answers: dict) -> int:
+    """Fill Workday questionnaire pages with native <select> screener dropdowns.
+
+    Matches question labels to known yes/no answers via keyword rules.
+    Returns number of selects filled.
+    """
+    _RULES = [
+        (["18 years", "18 year", "age or older", "legal age"], "Yes"),
+        (["legally authorized", "authorized to work", "authorized to work in the united states", "work in the us"], "Yes"),
+        (["sponsorship", "employment visa", "visa sponsorship", "require sponsorship"], "Yes"),
+        (["previously employed", "former employee", "previously worked for", "employed by danaher", "employed by our"], "No"),
+        (["background check", "background investigation"], "Yes"),
+        (["drug test", "drug screen"], "Yes"),
+        (["felony", "convicted of"], "No"),
+        (["non-compete"], "No"),
+    ]
+    filled = 0
+    try:
+        selects = page.locator("select").all()
+        for sel_loc in selects:
+            try:
+                if not sel_loc.is_visible():
+                    continue
+                # Current value — skip if already answered
+                cur = (sel_loc.input_value() or "").strip()
+                if cur and cur.lower() not in ("", "select one", "-- select --", "please select", "- select -"):
+                    continue
+
+                # Resolve label text
+                select_id = sel_loc.get_attribute("id") or ""
+                label_text = ""
+                if select_id:
+                    lbl = page.locator(f"label[for='{select_id}']").first
+                    if lbl.count() > 0:
+                        label_text = (lbl.inner_text() or "").lower().strip()
+                if not label_text:
+                    label_text = (sel_loc.get_attribute("aria-label") or "").lower().strip()
+                if not label_text:
+                    label_text = (sel_loc.evaluate(
+                        "el => { let p = el.closest('div,fieldset,li'); "
+                        "return p ? (p.querySelector('label,legend,p,span')?.innerText || '') : ''; }"
+                    ) or "").lower().strip()
+                if not label_text:
+                    continue
+
+                # Match to rule
+                chosen = None
+                for keywords, answer in _RULES:
+                    if any(kw in label_text for kw in keywords):
+                        chosen = answer
+                        break
+                if chosen is None:
+                    continue
+
+                # Try selecting
+                try:
+                    sel_loc.select_option(label=chosen, timeout=2000)
+                    logger.info("Workday screener: '%s' → %s", label_text[:70], chosen)
+                    filled += 1
+                    continue
+                except Exception:
+                    pass
+                # Fuzzy: find option text that contains chosen
+                try:
+                    opts = sel_loc.evaluate("el => [...el.options].map(o => ({v:o.value, t:o.text.trim()}))")
+                    match = next(
+                        (o for o in opts if chosen.lower() in o["t"].lower() and o["v"] not in ("", "null")),
+                        None,
+                    )
+                    if match:
+                        sel_loc.select_option(value=match["v"], timeout=2000)
+                        logger.info("Workday screener (fuzzy): '%s' → %s", label_text[:70], match["t"])
+                        filled += 1
+                except Exception as exc2:
+                    logger.debug("Workday screener select error '%s': %s", label_text[:60], exc2)
+            except Exception as exc:
+                logger.debug("Workday screener item: %s", exc)
+    except Exception as exc:
+        logger.debug("_fill_workday_screener_questions: %s", exc)
+    return filled
+
+
+def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None:
+    """Loop through WhiteCarrot's multi-step profile-builder until submitted.
+
+    Page 1: basic info (name, phone, LinkedIn, CV) — filled by _fill_whitecarrot_form.
+    Subsequent pages: detected fields filled by fast_fill_form.
+    Exits when a Submit/Apply button is clicked or a confirmation page is detected.
+    """
+    from src.browser.form_detector import extract_form_fields
+    from src.browser.fast_autofill import fast_fill_form
+
+    _NEXT_SELS = [
+        "button:has-text('Next step')",
+        "button:has-text('Next Step')",
+        "button:has-text('Next')",
+        "button:has-text('Continue')",
+        "button:has-text('Save & Continue')",
+    ]
+    _SUBMIT_SELS = [
+        "button:has-text('Submit application')",
+        "button:has-text('Submit Application')",
+        "button:has-text('Submit')",
+        "button:has-text('Apply Now')",
+        "button:has-text('Apply now')",
+        "button:has-text('Finish')",
+        "button:has-text('Complete')",
+    ]
+    _CONFIRM_PHRASES = (
+        "application submitted", "thank you", "we'll be in touch",
+        "we will be in touch", "successfully submitted", "application received",
+    )
+
+    MAX_STEPS = 10
+    for step in range(MAX_STEPS):
+        try:
+            page.wait_for_load_state("networkidle", timeout=8_000)
+        except Exception:
+            pass
+        _human_pause(1.5, 2.5)
+        _screenshot(page, folder_path, f"wc_step{step:02d}.png")
+
+        # Check for confirmation
+        try:
+            body = (page.evaluate("() => document.body.innerText") or "").lower()
+            if any(p in body for p in _CONFIRM_PHRASES):
+                logger.info("WhiteCarrot: confirmed submitted on step=%d", step)
+                return
+        except Exception:
+            pass
+
+        if step == 0:
+            # First page: use dedicated direct-fill + phone country fix
+            _fill_whitecarrot_form(page, answers, folder_path)
+            # Wait for CV parse (up to 8 s)
+            for _w in range(8):
+                try:
+                    b = page.evaluate("() => document.body.innerText") or ""
+                    if "CV uploaded successfully" in b or "successfully" in b.lower():
+                        break
+                except Exception:
+                    pass
+                _human_pause(0.8, 1.0)
+        else:
+            # Later pages: use fast_fill + screener selects
+            detected = extract_form_fields(page)
+            if detected:
+                fast_fill_form(page, detected, answers)
+            # Fill any radio/checkbox-style EEO or optional questions
+            _fill_workday_screener_questions(page, answers)
+
+        # Scroll to bottom so nav buttons are reachable
+        try:
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            _human_pause(0.5, 1.0)
+        except Exception:
+            pass
+
+        # Try Submit first
+        for sel in _SUBMIT_SELS:
+            try:
+                loc = page.locator(sel).first
+                if loc.count() > 0 and loc.is_visible():
+                    logger.info("WhiteCarrot: clicking Submit step=%d sel=%r", step, sel)
+                    _human_click(page, loc)
+                    try:
+                        page.wait_for_load_state("networkidle", timeout=15_000)
+                    except Exception:
+                        pass
+                    _human_pause(2.0, 3.0)
+                    _screenshot(page, folder_path, "submit_confirmation.png")
+                    return
+            except Exception:
+                continue
+
+        # Try Next
+        clicked = False
+        for sel in _NEXT_SELS:
+            try:
+                loc = page.locator(sel).first
+                if loc.count() > 0 and loc.is_visible():
+                    logger.info("WhiteCarrot: clicking Next step=%d sel=%r", step, sel)
+                    _human_click(page, loc)
+                    clicked = True
+                    break
+            except Exception:
+                continue
+
+        if not clicked:
+            # Log buttons for diagnosis
+            try:
+                btns = page.evaluate(
+                    "() => [...document.querySelectorAll('button')].slice(0,15)"
+                    ".map(b => (b.textContent||'').trim().slice(0,50))"
+                )
+                logger.warning("WhiteCarrot step=%d: no Next/Submit found; buttons: %s", step, btns)
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Could not find submit button on {page.url}. "
+                "Form may have multiple pages or require manual completion."
+            )
+
+    raise RuntimeError(f"WhiteCarrot: exceeded {MAX_STEPS} steps without submitting")
+
+
+def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 60) -> None:
     """Step through Workday applyManually multi-page wizard until submitted.
 
     Workday's applyManually form has up to 6 named steps:
@@ -1809,6 +2035,11 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
         detected = extract_form_fields(page)
         if detected:
             fast_fill_form(page, detected, answers)
+
+        # Fill Workday questionnaire pages (native <select> screener questions)
+        sq_filled = _fill_workday_screener_questions(page, answers)
+        if sq_filled:
+            logger.info("app_id=%d Workday: filled %d screener question(s) step=%d", app_id, sq_filled, step)
 
         # Fix Workday-specific fields that fast_fill handles incorrectly.
         # Detect My Information page via data-automation-id (standard Workday) OR
