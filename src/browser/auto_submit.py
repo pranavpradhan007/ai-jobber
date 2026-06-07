@@ -270,14 +270,26 @@ def auto_submit_portal(
 # Chrome startup helpers
 # ---------------------------------------------------------------------------
 
+_BROWSER_PROFILE_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "browser_profile"
+)
+
+_ANTI_DETECT_ARGS = [
+    "--no-sandbox",
+    "--disable-blink-features=AutomationControlled",
+    "--disable-features=IsolateOrigins,site-per-process",
+]
+
+_ANTI_DETECT_IGNORE = ["--enable-automation"]
+
+
 def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     """
     Connect to real Chrome for application submission.
 
-    Preferred path: connect to Chrome already running with --remote-debugging-port.
-    The user launches Chrome via launch_chrome_debug.bat before running the agent.
-
-    Fallback: isolated Playwright Chromium (no saved sessions — Indeed will require login).
+    Attempt 1: CDP — connect to Chrome already running with --remote-debugging-port.
+    Attempt 2: Persistent Playwright profile — sessions survive forever on disk;
+               user logs in once via scripts/save_session.py, never again.
     """
     # Attempt 1: connect to already-running Chrome with CDP port open
     if _chrome_cdp_reachable(cdp_port):
@@ -285,31 +297,27 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
             logger.info("Connecting to Chrome on CDP port %d", cdp_port)
             browser = pw.chromium.connect_over_cdp(
                 f"http://localhost:{cdp_port}",
-                timeout=15000,  # 15s — if not ready in 15s, fall back fast
+                timeout=15000,
             )
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             return ctx
         except Exception as e:
             logger.warning("CDP connect failed: %s", e)
 
-    # Attempt 2: isolated Chromium + restore saved session cookies
-    logger.warning(
-        "Chrome not running on CDP port %d. "
-        "Run launch_chrome_debug.bat first for sites that require login (Indeed, etc.). "
-        "Falling back to isolated Chromium.", cdp_port
-    )
-    browser = pw.chromium.launch(headless=False)
-    ctx = browser.new_context(
+    # Attempt 2: persistent Playwright profile — cookies/localStorage persist on disk
+    profile_dir = os.path.abspath(_BROWSER_PROFILE_DIR)
+    os.makedirs(profile_dir, exist_ok=True)
+    logger.info("Using persistent browser profile at %s", profile_dir)
+    ctx = pw.chromium.launch_persistent_context(
+        user_data_dir=profile_dir,
+        headless=False,
         viewport={"width": 1280, "height": 900},
         accept_downloads=True,
+        args=_ANTI_DETECT_ARGS,
+        ignore_default_args=_ANTI_DETECT_IGNORE,
     )
-    try:
-        from src.browser.session_cookies import load_cookies_into_context  # noqa: PLC0415
-        n = load_cookies_into_context(ctx, "linkedin", "indeed")
-        if n:
-            logger.info("Restored %d saved session cookies into fallback context", n)
-    except Exception as exc:
-        logger.warning("Could not load session cookies: %s", exc)
+    # Inject webdriver flag removal on every page so sites don't detect automation
+    ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
     return ctx
 
 

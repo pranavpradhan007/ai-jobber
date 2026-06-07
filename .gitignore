@@ -4,6 +4,9 @@
 # Session cookies — contain auth tokens, never commit
 cookies/
 
+# Persistent browser profile — contains auth sessions, never commit
+browser_profile/
+
 # Runtime database
 *.db
 *.db-shm

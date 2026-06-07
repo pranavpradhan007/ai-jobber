@@ -1,94 +1,71 @@
 """
-Save LinkedIn and Indeed session cookies from a live Chrome CDP session.
+One-time browser profile setup — log into LinkedIn and Indeed interactively.
 
-Run this ONCE after you've manually logged into LinkedIn and Indeed in your
-JobAgent Chrome window (launched via launch_chrome_debug.bat):
+This opens a visible Chromium window with a persistent profile stored in
+browser_profile/.  Log into LinkedIn and Indeed in that window, then press
+Enter here.  The profile (cookies + localStorage + everything) is saved to
+disk permanently and reused on every overnight run — no re-login ever needed.
 
     python scripts/save_session.py
 
-Cookies are saved to cookies/linkedin.json and cookies/indeed.json.
-Every subsequent Playwright fallback session will auto-load these cookies
-so you don't have to sign in again.
-
-Re-run this script if you get logged out or session expires.
+Re-run only if you explicitly log out of a site inside that browser.
 """
 from __future__ import annotations
 import sys
 import os
 
-# Make sure project root is in path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import logging
-
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def main():
-    cdp_port = int(os.environ.get("CHROME_CDP_PORT", "9222"))
-
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        logger.error("Playwright not installed. Run: pip install playwright && playwright install chrome")
+        logger.error("Playwright not installed. Run: pip install playwright && playwright install chromium")
         sys.exit(1)
 
-    from src.browser.session_cookies import save_cookies_from_page, cookies_exist
+    from src.browser.auto_submit import _BROWSER_PROFILE_DIR, _ANTI_DETECT_ARGS, _ANTI_DETECT_IGNORE
 
-    logger.info("Connecting to Chrome on CDP port %d ...", cdp_port)
-    logger.info("Make sure Chrome is running (launch_chrome_debug.bat) and you are logged in.")
+    profile_dir = os.path.abspath(_BROWSER_PROFILE_DIR)
+    os.makedirs(profile_dir, exist_ok=True)
+    logger.info("Browser profile directory: %s", profile_dir)
+    logger.info("")
+    logger.info("A browser window will open. Please:")
+    logger.info("  1. Log into LinkedIn:  https://www.linkedin.com/login")
+    logger.info("  2. Log into Indeed:    https://secure.indeed.com/account/login")
+    logger.info("  3. Come back here and press Enter.")
+    logger.info("")
 
     with sync_playwright() as pw:
-        try:
-            browser = pw.chromium.connect_over_cdp(f"http://localhost:{cdp_port}")
-        except Exception as exc:
-            logger.error(
-                "Could not connect to Chrome on port %d: %s\n"
-                "Launch Chrome first via launch_chrome_debug.bat",
-                cdp_port, exc,
-            )
-            sys.exit(1)
+        ctx = pw.chromium.launch_persistent_context(
+            user_data_dir=profile_dir,
+            headless=False,
+            viewport={"width": 1280, "height": 900},
+            args=_ANTI_DETECT_ARGS,
+            ignore_default_args=_ANTI_DETECT_IGNORE,
+        )
+        ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
 
-        if not browser.contexts:
-            logger.error("No browser contexts found. Open Chrome and log into LinkedIn/Indeed first.")
-            sys.exit(1)
-
-        ctx = browser.contexts[0]
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
 
-        # Check LinkedIn cookies
-        all_cookies = ctx.cookies()
-        linkedin_cookies = [c for c in all_cookies if "linkedin" in (c.get("domain") or "")]
-        indeed_cookies   = [c for c in all_cookies if "indeed"   in (c.get("domain") or "")]
+        input("Press Enter once you are logged into both LinkedIn and Indeed...")
 
-        logger.info("Found %d LinkedIn cookies and %d Indeed cookies in current session",
-                    len(linkedin_cookies), len(indeed_cookies))
+        # Confirm logged-in state
+        li_cookies = [c for c in ctx.cookies() if "linkedin" in c.get("domain", "")]
+        indeed_cookies = [c for c in ctx.cookies() if "indeed" in c.get("domain", "")]
+        logger.info("LinkedIn cookies in profile: %d", len(li_cookies))
+        logger.info("Indeed cookies in profile:   %d", len(indeed_cookies))
 
-        if not linkedin_cookies and not indeed_cookies:
-            logger.warning(
-                "No LinkedIn or Indeed cookies found. "
-                "Please log into both sites in Chrome first, then re-run this script."
-            )
+        ctx.close()
 
-        saved = []
-        if linkedin_cookies:
-            out = save_cookies_from_page(page, "linkedin")
-            saved.append(f"LinkedIn ({len(linkedin_cookies)} cookies) → {out}")
-
-        if indeed_cookies:
-            out = save_cookies_from_page(page, "indeed")
-            saved.append(f"Indeed ({len(indeed_cookies)} cookies) → {out}")
-
-        if saved:
-            logger.info("Saved sessions:")
-            for s in saved:
-                logger.info("  %s", s)
-            logger.info(
-                "\nDone. The agent will now auto-load these cookies in fallback Playwright sessions."
-            )
-        else:
-            logger.warning("No sessions were saved. Log into LinkedIn/Indeed in Chrome and retry.")
+    logger.info("")
+    logger.info("Profile saved to %s", profile_dir)
+    logger.info("The agent will use this profile automatically on every run.")
 
 
 if __name__ == "__main__":
