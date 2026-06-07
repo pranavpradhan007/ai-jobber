@@ -1917,6 +1917,15 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
         (["drug test", "drug screen"], "Yes"),
         (["felony", "convicted"], "No"),
         (["non-compete"], "No"),
+        # EEO Voluntary Disclosures — safe defaults; override via eeo_* keys in application_answers.json
+        (["race/ethnicity", "race or ethnicity", "racial", "identify yourself", "race and ethnicity", "ethnicity which most"],
+         answers.get("eeo_race", "I choose not to self-identify")),
+        (["select your gender", "your gender", "please select your gender"],
+         answers.get("eeo_gender", "I choose not to self-identify")),
+        (["veteran status", "protected veteran", "veteran"],
+         answers.get("eeo_veteran", "I am not a protected veteran")),
+        (["disability", "disabled", "ada coverage", "disabled or veteran"],
+         answers.get("eeo_disability", "I don't wish to answer")),
     ]
 
     filled = 0
@@ -2025,6 +2034,30 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
                 pass
     except Exception:
         pass
+
+    # Handle Workday consent checkboxes (e.g. "Yes, I have read and consent to the terms and conditions")
+    try:
+        for cb in page.locator("input[type='checkbox']").all():
+            try:
+                if not cb.is_visible(timeout=500):
+                    continue
+                if cb.is_checked():
+                    continue
+                lbl = (cb.evaluate(
+                    "el => { let id = el.id; "
+                    "let lbl = id && document.querySelector(`label[for='${id}']`); "
+                    "if (lbl) return lbl.innerText; "
+                    "let p = el.closest('label,div,li,section'); "
+                    "return p ? p.innerText : ''; }"
+                ) or "").lower()
+                if any(kw in lbl for kw in ("consent", "terms and condition", "terms & condition", "agree", "acknowledge", "read and")):
+                    cb.check(timeout=3000)
+                    logger.info("Workday screener: checked consent checkbox ('%s')", lbl[:60])
+                    filled += 1
+            except Exception as exc:
+                logger.debug("Workday consent checkbox: %s", exc)
+    except Exception as exc:
+        logger.debug("_fill_workday_screener_questions consent: %s", exc)
 
     return filled
 
@@ -2256,6 +2289,19 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                 except Exception:
                     pass
                 _human_pause(2.0, 3.0)
+        except Exception:
+            pass
+
+        # Detect "Errors Found" validation banner — Workday shows this when required
+        # fields were not filled before clicking Next. Log it and scroll to the fields
+        # so subsequent fill calls can reach them.
+        try:
+            body_check = page.evaluate("() => document.body.innerText") or ""
+            if "Errors Found" in body_check:
+                logger.warning("app_id=%d Workday: 'Errors Found' at step=%d — scrolling to fill required fields", app_id, step)
+                # Scroll past the error banner to reach the form fields below
+                page.evaluate("window.scrollTo(0, 600)")
+                _human_pause(0.5, 1.0)
         except Exception:
             pass
 
