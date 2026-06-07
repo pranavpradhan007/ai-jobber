@@ -317,7 +317,18 @@ def auto_submit_portal(
                 stale.close()
             except Exception:
                 pass
-        page = context.new_page()
+        # Retry new_page() — transient "Failed to open a new tab" errors occur
+        # when the previous browser session hasn't fully released resources yet.
+        page = None
+        for _np_attempt in range(3):
+            try:
+                page = context.new_page()
+                break
+            except Exception as _np_exc:
+                if _np_attempt == 2:
+                    raise
+                logger.warning("context.new_page failed (attempt %d): %s — retrying in 3s", _np_attempt + 1, _np_exc)
+                time.sleep(3)
         try:
             return _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay)
         except CaptchaDetected:
@@ -2145,6 +2156,20 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
         _screenshot(page, folder_path, f"workday_step{step:02d}.png")
 
         _check_auth_wall(page)
+
+        # Detect and recover from Workday transient "Something went wrong" error page
+        try:
+            body_check = page.evaluate("() => document.body.innerText") or ""
+            if "Something went wrong" in body_check and "refresh" in body_check.lower():
+                logger.warning("app_id=%d Workday: 'Something went wrong' at step=%d — refreshing", app_id, step)
+                page.reload(timeout=15_000)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=10_000)
+                except Exception:
+                    pass
+                _human_pause(2.0, 3.0)
+        except Exception:
+            pass
 
         # Fill current page fields
         detected = extract_form_fields(page)
