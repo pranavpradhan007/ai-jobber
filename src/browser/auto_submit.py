@@ -2004,7 +2004,7 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
         "we will be in touch", "successfully submitted", "application received",
     )
 
-    MAX_STEPS = 10
+    MAX_STEPS = 25
     for step in range(MAX_STEPS):
         try:
             page.wait_for_load_state("networkidle", timeout=8_000)
@@ -2047,6 +2047,20 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
             detected = extract_form_fields(page)
             if detected:
                 fast_fill_form(page, detected, answers)
+            # WhiteCarrot question pages: fill any number input with years_experience
+            try:
+                num_inp = page.locator("input[type='number'], input[placeholder*='number' i], input[placeholder*='year' i]").first
+                if num_inp.count() > 0 and num_inp.is_visible(timeout=1000):
+                    cur = (num_inp.input_value() or "").strip()
+                    if not cur:
+                        raw = str(answers.get("years_experience", "3"))
+                        # Strip ranges like "3-5" → "3"
+                        num_val = raw.split("-")[0].strip()
+                        num_inp.click(click_count=3, timeout=2000)
+                        num_inp.type(num_val, delay=40)
+                        logger.info("WhiteCarrot: filled number question = %s", num_val)
+            except Exception as _ne:
+                logger.debug("WhiteCarrot number fill: %s", _ne)
 
         # Scroll to bottom so nav buttons are reachable
         try:
