@@ -369,9 +369,8 @@ _ANTI_DETECT_ARGS = [
     # GPU stability: the GPU process crashes on many Windows laptops in headless/
     # automation contexts (chrome_debug.log shows WebGL deprecation + fallback
     # failures). Disabling GPU avoids the GPU process entirely; pages render via
-    # CPU/SwANGLE which is slower but crash-free for form automation.
+    # software rasterizer (SwANGLE) which is slower but crash-free for automation.
     "--disable-gpu",
-    "--disable-software-rasterizer",
     "--disable-dev-shm-usage",
 ]
 
@@ -380,47 +379,94 @@ _ANTI_DETECT_IGNORE = ["--enable-automation"]
 
 def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     """
-    Connect to real Chrome for application submission.
+    Launch Chrome with --remote-debugging-port and connect via TCP CDP.
 
-    Attempt 1: CDP — connect to Chrome already running with --remote-debugging-port.
-    Attempt 2: Persistent Playwright profile — sessions survive forever on disk;
-               user logs in once via scripts/save_session.py, never again.
+    TCP-based CDP (vs Playwright's default stdio pipe) is far more stable on
+    Windows: the pipe connection breaks if Chrome takes >1s to initialize a
+    persistent profile, causing every launch_persistent_context call to fail
+    with 'Target page, context or browser has been closed'.
+
+    Strategy:
+      1. Kill all existing Chrome processes (release any profile lock).
+      2. Launch Chrome subprocess with --remote-debugging-port + our profile dir.
+      3. Poll CDP until reachable (up to 20s).
+      4. Connect via pw.chromium.connect_over_cdp (TCP — stable).
     """
-    # Attempt 1: connect to already-running Chrome with CDP port open
-    if _chrome_cdp_reachable(cdp_port):
-        try:
-            logger.info("Connecting to Chrome on CDP port %d", cdp_port)
-            browser = pw.chromium.connect_over_cdp(
-                f"http://localhost:{cdp_port}",
-                timeout=15000,
-            )
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            return ctx
-        except Exception as e:
-            logger.warning("CDP connect failed: %s", e)
-
-    # Attempt 2: persistent Playwright profile — cookies/localStorage persist on disk
     profile_dir = os.path.abspath(_BROWSER_PROFILE_DIR)
     os.makedirs(profile_dir, exist_ok=True)
+
+    # Kill everything first — ensures clean profile lock
     _release_profile_lock(profile_dir)
-    # Extra buffer after the kill loop inside _release_profile_lock before launching.
     time.sleep(2)
-    logger.info("Using persistent browser profile at %s", profile_dir)
-    ctx = pw.chromium.launch_persistent_context(
-        user_data_dir=profile_dir,
-        headless=False,
-        viewport={"width": 1280, "height": 900},
-        accept_downloads=True,
-        args=_ANTI_DETECT_ARGS,
-        ignore_default_args=_ANTI_DETECT_IGNORE,
+
+    # Find Chrome executable: prefer Playwright's bundled Chromium (guaranteed
+    # installed), fall back to system Chrome.
+    chrome_exe = _find_playwright_chromium()
+    if not chrome_exe:
+        chrome_exe = _find_system_chrome()
+    if not chrome_exe:
+        raise FileNotFoundError(
+            "No Chrome/Chromium found. Run: playwright install chromium"
+        )
+    logger.info("Launching Chrome via CDP: %s", chrome_exe)
+
+    # Launch Chrome detached — we'll connect via TCP, not stdin/stdout pipe
+    subprocess.Popen(
+        [
+            chrome_exe,
+            f"--remote-debugging-port={cdp_port}",
+            f"--user-data-dir={profile_dir}",
+            "--profile-directory=Default",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-mode",
+        ] + _ANTI_DETECT_ARGS,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    # Give Chrome 3s to finish initializing all sub-processes before we try new_page.
-    # Without this, the GPU/renderer processes may not yet be ready and new_page()
-    # fails immediately with "Failed to open a new tab".
-    time.sleep(3)
-    # Inject webdriver flag removal on every page so sites don't detect automation
+
+    # Poll until CDP is reachable (up to 20 s)
+    logger.info("Waiting for Chrome CDP port %d…", cdp_port)
+    for _i in range(20):
+        if _chrome_cdp_reachable(cdp_port):
+            time.sleep(2)  # extra settle so Chrome finishes loading profile
+            break
+        time.sleep(1)
+    else:
+        raise RuntimeError(f"Chrome CDP not reachable on port {cdp_port} after 20s")
+
+    logger.info("Chrome CDP ready — connecting")
+    browser = pw.chromium.connect_over_cdp(
+        f"http://localhost:{cdp_port}",
+        timeout=15000,
+    )
+    ctx = browser.contexts[0] if browser.contexts else browser.new_context()
     ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
     return ctx
+
+
+def _find_playwright_chromium() -> str | None:
+    """Return path to Playwright's bundled Chromium, or None."""
+    import glob as _glob
+    base = os.path.expandvars(r"%LOCALAPPDATA%\ms-playwright")
+    if not os.path.isdir(base):
+        return None
+    # Find the latest chromium-NNNN installation
+    pattern = os.path.join(base, "chromium-*", "chrome-win", "chrome.exe")
+    hits = sorted(_glob.glob(pattern), reverse=True)
+    return hits[0] if hits else None
+
+
+def _find_system_chrome() -> str | None:
+    """Return path to system Google Chrome, or None."""
+    for path in [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        os.path.expandvars(r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+    ]:
+        if os.path.isfile(path):
+            return path
+    return None
 
 
 def _release_profile_lock(profile_dir: str) -> None:
@@ -465,13 +511,14 @@ def _release_profile_lock(profile_dir: str) -> None:
         logger.warning("_release_profile_lock: chrome still running after attempt %d — retrying", _attempt + 1)
 
     # Remove Chrome's SingletonLock file unconditionally
-    try:
-        lock = os.path.join(profile_dir, "SingletonLock")
-        if os.path.exists(lock):
-            os.remove(lock)
-            logger.info("Removed SingletonLock from profile dir")
-    except Exception as exc:
-        logger.debug("_release_profile_lock lock file: %s", exc)
+    for lock_rel in ["SingletonLock", "Default/LOCK"]:
+        try:
+            lock = os.path.join(profile_dir, lock_rel)
+            if os.path.exists(lock):
+                os.remove(lock)
+                logger.info("Removed lock file: %s", lock_rel)
+        except Exception as exc:
+            logger.debug("_release_profile_lock lock file %s: %s", lock_rel, exc)
 
     # Also clear any crash-recovery state that would trigger a restore dialog
     try:
