@@ -1065,31 +1065,49 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
             raise
         logger.info("app_id=%d no Easy Apply — looking for external Apply link", app_id)
 
-    # External apply fallback: find Apply link and follow it
+    # External apply fallback: find Apply link and follow it.
+    # LinkedIn's "Apply on company website" button opens a NEW TAB (target=_blank),
+    # so we must capture the new page from context rather than waiting for same-tab navigation.
     external_url = None
-    for sel in [
+    apply_selectors = [
         "a[aria-label*='Apply']",
-        "a:has-text('Apply')",
         "button[aria-label*='Apply']",
+        "a:has-text('Apply')",
+        "button:has-text('Apply')",
         ".jobs-apply-button",
-    ]:
+    ]
+    for sel in apply_selectors:
         el = page.locator(sel).first
-        if el.count() > 0:
-            href = el.get_attribute("href") or ""
-            if href and "linkedin.com" not in href:
-                external_url = href
+        if el.count() == 0:
+            continue
+        # If it's an anchor with a non-LinkedIn href, use it directly
+        href = el.get_attribute("href") or ""
+        if href and "linkedin.com" not in href and href.startswith("http"):
+            external_url = href
+            logger.info("app_id=%d external apply href: %s", app_id, href)
+            break
+        # Click and capture new tab (LinkedIn opens in _blank) or same-tab navigation
+        try:
+            ctx = page.context
+            pages_before = set(id(p) for p in ctx.pages)
+            with ctx.expect_page(timeout=8000) as new_page_info:
+                el.click()
+            new_page = new_page_info.value
+            new_page.wait_for_load_state("domcontentloaded", timeout=15000)
+            new_url = new_page.url
+            if "linkedin.com" not in new_url:
+                external_url = new_url
+                # Continue using the new tab as our active page
+                page = new_page
+                logger.info("app_id=%d external apply new-tab URL: %s", app_id, external_url)
                 break
-            # Try clicking to get the redirect target
-            try:
-                with page.expect_navigation(timeout=8000):
-                    el.click()
-                if "linkedin.com" not in page.url:
-                    external_url = page.url
+            new_page.close()
+        except Exception:
+            # No new tab — check if same-tab navigated
+            _human_pause(1.0, 2.0)
+            if "linkedin.com" not in page.url:
+                external_url = page.url
                 break
-            except Exception:
-                if "linkedin.com" not in page.url:
-                    external_url = page.url
-                    break
 
     if not external_url and "linkedin.com" not in page.url:
         external_url = page.url
