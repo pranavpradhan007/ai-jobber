@@ -307,6 +307,7 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     # Attempt 2: persistent Playwright profile — cookies/localStorage persist on disk
     profile_dir = os.path.abspath(_BROWSER_PROFILE_DIR)
     os.makedirs(profile_dir, exist_ok=True)
+    _release_profile_lock(profile_dir)
     logger.info("Using persistent browser profile at %s", profile_dir)
     ctx = pw.chromium.launch_persistent_context(
         user_data_dir=profile_dir,
@@ -319,6 +320,32 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     # Inject webdriver flag removal on every page so sites don't detect automation
     ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
     return ctx
+
+
+def _release_profile_lock(profile_dir: str) -> None:
+    """Kill any Chrome/Chromium processes holding a lock on this profile dir."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["wmic", "process", "where",
+             f"CommandLine like '%{profile_dir}%' and Name like '%chrome%'",
+             "get", "ProcessId", "/format:list"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            if line.startswith("ProcessId="):
+                pid = line.split("=", 1)[1].strip()
+                if pid.isdigit():
+                    subprocess.run(["taskkill", "/F", "/PID", pid],
+                                   capture_output=True, timeout=5)
+                    logger.info("Killed stale browser process PID=%s holding profile", pid)
+        # Also remove Chrome's SingletonLock file if present
+        lock = os.path.join(profile_dir, "SingletonLock")
+        if os.path.exists(lock):
+            os.remove(lock)
+            logger.info("Removed SingletonLock from profile dir")
+    except Exception as exc:
+        logger.debug("_release_profile_lock: %s", exc)
 
 
 def _chrome_cdp_reachable(port: int) -> bool:
