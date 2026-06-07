@@ -1,12 +1,25 @@
 """Run the overnight pipeline on the newly imported real jobs."""
+import logging
 import os
 import sys
+
+from dotenv import load_dotenv
+load_dotenv()  # load .env into os.environ before anything else
 
 # Ensure UTF-8 output on Windows (avoids UnicodeEncodeError with arrow chars)
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 os.environ["JOB_AGENT_DB"] = "job_agent.db"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+    handlers=[
+        logging.FileHandler("job_agent.log", encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
 
 from src.db.connection import get_connection
 from src.scoring.heuristic_scorer import make_heuristic_scorer

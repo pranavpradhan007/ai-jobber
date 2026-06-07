@@ -611,6 +611,18 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     # WhiteCarrot: handle email-entry page (gated behind email before the form loads)
     if "whitecarrot.io" in page.url:
         _handle_whitecarrot_email_entry(page, answers)
+        # Extra wait: WhiteCarrot profile-builder SPA needs time to render after "Get started"
+        try:
+            page.wait_for_load_state("networkidle", timeout=8_000)
+        except Exception:
+            pass
+        _human_pause(2.0, 3.0)
+        _screenshot(page, folder_path, "whitecarrot_form.png")
+        try:
+            body_snippet = (page.evaluate("() => document.body.innerText") or "")[:300]
+            logger.info("app_id=%d WhiteCarrot post-gate body: %s", app_id, body_snippet)
+        except Exception:
+            pass
 
     # Detect fields in main page first, then fall back to iframes (Comeet et al.)
     fill_page = page
@@ -1552,7 +1564,7 @@ def _fill_greenhouse_location(page, answers: dict) -> None:
         logger.warning("Greenhouse location fill: %s", exc)
 
 
-def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 20) -> None:
+def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 35) -> None:
     """Step through Workday applyManually multi-page wizard until submitted.
 
     Workday's applyManually form has up to 6 named steps:
