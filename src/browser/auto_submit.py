@@ -424,14 +424,20 @@ def _release_profile_lock(profile_dir: str) -> None:
     import subprocess
 
     # Graceful close first so Chrome can flush its profile to disk cleanly
-    subprocess.run(["taskkill", "/IM", "chrome.exe"],
-                   capture_output=True, timeout=8)
+    try:
+        subprocess.run(["taskkill", "/IM", "chrome.exe"],
+                       capture_output=True, timeout=5)
+    except Exception:
+        pass
     time.sleep(1)
 
     # Force-kill loop — retry up to 5 times until no chrome.exe remains
     for _attempt in range(5):
-        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"],
-                       capture_output=True, timeout=10)
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"],
+                           capture_output=True, timeout=10)
+        except Exception:
+            pass
         time.sleep(2)
         # Check if any chrome.exe processes survive
         try:
