@@ -1944,6 +1944,12 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
 
         for btn in select_btns:
             try:
+                # Scroll element into view before checking visibility
+                # (EEO fields can be below the viewport on pages with an Errors Found banner)
+                try:
+                    btn.scroll_into_view_if_needed(timeout=2000)
+                except Exception:
+                    pass
                 if not btn.is_visible(timeout=1000):
                     continue
 
@@ -2041,6 +2047,10 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
         selects = page.locator("select").all()
         for sel_loc in selects:
             try:
+                try:
+                    sel_loc.scroll_into_view_if_needed(timeout=2000)
+                except Exception:
+                    pass
                 cur = (sel_loc.input_value() or "").strip()
                 if cur and cur.lower() not in ("", "select one", "-- select --", "please select"):
                     continue
@@ -2331,9 +2341,11 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
             body_check = page.evaluate("() => document.body.innerText") or ""
             if "Errors Found" in body_check:
                 logger.warning("app_id=%d Workday: 'Errors Found' at step=%d — scrolling to fill required fields", app_id, step)
-                # Scroll past the error banner to reach the form fields below
-                page.evaluate("window.scrollTo(0, 600)")
+                # Scroll past the error banner to reach form fields below it
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 _human_pause(0.5, 1.0)
+                page.evaluate("window.scrollTo(0, 0)")
+                _human_pause(0.3, 0.5)
         except Exception:
             pass
 
