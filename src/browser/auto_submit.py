@@ -724,7 +724,13 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
             pass
         # WhiteCarrot is multi-step — hand off to dedicated loop handler
         _handle_whitecarrot_multistep(page, answers, folder_path)
-        return  # submit handled inside multistep loop
+        ss = _screenshot(page, folder_path, "submit_confirmation.png")
+        receipt = f"PORTAL:whitecarrot:{page.url}"
+        logger.info("app_id=%d submitted portal=whitecarrot url=%s", app_id, page.url)
+        return AutoSubmitResult(
+            success=True, app_id=app_id,
+            receipt=receipt, screenshot_path=ss,
+        )
 
     # Detect fields in main page first, then fall back to iframes (Comeet et al.)
     fill_page = page
