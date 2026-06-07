@@ -366,6 +366,13 @@ _ANTI_DETECT_ARGS = [
     # Chrome session was killed (e.g. by _release_profile_lock between apps).
     "--disable-session-crashed-bubble",
     "--disable-restore-session-state",
+    # GPU stability: the GPU process crashes on many Windows laptops in headless/
+    # automation contexts (chrome_debug.log shows WebGL deprecation + fallback
+    # failures). Disabling GPU avoids the GPU process entirely; pages render via
+    # CPU/SwANGLE which is slower but crash-free for form automation.
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+    "--disable-dev-shm-usage",
 ]
 
 _ANTI_DETECT_IGNORE = ["--enable-automation"]
@@ -407,6 +414,10 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
         args=_ANTI_DETECT_ARGS,
         ignore_default_args=_ANTI_DETECT_IGNORE,
     )
+    # Give Chrome 3s to finish initializing all sub-processes before we try new_page.
+    # Without this, the GPU/renderer processes may not yet be ready and new_page()
+    # fails immediately with "Failed to open a new tab".
+    time.sleep(3)
     # Inject webdriver flag removal on every page so sites don't detect automation
     ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
     return ctx
