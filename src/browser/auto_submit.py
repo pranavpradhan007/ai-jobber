@@ -396,10 +396,11 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     profile_dir = os.path.abspath(_BROWSER_PROFILE_DIR)
     os.makedirs(profile_dir, exist_ok=True)
     _release_profile_lock(profile_dir)
-    # Give any killed Chrome processes 2 s to fully flush the profile to disk
+    # Give any killed Chrome processes 5 s to fully flush the profile to disk
     # before we launch a new instance. Without this, the new launch sometimes
     # gets a half-written profile and the first page immediately closes.
-    time.sleep(2)
+    # Extended from 2s → 5s to handle Chrome resource exhaustion after multiple runs.
+    time.sleep(5)
     logger.info("Using persistent browser profile at %s", profile_dir)
     ctx = pw.chromium.launch_persistent_context(
         user_data_dir=profile_dir,
@@ -445,6 +446,15 @@ def _release_profile_lock(profile_dir: str) -> None:
             logger.debug("_release_profile_lock: no matching chrome processes found")
     except Exception as exc:
         logger.debug("_release_profile_lock enumerate: %s", exc)
+    # Fallback: kill ALL chrome.exe processes — handles helper processes (GPU, renderer,
+    # crashpad) that don't carry --user-data-dir in their command line, and clears
+    # Chrome resource exhaustion after multiple overnight runs.
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"],
+                       capture_output=True, timeout=8)
+        logger.info("_release_profile_lock: taskkill /F /IM chrome.exe (cleanup sweep)")
+    except Exception as exc:
+        logger.debug("_release_profile_lock taskkill sweep: %s", exc)
     # Remove Chrome's SingletonLock file unconditionally
     try:
         lock = os.path.join(profile_dir, "SingletonLock")
