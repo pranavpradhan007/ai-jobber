@@ -2104,6 +2104,112 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
     return filled
 
 
+def _fill_workday_eeo_selects(page, answers: dict) -> int:
+    """Fill Workday EEO native <select> elements on the Voluntary Disclosures page.
+
+    The existing label-traversal logic picks the wrong <p> (the disclosure text
+    rather than the immediate question label) because closest('div') returns the
+    entire content container.  This function uses JS that walks backwards through
+    DOM siblings to find the label nearest to each select.
+    """
+    try:
+        selects_info = page.evaluate("""() => {
+            const SKIP = new Set(['', 'select one', 'please select', '-- select --', '-- please select --']);
+            const results = [];
+            for (const sel of document.querySelectorAll('select')) {
+                const curText = (sel.options[sel.selectedIndex]?.text || '').trim().toLowerCase();
+                if (!SKIP.has(curText)) continue;
+                let label = '';
+                const id = sel.id;
+                if (id) {
+                    const lbl = document.querySelector('label[for="' + id + '"]');
+                    if (lbl) label = lbl.textContent.trim();
+                }
+                if (!label) {
+                    let sib = sel.previousElementSibling;
+                    while (sib) {
+                        const tag = sib.tagName;
+                        if (['P','LABEL','LEGEND','H3','H4','STRONG','B'].includes(tag)) {
+                            label = sib.textContent.trim(); break;
+                        }
+                        sib = sib.previousElementSibling;
+                    }
+                }
+                if (!label) {
+                    const prev = sel.parentElement?.previousElementSibling;
+                    if (prev) label = prev.textContent.trim();
+                }
+                results.push({ id: id || '', name: sel.name || '', label: label,
+                               options: [...sel.options].map(o => o.text.trim()) });
+            }
+            return results;
+        }""")
+    except Exception as exc:
+        logger.debug("_fill_workday_eeo_selects JS: %s", exc)
+        return 0
+
+    _EEO_MAP = [
+        (["hispanic or latino", "hispanic", "latino"],
+         answers.get("eeo_hispanic", "No, Not Hispanic or Latino")),
+        (["race/ethnicity", "race or ethnicity", "ethnicity", "identify yourself", "racial"],
+         answers.get("eeo_race", "I choose not to self-identify")),
+        (["gender", "sex"],
+         answers.get("eeo_gender", "I choose not to self-identify")),
+        (["veteran status", "protected veteran", "veteran"],
+         answers.get("eeo_veteran", "I am not a protected veteran")),
+        (["disability", "disabled", "ada"],
+         answers.get("eeo_disability", "I don't wish to answer")),
+    ]
+
+    filled = 0
+    for info in (selects_info or []):
+        label_lower = (info.get("label") or "").lower()
+        opts = info.get("options") or []
+        if not label_lower or not opts:
+            continue
+        chosen = None
+        for keywords, answer in _EEO_MAP:
+            if any(kw in label_lower for kw in keywords):
+                chosen = answer; break
+        if chosen is None:
+            continue
+        chosen_lower = chosen.lower()
+        chosen_words = [w for w in chosen_lower.split() if len(w) > 4]
+        matched_opt = None
+        for opt in opts:
+            opt_lower = opt.lower()
+            if opt_lower in ("", "select one", "please select", "-- select --"):
+                continue
+            if chosen_lower in opt_lower:
+                matched_opt = opt; break
+            if chosen_words and all(w in opt_lower for w in chosen_words[:2]):
+                matched_opt = opt; break
+        if not matched_opt:
+            for opt in opts:
+                opt_lower = opt.lower()
+                if any(kw in opt_lower for kw in ("not a protected", "not hispanic", "choose not", "decline", "prefer not")):
+                    matched_opt = opt; break
+        if not matched_opt:
+            logger.info("Workday EEO select: no option match label='%s' chosen='%s' opts=%s",
+                        label_lower[:60], chosen, opts[:5])
+            continue
+        sel_id = info.get("id") or ""
+        sel_name = info.get("name") or ""
+        if sel_id:
+            selector = f"select#{sel_id}"
+        elif sel_name:
+            selector = f"select[name='{sel_name}']"
+        else:
+            continue
+        try:
+            page.locator(selector).select_option(label=matched_opt, timeout=3000)
+            logger.info("Workday EEO select: '%s' → %s", label_lower[:60], matched_opt)
+            filled += 1
+        except Exception as exc:
+            logger.debug("Workday EEO select fill failed sel=%s opt=%s: %s", selector, matched_opt, exc)
+    return filled
+
+
 def _wc_safe_click(page, locator) -> bool:
     """Click a WhiteCarrot button with force-fallback. Returns True on success."""
     try:
@@ -2358,6 +2464,11 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
         sq_filled = _fill_workday_screener_questions(page, answers)
         if sq_filled:
             logger.info("app_id=%d Workday: filled %d screener question(s) step=%d", app_id, sq_filled, step)
+
+        # Fill EEO voluntary disclosure selects using sibling-walk label detection
+        eeo_filled = _fill_workday_eeo_selects(page, answers)
+        if eeo_filled:
+            logger.info("app_id=%d Workday: filled %d EEO select(s) step=%d", app_id, eeo_filled, step)
 
         # Fix Workday-specific fields that fast_fill handles incorrectly.
         # Detect My Information page via data-automation-id (standard Workday) OR
