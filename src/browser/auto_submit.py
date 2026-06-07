@@ -1800,51 +1800,115 @@ def _fill_greenhouse_location(page, answers: dict) -> None:
 
 
 def _fill_workday_screener_questions(page, answers: dict) -> int:
-    """Fill Workday questionnaire pages with native <select> screener dropdowns.
+    """Fill Workday Application Questions page with custom combobox dropdowns.
 
-    Matches question labels to known yes/no answers via keyword rules.
-    Returns number of selects filled.
+    Workday screener questions use Workday's custom React combobox component
+    (same as My Information page), NOT native <select> elements.
+    Strategy: find buttons with 'Select One' text → match label → click to open
+    dropdown → click the matching promptOption.
+
+    Returns number of questions filled.
     """
     _RULES = [
         (["18 years", "18 year", "age or older", "legal age"], "Yes"),
-        (["legally authorized", "authorized to work", "authorized to work in the united states", "work in the us"], "Yes"),
+        (["legally authorized", "authorized to work in the united states", "work in the us", "authorized to work"], "Yes"),
         (["sponsorship", "employment visa", "visa sponsorship", "require sponsorship"], "Yes"),
-        (["previously employed", "former employee", "previously worked for", "employed by danaher", "employed by our"], "No"),
+        (["previously employed", "employed by danaher", "affiliate companies", "previously worked for"], "No"),
         (["background check", "background investigation"], "Yes"),
         (["drug test", "drug screen"], "Yes"),
-        (["felony", "convicted of"], "No"),
+        (["felony", "convicted"], "No"),
         (["non-compete"], "No"),
     ]
+
     filled = 0
+    try:
+        # Workday renders unfilled custom dropdowns as buttons with "Select One" text.
+        # NOTE: also check for "Select One" inside a div/span — Workday sometimes wraps
+        # the button label in a span, so :has-text matches the parent container.
+        select_btns = page.locator(
+            "button:has-text('Select One'), "
+            "[role='combobox']:has-text('Select One'), "
+            "[role='button']:has-text('Select One')"
+        ).all()
+        logger.debug("Workday screener: found %d 'Select One' buttons", len(select_btns))
+
+        for btn in select_btns:
+            try:
+                if not btn.is_visible(timeout=1000):
+                    continue
+
+                # Get question text from surrounding container
+                label_text = (btn.evaluate("""el => {
+                    let p = el.closest('div[class*="formField"],div[data-automation-id],fieldset,li,section');
+                    if (!p) p = el.parentElement?.parentElement;
+                    if (!p) return '';
+                    let lbl = p.querySelector('label,legend,p,h3,h4,[class*="label"]');
+                    if (lbl) return lbl.innerText?.trim() || '';
+                    return p.innerText?.split('\\n')[0]?.trim() || '';
+                }""") or "").lower().strip()
+
+                if not label_text:
+                    continue
+
+                # Match label to rule
+                chosen = None
+                for keywords, answer in _RULES:
+                    if any(kw in label_text for kw in keywords):
+                        chosen = answer
+                        break
+                if chosen is None:
+                    logger.debug("Workday screener: no rule for '%s'", label_text[:60])
+                    continue
+
+                # Click button to open the Workday custom dropdown
+                try:
+                    btn.click(timeout=3000)
+                    _human_pause(0.5, 1.0)
+                except Exception as exc:
+                    logger.debug("Workday screener: btn click failed '%s': %s", label_text[:40], exc)
+                    continue
+
+                # Wait for dropdown options to appear
+                opt_sel = (
+                    f"[data-automation-id='promptOption']:has-text('{chosen}'), "
+                    f"li:has-text('{chosen}'), "
+                    f"[role='option']:has-text('{chosen}')"
+                )
+                try:
+                    page.wait_for_selector(opt_sel, state="visible", timeout=4000)
+                    page.locator(opt_sel).first.click(timeout=3000)
+                    logger.info("Workday screener: '%s' → %s", label_text[:60], chosen)
+                    filled += 1
+                    _human_pause(0.3, 0.6)
+                except Exception as exc:
+                    # Try clicking first option if exact match not found
+                    logger.debug("Workday screener: option '%s' not found for '%s': %s", chosen, label_text[:40], exc)
+                    # Close the dropdown if open
+                    try:
+                        page.keyboard.press("Escape")
+                    except Exception:
+                        pass
+            except Exception as exc:
+                logger.debug("Workday screener btn: %s", exc)
+    except Exception as exc:
+        logger.debug("_fill_workday_screener_questions: %s", exc)
+
+    # Also attempt native <select> fill (some Workday instances do use native selects)
     try:
         selects = page.locator("select").all()
         for sel_loc in selects:
             try:
-                if not sel_loc.is_visible():
-                    continue
-                # Current value — skip if already answered
                 cur = (sel_loc.input_value() or "").strip()
-                if cur and cur.lower() not in ("", "select one", "-- select --", "please select", "- select -"):
+                if cur and cur.lower() not in ("", "select one", "-- select --", "please select"):
                     continue
-
-                # Resolve label text
-                select_id = sel_loc.get_attribute("id") or ""
-                label_text = ""
-                if select_id:
-                    lbl = page.locator(f"label[for='{select_id}']").first
-                    if lbl.count() > 0:
-                        label_text = (lbl.inner_text() or "").lower().strip()
-                if not label_text:
-                    label_text = (sel_loc.get_attribute("aria-label") or "").lower().strip()
-                if not label_text:
-                    label_text = (sel_loc.evaluate(
-                        "el => { let p = el.closest('div,fieldset,li'); "
-                        "return p ? (p.querySelector('label,legend,p,span')?.innerText || '') : ''; }"
-                    ) or "").lower().strip()
+                label_text = (sel_loc.evaluate(
+                    "el => { let id = el.id; if (id) { "
+                    "let lbl = document.querySelector(`label[for='${id}']`); "
+                    "if (lbl) return lbl.innerText; } "
+                    "return (el.closest('div,fieldset')?.querySelector('label,legend,p')?.innerText || ''); }"
+                ) or "").lower().strip()
                 if not label_text:
                     continue
-
-                # Match to rule
                 chosen = None
                 for keywords, answer in _RULES:
                     if any(kw in label_text for kw in keywords):
@@ -1852,39 +1916,67 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
                         break
                 if chosen is None:
                     continue
-
-                # Try selecting
                 try:
                     sel_loc.select_option(label=chosen, timeout=2000)
-                    logger.info("Workday screener: '%s' → %s", label_text[:70], chosen)
+                    logger.info("Workday screener (native select): '%s' → %s", label_text[:60], chosen)
                     filled += 1
-                    continue
                 except Exception:
                     pass
-                # Fuzzy: find option text that contains chosen
-                try:
-                    opts = sel_loc.evaluate("el => [...el.options].map(o => ({v:o.value, t:o.text.trim()}))")
-                    match = next(
-                        (o for o in opts if chosen.lower() in o["t"].lower() and o["v"] not in ("", "null")),
-                        None,
-                    )
-                    if match:
-                        sel_loc.select_option(value=match["v"], timeout=2000)
-                        logger.info("Workday screener (fuzzy): '%s' → %s", label_text[:70], match["t"])
-                        filled += 1
-                except Exception as exc2:
-                    logger.debug("Workday screener select error '%s': %s", label_text[:60], exc2)
-            except Exception as exc:
-                logger.debug("Workday screener item: %s", exc)
-    except Exception as exc:
-        logger.debug("_fill_workday_screener_questions: %s", exc)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     return filled
+
+
+def _wc_safe_click(page, locator) -> bool:
+    """Click a WhiteCarrot button with force-fallback. Returns True on success."""
+    try:
+        locator.click(timeout=5000)
+        return True
+    except Exception:
+        pass
+    try:
+        locator.click(force=True, timeout=5000)
+        return True
+    except Exception:
+        pass
+    return False
+
+
+def _wc_dismiss_modals(page) -> None:
+    """Dismiss WhiteCarrot CV-parser suggestions modal and similar overlays.
+
+    After resume upload WhiteCarrot shows an autofill-suggestions modal with
+    'Ignore' / 'Replace all' / 'Done' buttons that overlays the form.
+    """
+    for dismiss_sel in [
+        "button:has-text('Done')",
+        "button:has-text('Ignore')",
+        "button:has-text('Close')",
+        "button:has-text('Skip')",
+        "button:has-text('Cancel')",
+        "[aria-label='Close']",
+        "[aria-label='Dismiss']",
+    ]:
+        try:
+            loc = page.locator(dismiss_sel).first
+            if loc.count() > 0 and loc.is_visible(timeout=1000):
+                loc.click(timeout=3000)
+                logger.info("WhiteCarrot: dismissed modal via %r", dismiss_sel)
+                _human_pause(0.5, 1.0)
+                return
+        except Exception:
+            continue
 
 
 def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None:
     """Loop through WhiteCarrot's multi-step profile-builder until submitted.
 
     Page 1: basic info (name, phone, LinkedIn, CV) — filled by _fill_whitecarrot_form.
+    After CV upload WhiteCarrot may show an autofill-suggestions modal — dismissed
+    before clicking Next step.
     Subsequent pages: detected fields filled by fast_fill_form.
     Exits when a Submit/Apply button is clicked or a confirmation page is detected.
     """
@@ -1919,6 +2011,11 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
         except Exception:
             pass
         _human_pause(1.5, 2.5)
+
+        # Dismiss any modal/overlay that blocks the form (CV parser, suggestions, etc.)
+        _wc_dismiss_modals(page)
+        _human_pause(0.5, 1.0)
+
         _screenshot(page, folder_path, f"wc_step{step:02d}.png")
 
         # Check for confirmation
@@ -1931,10 +2028,10 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
             pass
 
         if step == 0:
-            # First page: use dedicated direct-fill + phone country fix
+            # First page: use dedicated direct-fill
             _fill_whitecarrot_form(page, answers, folder_path)
-            # Wait for CV parse (up to 8 s)
-            for _w in range(8):
+            # Wait for CV parse then dismiss parser modal (up to 12 s)
+            for _w in range(12):
                 try:
                     b = page.evaluate("() => document.body.innerText") or ""
                     if "CV uploaded successfully" in b or "successfully" in b.lower():
@@ -1942,13 +2039,14 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
                 except Exception:
                     pass
                 _human_pause(0.8, 1.0)
+            # Dismiss CV parser suggestions modal that may appear after upload
+            _wc_dismiss_modals(page)
+            _human_pause(1.0, 1.5)
         else:
-            # Later pages: use fast_fill + screener selects
+            # Later pages: use fast_fill
             detected = extract_form_fields(page)
             if detected:
                 fast_fill_form(page, detected, answers)
-            # Fill any radio/checkbox-style EEO or optional questions
-            _fill_workday_screener_questions(page, answers)
 
         # Scroll to bottom so nav buttons are reachable
         try:
@@ -1957,20 +2055,23 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
         except Exception:
             pass
 
+        # Dismiss any modal that appeared again after filling
+        _wc_dismiss_modals(page)
+
         # Try Submit first
         for sel in _SUBMIT_SELS:
             try:
                 loc = page.locator(sel).first
-                if loc.count() > 0 and loc.is_visible():
-                    logger.info("WhiteCarrot: clicking Submit step=%d sel=%r", step, sel)
-                    _human_click(page, loc)
-                    try:
-                        page.wait_for_load_state("networkidle", timeout=15_000)
-                    except Exception:
-                        pass
-                    _human_pause(2.0, 3.0)
-                    _screenshot(page, folder_path, "submit_confirmation.png")
-                    return
+                if loc.count() > 0 and loc.is_visible(timeout=1000):
+                    if _wc_safe_click(page, loc):
+                        logger.info("WhiteCarrot: clicked Submit step=%d sel=%r", step, sel)
+                        try:
+                            page.wait_for_load_state("networkidle", timeout=15_000)
+                        except Exception:
+                            pass
+                        _human_pause(2.0, 3.0)
+                        _screenshot(page, folder_path, "submit_confirmation.png")
+                        return
             except Exception:
                 continue
 
@@ -1979,11 +2080,11 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
         for sel in _NEXT_SELS:
             try:
                 loc = page.locator(sel).first
-                if loc.count() > 0 and loc.is_visible():
-                    logger.info("WhiteCarrot: clicking Next step=%d sel=%r", step, sel)
-                    _human_click(page, loc)
-                    clicked = True
-                    break
+                if loc.count() > 0 and loc.is_visible(timeout=1000):
+                    if _wc_safe_click(page, loc):
+                        logger.info("WhiteCarrot: clicked Next step=%d sel=%r", step, sel)
+                        clicked = True
+                        break
             except Exception:
                 continue
 
