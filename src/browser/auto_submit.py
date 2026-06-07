@@ -65,13 +65,25 @@ _APPLY_SELECTORS = [
 _SUBMIT_SELECTORS = [
     "input[type='submit']",
     "button[type='submit']",
+    # Exact text matches
     "button:text-is('Submit Application')",
     "button:text-is('Submit')",
     "button:text-is('Send Application')",
-    "[data-automation-id='bottom-navigation-next-button']",   # Workday
+    # Partial text matches (Ashby, Comeet, various ATS)
+    "button:has-text('Submit application')",
+    "button:has-text('Submit Application')",
+    "button:has-text('Submit your application')",
+    "button:has-text('Send application')",
+    "button:has-text('Complete Application')",
+    # Workday
+    "[data-automation-id='bottom-navigation-next-button']",
+    # Other portals
     "button:text-is('Apply')",
     "#submit_app_button",
     ".btn-submit",
+    "[data-testid='submit-application-button']",   # Ashby
+    "[data-testid='apply-button']",
+    "button.ashby-application-form-submit-button",
 ]
 
 # Indeed SmartApply multi-page form selectors
@@ -199,6 +211,20 @@ def build_candidate_answers(
     ):
         if key in profile and profile[key] and not answers.get(key):
             answers[key] = profile[key]
+
+    # Fill address/phone fields from profile when env vars were not set
+    profile_address_map = {
+        "address_line1":  profile.get("address", ""),
+        "address_city":   profile.get("city", ""),
+        "address_state":  profile.get("state", ""),
+        "address_zip":    profile.get("zip_code", ""),
+        "address_country": profile.get("country", "United States"),
+        "phone":          profile.get("phone", ""),
+        "phone_country_code": "+1",
+    }
+    for k, v in profile_address_map.items():
+        if v and not answers.get(k):
+            answers[k] = v
 
     # Merge pre-computed screener answers at lowest priority (open-ended Q answers)
     if screener_answers:
@@ -507,6 +533,13 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     from src.browser.form_detector import extract_form_fields
     from src.browser.fast_autofill import fast_fill_form, verify_form_complete
 
+    # Wait extra for JS-rendered forms (Comeet, NYL, other SPAs) — networkidle
+    # confirms async field rendering is complete before we scan the DOM.
+    try:
+        page.wait_for_load_state("networkidle", timeout=8000)
+    except Exception:
+        pass
+
     detected = extract_form_fields(page)
     if detected:
         logger.info("app_id=%d fast-fill: %d fields detected", app_id, len(detected))
@@ -630,15 +663,33 @@ def _click_apply(page, app_id: int) -> None:
 
 def _click_submit(page, app_id: int) -> None:
     """Find and click the Submit button; raise if none found."""
+    disabled_candidate = None
     for sel in _SUBMIT_SELECTORS:
         try:
             loc = page.locator(sel).first
-            if loc.count() > 0 and loc.is_visible() and loc.is_enabled():
+            if loc.count() == 0:
+                continue
+            if not loc.is_visible():
+                continue
+            if loc.is_enabled():
                 _human_click(page, loc)
                 logger.info("app_id=%d clicked submit selector=%r", app_id, sel)
                 return
+            # Button visible but disabled — track as fallback candidate
+            if disabled_candidate is None:
+                disabled_candidate = (sel, loc)
         except Exception:
             continue
+    # If all selectors found only disabled buttons, try clicking the first one anyway
+    # (some portals enable the button via JS on click, or disable check is a false negative)
+    if disabled_candidate:
+        sel, loc = disabled_candidate
+        try:
+            _human_click(page, loc)
+            logger.info("app_id=%d clicked DISABLED submit selector=%r (trying anyway)", app_id, sel)
+            return
+        except Exception as e:
+            logger.warning("app_id=%d clicking disabled button failed: %s", app_id, e)
     raise RuntimeError(
         f"Could not find submit button on {page.url}. "
         "Form may have multiple pages or require manual completion."
@@ -1068,12 +1119,22 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
     # External apply fallback: find Apply link and follow it.
     # LinkedIn's "Apply on company website" button opens a NEW TAB (target=_blank),
     # so we must capture the new page from context rather than waiting for same-tab navigation.
+    # Selectors are SCOPED to the top job card to avoid matching sidebar/suggested-job Apply buttons.
     external_url = None
     apply_selectors = [
-        "a[aria-label*='Apply']",
+        # Scoped to LinkedIn top card (avoids sidebar Apply button cross-contamination)
+        ".jobs-unified-top-card button[aria-label*='Apply']",
+        ".jobs-unified-top-card a[aria-label*='Apply']",
+        ".jobs-details-top-card button[aria-label*='Apply']",
+        ".jobs-details-top-card a[aria-label*='Apply']",
+        "div.jobs-apply-button--top-card button",
+        "div.jobs-apply-button--top-card a",
+        # Aria-label approach — more specific than has-text
+        "button[aria-label*='Apply on company website']",
+        "a[aria-label*='Apply on company website']",
+        # Fallback: any aria-label containing Apply (broad but avoids raw text match)
         "button[aria-label*='Apply']",
-        "a:has-text('Apply')",
-        "button:has-text('Apply')",
+        "a[aria-label*='Apply']",
         ".jobs-apply-button",
     ]
     for sel in apply_selectors:

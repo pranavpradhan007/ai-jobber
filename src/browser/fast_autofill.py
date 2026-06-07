@@ -69,13 +69,22 @@ _LABEL_ALIASES: dict[str, str] = {
     "portfolio url":            "portfolio_url",
     "city":                     "address_city",
     "state":                    "address_state",
+    "state/province":           "address_state",
     "zip":                      "address_zip",
     "zip code":                 "address_zip",
     "postal code":              "address_zip",
+    "postcode":                 "address_zip",
     "country":                  "address_country",
     "street address":           "address_line1",
     "address":                  "address_line1",
     "address line 1":           "address_line1",
+    "address 1":                "address_line1",
+    "country phone code":       "phone_country_code",
+    "country code":             "phone_country_code",
+    "phone country code":       "phone_country_code",
+    "phone extension":          "",         # skip — not needed
+    "preferred name":           "first_name",
+    "legal full name":          "full_name",
     "desired salary":           "salary_expectation",
     "expected salary":          "salary_expectation",
     "salary expectation":       "salary_expectation",
@@ -92,6 +101,9 @@ _LABEL_ALIASES: dict[str, str] = {
     "cover letter":             "cover_letter_default",
     "additional comments":      "cover_letter_default",
     "message":                  "cover_letter_default",
+    "why are you interested":   "cover_letter_default",
+    "why this company":         "cover_letter_default",
+    "why this role":            "cover_letter_default",
 }
 
 
@@ -336,13 +348,15 @@ def _resolve_answer(f: DetectedField, answers: dict) -> Optional[str]:
     """Three-tier label → answer resolution. Returns None if no match."""
     label = f.label_text.strip()
     norm  = _normalize_label(label)
+    # Strip special chars (*, :, etc.) but keep spaces — used for alias table lookup
+    stripped_label = re.sub(r"[*:()\[\]{}]", "", label.lower()).strip()
     placeholder = (f.placeholder or "").strip()
 
     # ── Tier 1: Direct key or alias match ────────────────────────────────────
-    for probe in (norm, label, placeholder, _normalize_label(placeholder)):
+    for probe in (norm, label, stripped_label, placeholder, _normalize_label(placeholder)):
         if probe in answers:
             return str(answers[probe])
-    for probe in (label, norm):
+    for probe in (label, norm, stripped_label):
         if probe in _LABEL_ALIASES:
             key = _LABEL_ALIASES[probe]
             if key in answers:

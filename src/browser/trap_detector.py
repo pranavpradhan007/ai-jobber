@@ -175,8 +175,11 @@ def detect_traps_in_html(html: str) -> TrapResult:
                 )
 
         # 2. CSS-hidden input (likely a honeypot — legitimate hidden fields use type=hidden)
+        # EXCEPTION: file inputs are legitimately hidden behind custom UI buttons
+        accept_val = _attr(fragment, "accept") or ""
+        is_file_input = (input_type == "file" or bool(accept_val))
         style_val = _attr(fragment, "style")
-        if style_val:
+        if style_val and not is_file_input:
             for css_pat in _HIDDEN_CSS_PATTERNS:
                 if css_pat.search(style_val):
                     evidence = match.group(0)[:120]
