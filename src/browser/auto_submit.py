@@ -396,11 +396,8 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     profile_dir = os.path.abspath(_BROWSER_PROFILE_DIR)
     os.makedirs(profile_dir, exist_ok=True)
     _release_profile_lock(profile_dir)
-    # Give any killed Chrome processes 5 s to fully flush the profile to disk
-    # before we launch a new instance. Without this, the new launch sometimes
-    # gets a half-written profile and the first page immediately closes.
-    # Extended from 2s → 5s to handle Chrome resource exhaustion after multiple runs.
-    time.sleep(5)
+    # Extra buffer after the kill loop inside _release_profile_lock before launching.
+    time.sleep(2)
     logger.info("Using persistent browser profile at %s", profile_dir)
     ctx = pw.chromium.launch_persistent_context(
         user_data_dir=profile_dir,
@@ -416,45 +413,40 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
 
 
 def _release_profile_lock(profile_dir: str) -> None:
-    """Kill any Chrome/Chromium processes holding a lock on this profile dir."""
+    """Kill ALL Chrome/Chromium processes and verify they are gone before returning.
+
+    Chrome helper processes (GPU, renderer, crashpad) don't carry --user-data-dir
+    in their command line, so a profile-specific kill misses them. Any survivor
+    causes the next launch to print 'Opening in existing browser session' and exit,
+    leaving Playwright with a dead context. We kill all chrome.exe up to 5 times
+    and verify via psutil (or tasklist fallback) that no chrome processes remain.
+    """
     import subprocess
-    # Normalize to forward slashes for comparison — wmic WQL LIKE doesn't handle backslashes
-    profile_norm = profile_dir.replace("\\", "/").lower()
-    try:
-        # Dump all process command lines — avoids WQL backslash escaping issues
-        result = subprocess.run(
-            ["wmic", "process", "get", "ProcessId,CommandLine", "/format:csv"],
-            capture_output=True, text=True, timeout=10,
-        )
-        killed = 0
-        for line in result.stdout.splitlines():
-            line_lower = line.replace("\\", "/").lower()
-            if "chrome" not in line_lower:
-                continue
-            if profile_norm not in line_lower:
-                continue
-            # CSV: Node,CommandLine,ProcessId
-            parts = line.split(",")
-            if len(parts) >= 3:
-                pid_str = parts[-1].strip()
-                if pid_str.isdigit():
-                    subprocess.run(["taskkill", "/F", "/PID", pid_str],
-                                   capture_output=True, timeout=5)
-                    logger.info("Killed stale browser process PID=%s holding profile", pid_str)
-                    killed += 1
-        if killed == 0:
-            logger.debug("_release_profile_lock: no matching chrome processes found")
-    except Exception as exc:
-        logger.debug("_release_profile_lock enumerate: %s", exc)
-    # Fallback: kill ALL chrome.exe processes — handles helper processes (GPU, renderer,
-    # crashpad) that don't carry --user-data-dir in their command line, and clears
-    # Chrome resource exhaustion after multiple overnight runs.
-    try:
+
+    # Graceful close first so Chrome can flush its profile to disk cleanly
+    subprocess.run(["taskkill", "/IM", "chrome.exe"],
+                   capture_output=True, timeout=8)
+    time.sleep(1)
+
+    # Force-kill loop — retry up to 5 times until no chrome.exe remains
+    for _attempt in range(5):
         subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"],
-                       capture_output=True, timeout=8)
-        logger.info("_release_profile_lock: taskkill /F /IM chrome.exe (cleanup sweep)")
-    except Exception as exc:
-        logger.debug("_release_profile_lock taskkill sweep: %s", exc)
+                       capture_output=True, timeout=10)
+        time.sleep(2)
+        # Check if any chrome.exe processes survive
+        try:
+            check = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq chrome.exe", "/NH", "/FO", "CSV"],
+                capture_output=True, text=True, timeout=8,
+            )
+            still_running = "chrome.exe" in check.stdout.lower()
+        except Exception:
+            still_running = False  # assume gone if check fails
+        if not still_running:
+            logger.info("_release_profile_lock: all chrome processes gone (attempt %d)", _attempt + 1)
+            break
+        logger.warning("_release_profile_lock: chrome still running after attempt %d — retrying", _attempt + 1)
+
     # Remove Chrome's SingletonLock file unconditionally
     try:
         lock = os.path.join(profile_dir, "SingletonLock")
@@ -463,6 +455,22 @@ def _release_profile_lock(profile_dir: str) -> None:
             logger.info("Removed SingletonLock from profile dir")
     except Exception as exc:
         logger.debug("_release_profile_lock lock file: %s", exc)
+
+    # Also clear any crash-recovery state that would trigger a restore dialog
+    try:
+        prefs = os.path.join(profile_dir, "Default", "Preferences")
+        if os.path.isfile(prefs):
+            import json as _json
+            with open(prefs, encoding="utf-8") as fh:
+                data = _json.load(fh)
+            if data.get("profile", {}).get("exit_type") != "Normal":
+                data.setdefault("profile", {})["exit_type"] = "Normal"
+                data.setdefault("profile", {})["exited_cleanly"] = True
+                with open(prefs, "w", encoding="utf-8") as fh:
+                    _json.dump(data, fh)
+                logger.info("Reset Chrome exit_type to Normal in Preferences")
+    except Exception as exc:
+        logger.debug("_release_profile_lock prefs reset: %s", exc)
 
 
 def _chrome_cdp_reachable(port: int) -> bool:
