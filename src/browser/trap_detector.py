@@ -194,8 +194,12 @@ def detect_traps_in_html(html: str) -> TrapResult:
                     )
 
         # 3. tabindex="-1" on a visible text input (screen-reader / bot trap)
+        # EXCEPTION: aria-hidden="true" + tabindex="-1" is a Greenhouse/React pattern for
+        # custom file upload widgets — the input is intentionally removed from the accessible
+        # tree and keyboard flow, but it's a real form field, not a honeypot.
         tabindex = _attr(fragment, "tabindex")
-        if tabindex == "-1" and input_type in ("text", "email", "tel", "url", ""):
+        aria_hidden = _attr(fragment, "aria-hidden").lower()
+        if tabindex == "-1" and aria_hidden != "true" and input_type in ("text", "email", "tel", "url", ""):
             evidence = match.group(0)[:120]
             logger.warning(
                 "AI trap: tabindex=-1 on visible input name=%r", input_name

@@ -115,6 +115,24 @@ _SMARTAPPLY_SUBMIT_SELECTORS = [
 
 _SMARTAPPLY_HOST = "smartapply.indeed.com"
 
+# Workday applyManually multi-step navigation
+_WORKDAY_NEXT_SELECTORS = [
+    "[data-automation-id='bottom-navigation-next-button']",
+    "button:has-text('Next')",
+    "button[aria-label='Next']",
+    "button[aria-label*='next' i]",
+    "button:has-text('Save and Continue')",
+    "button:has-text('Continue')",
+    "button[type='button']:has-text('Next')",
+]
+_WORKDAY_SUBMIT_SELECTORS = [
+    "[data-automation-id='bottom-navigation-submit-button']",
+    "button:has-text('Submit')",
+    "button[aria-label*='submit' i]",
+    "[data-automation-id='bottom-navigation-next-button']",  # Workday reuses this ID on last step
+    "button:has-text('Apply')",
+]
+
 
 @dataclass
 class AutoSubmitResult:
@@ -528,6 +546,19 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     logger.info("app_id=%d portal=%s url=%s", app_id, portal, page.url)
 
     _screenshot(page, folder_path, "submit_before.png")
+
+    # Workday applyManually is a 6-step wizard — dispatch to the multi-step handler
+    # which fills each page and clicks Next until it reaches Submit.
+    if portal == "workday" and "applymanually" in page.url.lower():
+        logger.info("app_id=%d Workday multi-step form — dispatching to page loop", app_id)
+        _handle_workday_pages(page, app_id, answers, folder_path, fill_delay)
+        ss = _screenshot(page, folder_path, "submit_confirmation.png")
+        receipt = f"PORTAL:workday:{page.url}"
+        logger.info("app_id=%d submitted portal=workday url=%s", app_id, page.url)
+        return AutoSubmitResult(
+            success=True, app_id=app_id,
+            receipt=receipt, screenshot_path=ss,
+        )
 
     # Fast universal path: JS-detected fields → human-like fill
     from src.browser.form_detector import extract_form_fields
@@ -1050,6 +1081,109 @@ def _screenshot(page, folder: str, name: str) -> Optional[str]:
         return path
     except Exception:
         return None
+
+
+def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 12) -> None:
+    """Step through Workday applyManually multi-page wizard until submitted.
+
+    Workday's applyManually form has up to 6 named steps:
+      My Information → My Experience → Application Questions →
+      Voluntary Disclosures → Self Identify → Review/Submit
+
+    After filling each page, click Next. On the Review page click Submit.
+    The caller is responsible for transitioning state after this returns.
+    """
+    from src.browser.form_detector import extract_form_fields
+    from src.browser.fast_autofill import fast_fill_form
+
+    for step in range(max_steps):
+        try:
+            page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception:
+            pass
+        _human_pause(1.0, 2.0)
+
+        url = page.url
+        logger.info("app_id=%d Workday step=%d url=%s", app_id, step, url)
+        _screenshot(page, folder_path, f"workday_step{step:02d}.png")
+
+        _check_auth_wall(page)
+
+        # Detect review/submit page by URL segment or page heading
+        is_review = False
+        try:
+            page_text = page.evaluate("() => document.body.innerText") or ""
+            if any(x in page_text for x in ("Review", "Submit Application")):
+                is_review = True
+        except Exception:
+            pass
+        if any(x in url.lower() for x in ("review", "submit")):
+            is_review = True
+
+        # Fill current page fields
+        detected = extract_form_fields(page)
+        if detected:
+            fast_fill_form(page, detected, answers)
+
+        # Scroll to bottom so buttons are reachable
+        try:
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            _human_pause(0.5, 1.0)
+        except Exception:
+            pass
+
+        if is_review:
+            # Click Submit
+            for sel in _WORKDAY_SUBMIT_SELECTORS:
+                try:
+                    loc = page.locator(sel).first
+                    if loc.count() > 0 and loc.is_visible():
+                        _human_click(page, loc)
+                        logger.info("app_id=%d Workday: clicked Submit step=%d sel=%r", app_id, step, sel)
+                        try:
+                            page.wait_for_load_state("domcontentloaded", timeout=int(_SUBMIT_WAIT * 1000))
+                        except Exception:
+                            pass
+                        _human_pause(2.0, 3.0)
+                        return
+                except Exception:
+                    continue
+            raise RuntimeError(f"Workday: on review page but no Submit button found step={step} url={url}")
+
+        # Click Next to advance to the next step
+        clicked = False
+        for sel in _WORKDAY_NEXT_SELECTORS:
+            try:
+                loc = page.locator(sel).first
+                if loc.count() == 0:
+                    continue
+                if not loc.is_visible():
+                    continue
+                _human_click(page, loc)
+                logger.info("app_id=%d Workday: clicked Next step=%d sel=%r", app_id, step, sel)
+                clicked = True
+                break
+            except Exception:
+                continue
+
+        if not clicked:
+            # Log all buttons to help diagnose selector mismatches
+            try:
+                btns = page.evaluate("""
+                    () => [...document.querySelectorAll('button,[role=button]')].slice(0,15)
+                            .map(b => (b.textContent||'').trim().slice(0,40) + '|' + (b.getAttribute('data-automation-id')||'') + '|' + (b.getAttribute('aria-label')||''))
+                """)
+                logger.warning("app_id=%d Workday: no Next button found step=%d; page buttons: %s", app_id, step, btns)
+            except Exception:
+                pass
+            raise RuntimeError(f"Workday: no Next/Submit button found on step={step} url={url}")
+
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=15_000)
+        except Exception:
+            pass
+
+    raise RuntimeError(f"Workday: exceeded {max_steps} steps without reaching Submit")
 
 
 def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay):
