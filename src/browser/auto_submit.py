@@ -81,6 +81,11 @@ _SUBMIT_SELECTORS = [
     "button:has-text('Complete Application')",
     # Workday
     "[data-automation-id='bottom-navigation-next-button']",
+    # WhiteCarrot profile-builder
+    "button:has-text('Submit Application')",
+    "button:has-text('Submit Profile')",
+    "button:has-text('Continue')",
+    "button:has-text('Finish')",
     # Other portals
     "button:text-is('Apply')",
     "#submit_app_button",
@@ -583,10 +588,10 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     # Dismiss cookie modals that may have appeared after navigating to the ATS
     _dismiss_cookie_modals(page)
 
-    # Wait extra for JS-rendered forms (Comeet, NYL, other SPAs) — networkidle
-    # confirms async field rendering is complete before we scan the DOM.
+    # Wait extra for JS-rendered forms (Comeet, NYL, WhiteCarrot, other SPAs).
+    # 15 s covers slow-loading profile-builder SPAs that show a spinner initially.
     try:
-        page.wait_for_load_state("networkidle", timeout=8000)
+        page.wait_for_load_state("networkidle", timeout=15000)
     except Exception:
         pass
 
@@ -1014,6 +1019,42 @@ def _fill_smartapply_page(page, answers: dict, fill_delay: float) -> None:
 
 def _fill_all_fields(page, answers: dict, instructions, fill_delay: float) -> None:
     """Fill all form fields with human-like timing."""
+    # First / Last name — broad selectors cover Comeet and other non-standard portals
+    _fill_if_visible(page, answers.get("first_name", ""), [
+        "input[id='first_name']", "input[name='first_name']",
+        "input[id*='first' i]", "input[name*='first' i]",
+        "input[placeholder*='first name' i]", "input[aria-label*='first name' i]",
+    ], fill_delay)
+    _fill_if_visible(page, answers.get("last_name", ""), [
+        "input[id='last_name']", "input[name='last_name']",
+        "input[id*='last' i]", "input[name*='last' i]",
+        "input[placeholder*='last name' i]", "input[aria-label*='last name' i]",
+    ], fill_delay)
+    _fill_if_visible(page, answers.get("phone", ""), [
+        "input[type='tel']", "input[id='phone']", "input[name='phone']",
+        "input[id*='phone' i]", "input[name*='phone' i]",
+        "input[placeholder*='phone' i]", "input[aria-label*='phone' i]",
+    ], fill_delay)
+
+    # Email — use both selector-based and attribute-based approaches
+    # (fast_fill may have set this via locator.fill() but React SPAs need keyboard events)
+    _fill_if_visible(page, answers.get("email", ""), [
+        "input[type='email']",
+        "input[id='email']", "input[name='email']",
+        "input[id*='email' i]", "input[name*='email' i]",
+        "input[aria-label*='email' i]", "input[placeholder*='email' i]",
+    ], fill_delay)
+
+    # Location / City — Greenhouse uses "Location (City)" label with id="location"
+    city = answers.get("address_city", "") or answers.get("location", "")
+    _fill_if_visible(page, city, [
+        "#location",
+        "input[id='location']", "input[name='location']",
+        "input[placeholder*='city' i]", "input[aria-label*='city' i]",
+        "input[aria-label*='location' i]", "input[placeholder*='location' i]",
+        "input[name*='city' i]",
+    ], fill_delay)
+
     # Best-effort address fields
     _fill_if_visible(page, answers.get("address_line1", ""), [
         "input[placeholder*='street' i]", "input[placeholder*='address' i]",
@@ -1071,10 +1112,31 @@ def _fill_all_fields(page, answers: dict, instructions, fill_delay: float) -> No
                     _human_pause(fill_delay * 0.5, fill_delay)
             elif inst.field_type in ("text", "textarea"):
                 el = page.locator(inst.selector).first
-                if el.count() > 0:
-                    _human_click(page, el)
-                    _human_type(el, inst.value)
-                    _human_pause(fill_delay * 0.5, fill_delay)
+                if el.count() == 0:
+                    continue
+                # Detect mis-typed file inputs (e.g. Greenhouse #cover_letter which
+                # is field_type="textarea" in our map but is actually a file input).
+                # Trying to click a hidden file input causes a 30 s timeout.
+                try:
+                    el_input_type = el.get_attribute("type") or ""
+                except Exception:
+                    el_input_type = ""
+                if el_input_type == "file":
+                    resume = answers.get("resume", "") or answers.get("resume_path", "")
+                    if resume and os.path.isfile(resume):
+                        el.set_input_files(resume)
+                        _human_pause(fill_delay, fill_delay + 1.0)
+                    continue
+                # Skip fields that fast_fill already populated — avoids doubling names.
+                try:
+                    current_val = el.input_value()
+                except Exception:
+                    current_val = ""
+                if current_val:
+                    continue
+                _human_click(page, el)
+                _human_type(el, inst.value)
+                _human_pause(fill_delay * 0.5, fill_delay)
             elif inst.field_type == "checkbox" and inst.value.lower() in ("1", "true", "yes"):
                 el = page.locator(inst.selector).first
                 if el.count() > 0 and not el.is_checked():
@@ -1082,6 +1144,22 @@ def _fill_all_fields(page, answers: dict, instructions, fill_delay: float) -> No
                     _human_pause(fill_delay * 0.3, fill_delay * 0.6)
         except Exception as exc:
             logger.warning("fill error field=%r: %s", inst.label, exc)
+
+    # Best-effort resume upload — runs even if no "file" instruction was generated
+    # (e.g. Greenhouse where #cover_letter is the resume upload but build_fill_instructions
+    # skips it because key=="resume"). Use set_input_files to bypass hidden-input overlays.
+    resume_path = answers.get("resume", "") or answers.get("resume_path", "")
+    if resume_path and os.path.isfile(resume_path):
+        for file_sel in ["input[type='file']", "#cover_letter", "input[accept*='.pdf']"]:
+            try:
+                fi = page.locator(file_sel).first
+                if fi.count() > 0:
+                    fi.set_input_files(resume_path)
+                    _human_pause(fill_delay, fill_delay + 1.5)
+                    logger.info("Uploaded resume via %r", file_sel)
+                    break
+            except Exception as exc:
+                logger.debug("resume upload %r: %s", file_sel, exc)
 
 
 def _fill_if_visible(page, value: str, selectors: list, delay: float) -> None:
@@ -1126,6 +1204,139 @@ def _human_pause(lo: float, hi: float) -> None:
     time.sleep(random.uniform(lo, hi))
 
 
+def _workday_combobox_select(page, automation_id: str, value: str) -> bool:
+    """Select a value in a Workday custom combobox (not a standard <select>).
+
+    Workday uses custom React components where select_option() doesn't work.
+    Strategy: click the button to open the dropdown, type to filter, click the
+    matching list item.  Returns True if a matching item was clicked.
+    """
+    try:
+        # Locate the combobox button by data-automation-id
+        btn = page.locator(f"[data-automation-id='{automation_id}']").first
+        if btn.count() == 0:
+            return False
+        btn.scroll_into_view_if_needed(timeout=3000)
+        btn.click(timeout=3000)
+        _human_pause(0.4, 0.8)
+        # Type the value to filter options
+        page.keyboard.type(value, delay=60)
+        _human_pause(0.5, 1.0)
+        # Click the first visible list option that contains the value text
+        option = page.locator(
+            f"[data-automation-id='promptOption']:has-text('{value}'), "
+            f"li:has-text('{value}'), "
+            f"[role='option']:has-text('{value}')"
+        ).first
+        if option.count() > 0 and option.is_visible():
+            option.click(timeout=3000)
+            _human_pause(0.3, 0.6)
+            return True
+    except Exception as exc:
+        logger.debug("_workday_combobox_select %r=%r: %s", automation_id, value, exc)
+    return False
+
+
+def _workday_dropdown_select(page, automation_id: str, value: str) -> bool:
+    """Select a value in a Workday standard dropdown (rendered as a button + list)."""
+    try:
+        btn = page.locator(f"[data-automation-id='{automation_id}']").first
+        if btn.count() == 0:
+            return False
+        btn.scroll_into_view_if_needed(timeout=3000)
+        btn.click(timeout=3000)
+        _human_pause(0.4, 0.8)
+        option = page.locator(
+            f"[data-automation-id='promptOption']:has-text('{value}'), "
+            f"li:has-text('{value}'), "
+            f"[role='option']:has-text('{value}')"
+        ).first
+        if option.count() > 0:
+            option.click(timeout=3000)
+            _human_pause(0.3, 0.6)
+            return True
+    except Exception as exc:
+        logger.debug("_workday_dropdown_select %r=%r: %s", automation_id, value, exc)
+    return False
+
+
+def _fill_workday_my_info(page, answers: dict) -> None:
+    """Fill Workday 'My Information' page fields that fast_fill misses.
+
+    Handles: Phone Device Type (custom dropdown), Country Phone Code (combobox —
+    clears wrong selection like Albania and sets United States), Phone Number
+    (10 digits only — country code is separate), and State/Region (combobox).
+    """
+    # Phone Device Type — select "Mobile" (Workday custom dropdown)
+    try:
+        pdt = page.locator("[data-automation-id='phoneDeviceType']").first
+        if pdt.count() > 0:
+            current_text = pdt.inner_text() or ""
+            if "Select One" in current_text or not current_text.strip():
+                _workday_dropdown_select(page, "phoneDeviceType", "Mobile")
+                logger.info("Workday: set Phone Device Type = Mobile")
+    except Exception as exc:
+        logger.debug("Workday phoneDeviceType: %s", exc)
+
+    # Country Phone Code — remove any wrong selection (e.g. Albania) then set US
+    try:
+        # Remove existing selections by clicking × buttons
+        for x_btn in page.locator(
+            "[data-automation-id='countryPhoneCode'] [data-automation-id='DELETE_charm'], "
+            "[data-automation-id='countryPhoneCode'] button[aria-label*='Remove'], "
+            "[data-automation-id='countryPhoneCode'] button[aria-label*='remove']"
+        ).all():
+            try:
+                x_btn.click(timeout=2000)
+                _human_pause(0.2, 0.4)
+            except Exception:
+                pass
+        # Now select United States
+        ok = _workday_combobox_select(page, "countryPhoneCode", "United States")
+        if ok:
+            logger.info("Workday: set Country Phone Code = United States")
+    except Exception as exc:
+        logger.debug("Workday countryPhoneCode: %s", exc)
+
+    # Phone Number — enter just the 10-digit number (no +1 country code prefix)
+    raw_phone = answers.get("phone", "")
+    if raw_phone:
+        import re as _re
+        digits = _re.sub(r"[^\d]", "", raw_phone)
+        # Strip leading "1" if it's a US number (11 digits starting with 1)
+        if len(digits) == 11 and digits.startswith("1"):
+            digits = digits[1:]
+        if len(digits) == 10:
+            try:
+                phone_input = page.locator(
+                    "[data-automation-id='phone'] input, "
+                    "[data-automation-id='phoneNumber'] input, "
+                    "input[data-automation-id='phone']"
+                ).first
+                if phone_input.count() > 0:
+                    phone_input.fill("")
+                    phone_input.fill(digits)
+                    logger.info("Workday: set Phone = %s", digits)
+            except Exception as exc:
+                logger.debug("Workday phone: %s", exc)
+
+    # State / Region — type "New York" and click the first match
+    state_val = answers.get("address_state", "")
+    if state_val:
+        try:
+            state_sel = page.locator(
+                "[data-automation-id='addressSection-stateProvince'], "
+                "[data-automation-id='state']"
+            ).first
+            if state_sel.count() > 0:
+                current = state_sel.inner_text() or ""
+                if not current.strip() or "Select One" in current:
+                    _workday_combobox_select(page, "addressSection-stateProvince", state_val)
+                    logger.info("Workday: set State = %s", state_val)
+        except Exception as exc:
+            logger.debug("Workday state: %s", exc)
+
+
 def _screenshot(page, folder: str, name: str) -> Optional[str]:
     path = os.path.join(folder, name)
     try:
@@ -1165,6 +1376,10 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
         detected = extract_form_fields(page)
         if detected:
             fast_fill_form(page, detected, answers)
+
+        # Fix Workday-specific fields that fast_fill handles incorrectly:
+        # phone device type, country phone code (Albania → US), phone format, state
+        _fill_workday_my_info(page, answers)
 
         # Scroll to bottom so all nav buttons are in reach
         try:
