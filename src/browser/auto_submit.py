@@ -284,10 +284,14 @@ def auto_submit_portal(
     *,
     fill_delay: float = FILL_DELAY_SECONDS,
     dry_run: bool = False,
+    pause_before_submit: bool = False,
 ) -> AutoSubmitResult:
     """
     Open the job URL in the user's real Chrome profile, fill the application
     form with human-like timing, and click Submit.
+
+    pause_before_submit=True: fills everything, takes pre-submit screenshot,
+    then returns WITHOUT clicking Submit. Chrome stays open for manual review.
     """
     if dry_run:
         logger.info("DRY_RUN auto_submit app_id=%d url=%s", app_id, url)
@@ -737,7 +741,8 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
             logger.debug("app_id=%d Workday URL rewrite failed: %s", app_id, _rw_exc)
     if portal == "workday" and "applymanually" in page.url.lower():
         logger.info("app_id=%d Workday multi-step form — dispatching to page loop", app_id)
-        _handle_workday_pages(page, app_id, answers, folder_path, fill_delay)
+        _handle_workday_pages(page, app_id, answers, folder_path, fill_delay,
+                              pause_before_submit=pause_before_submit)
         ss = _screenshot(page, folder_path, "submit_confirmation.png")
         receipt = f"PORTAL:workday:{page.url}"
         logger.info("app_id=%d submitted portal=workday url=%s", app_id, page.url)
@@ -3094,7 +3099,7 @@ def _fill_workday_experience(page, app_id: int, answers: dict, step: int) -> Non
         logger.warning("app_id=%d Workday: education fill error step=%d: %s", app_id, step, exc)
 
 
-def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 300) -> None:
+def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 300, *, pause_before_submit: bool = False) -> None:
     """Step through Workday applyManually multi-page wizard until submitted.
 
     Workday's applyManually form has up to 6 named steps:
@@ -3317,6 +3322,32 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
             logger.info("app_id=%d Workday: PRE-SUBMIT screenshot saved → %s", app_id, _review_ss)
         except Exception as _ss_exc:
             logger.debug("pre-submit screenshot failed: %s", _ss_exc)
+
+        if pause_before_submit:
+            logger.info(
+                "app_id=%d Workday: REVIEW MODE — form fully filled, Chrome is open. "
+                "Review the application in Chrome. Submit manually when ready, "
+                "or close Chrome / Ctrl+C to abandon.",
+                app_id,
+            )
+            print(f"\n{'='*60}")
+            print(f"  REVIEW MODE — APP-{app_id} form is ready in Chrome")
+            print(f"  Screenshot: {_review_ss if 'pre_submit_review.png' in str(_review_ss) else folder_path}")
+            print(f"  Review the form, then manually click Submit in Chrome.")
+            print(f"  This script will wait until you close Chrome or Ctrl+C.")
+            print(f"{'='*60}\n")
+            try:
+                while True:
+                    time.sleep(10)
+                    try:
+                        page.evaluate("() => document.title")  # probe — raises if Chrome closed
+                    except Exception:
+                        logger.info("app_id=%d Chrome closed — review mode ended", app_id)
+                        break
+            except KeyboardInterrupt:
+                logger.info("app_id=%d review mode interrupted by user", app_id)
+            return  # do NOT submit
+
         # Hold 45 s so user can inspect Chrome before Submit fires
         logger.info("app_id=%d Workday: PAUSING 45s for user review — open Chrome to inspect", app_id)
         time.sleep(45)
