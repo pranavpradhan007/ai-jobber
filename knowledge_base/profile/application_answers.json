@@ -39,5 +39,90 @@
 
   "linkedin_headline": "AI Research Engineer Intern @ Hexbandit.io | Research Assistant @ NYU | Former Data Analyst Intern @ IFF | MS CS NYU 2026",
 
-  "_private_note": "Phone and email are screener-only. Do not include in public-facing text unless the application form requires it."
+  "_private_note": "Phone and email are screener-only. Do not include in public-facing text unless the application form requires it.",
+
+  "work_history": [
+    {
+      "title": "AI Research Engineer Intern",
+      "company": "Hexbandit.io",
+      "location": "New York, NY",
+      "start_month": "01",
+      "start_year": "2026",
+      "end_month": "",
+      "end_year": "",
+      "current": true,
+      "description": "Built an AI agent for the Catan board game using MCTS and self-play, achieving 100% win rate against alpha-beta pruning baseline. Developed and deployed ML inference pipelines on AWS EC2/S3/Lambda."
+    },
+    {
+      "title": "ML Research Assistant",
+      "company": "New York University",
+      "location": "New York, NY",
+      "start_month": "09",
+      "start_year": "2024",
+      "end_month": "",
+      "end_year": "",
+      "current": true,
+      "description": "Research in scientific ML under Prof. Sara Shamekh. Developed JAX-based neural network parameterizations for atmospheric single-column models. Reduced RMSE by ~15% and MAPE by 10%; achieved 2.5x throughput increase and 60% simulation time reduction."
+    },
+    {
+      "title": "AI Research Assistant",
+      "company": "New York University",
+      "location": "New York, NY",
+      "start_month": "01",
+      "start_year": "2025",
+      "end_month": "",
+      "end_year": "",
+      "current": true,
+      "description": "Clinical LLM robustness research under Prof. Kimberly Carballo. Evaluated 5 clinical LLMs on MIMIC-IV using 10 adversarial attack methods. Improved AUROC/AUPRC from 0.50/0.20 to 0.80/0.30."
+    },
+    {
+      "title": "Data Analyst Intern",
+      "company": "International Flavors & Fragrances",
+      "location": "New York, NY",
+      "start_month": "06",
+      "start_year": "2023",
+      "end_month": "08",
+      "end_year": "2023",
+      "current": false,
+      "description": "Consolidated 12 chemical datasets (~90K records to ~15K unique entries) using PySpark and KNIME. Improved predictive performance by ~15% and increased chemical registration throughput by 82% using ChemProp and graph neural networks."
+    },
+    {
+      "title": "Data Science Intern",
+      "company": "3D Engineering Automation LLP",
+      "location": "Pune, India",
+      "start_month": "06",
+      "start_year": "2022",
+      "end_month": "08",
+      "end_year": "2022",
+      "current": false,
+      "description": "Built predictive maintenance ML pipeline processing 30 GB of sensor data. Achieved 93% diagnostic accuracy and 87% failure-prediction precision with sub-second anomaly-detection latency using PyTorch and time-series models."
+    }
+  ],
+
+  "education_history": [
+    {
+      "school": "New York University, Tandon School of Engineering",
+      "degree": "Master of Science",
+      "field": "Computer Science",
+      "location": "Brooklyn, NY",
+      "start_month": "09",
+      "start_year": "2024",
+      "end_month": "05",
+      "end_year": "2026",
+      "current": false,
+      "gpa": "3.667"
+    },
+    {
+      "school": "Savitribai Phule Pune University (PVGCOET)",
+      "degree": "Bachelor of Engineering",
+      "field": "Computer Science",
+      "location": "Pune, India",
+      "start_month": "08",
+      "start_year": "2020",
+      "end_month": "05",
+      "end_year": "2024",
+      "current": false,
+      "gpa": "9.01/10"
+    }
+  ]
 }

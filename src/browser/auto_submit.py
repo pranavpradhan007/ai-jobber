@@ -2787,6 +2787,302 @@ def _fill_workday_cc305(page, app_id: int, step: int) -> None:
         logger.debug("CC-305 checkbox error: %s", exc)
 
 
+def _fill_workday_experience(page, app_id: int, answers: dict, step: int) -> None:
+    """Fill the Workday My Experience step with work history and education from KB.
+
+    Called after resume upload. Checks whether Workday auto-parsed entries from
+    the PDF; if the work experience section is still empty, adds each entry from
+    answers['work_history'] and answers['education_history'] manually.
+    """
+    work_history = answers.get("work_history") or []
+    education_history = answers.get("education_history") or []
+    if not work_history and not education_history:
+        return
+
+    _human_pause(2.0, 3.0)  # wait for Workday PDF parse
+
+    # ── Work Experience ──────────────────────────────────────────────────────
+    try:
+        # Count existing work experience cards
+        existing = page.locator(
+            "[data-automation-id='workExperience'] [data-automation-id='workExperienceItem'],"
+            "[data-automation-id='workExperience'] .gwt-Label"
+        ).count()
+        if existing > 0:
+            logger.info("app_id=%d Workday: work experience already has %d entries step=%d — skipping fill",
+                        app_id, existing, step)
+        else:
+            logger.info("app_id=%d Workday: work experience empty — filling %d entries step=%d",
+                        app_id, len(work_history), step)
+            for idx, job in enumerate(work_history):
+                try:
+                    # Click the Add/+ button in the work experience section
+                    _add_btn = None
+                    for _add_sel in [
+                        "[data-automation-id='workExperience'] [data-automation-id='addButton']",
+                        "[data-automation-id='workExperience'] button:has-text('Add')",
+                        "[data-automation-id='workExperienceSection'] [data-automation-id='addButton']",
+                    ]:
+                        _loc = page.locator(_add_sel).first
+                        if _loc.count() > 0:
+                            try:
+                                _loc.scroll_into_view_if_needed(timeout=2000)
+                            except Exception:
+                                pass
+                            if _loc.is_visible(timeout=2000):
+                                _add_btn = _loc
+                                break
+                    if _add_btn is None:
+                        logger.warning("app_id=%d Workday: work experience Add button not found for entry %d step=%d",
+                                       app_id, idx, step)
+                        break
+                    _human_click(page, _add_btn)
+                    _human_pause(1.0, 1.5)
+
+                    # Fill job title
+                    for _sel in ["[data-automation-id='jobTitle'] input",
+                                 "input[data-automation-id='jobTitle']"]:
+                        _f = page.locator(_sel).first
+                        if _f.count() > 0 and _f.is_visible(timeout=1500):
+                            _f.fill(job.get("title", ""))
+                            _human_pause(0.2, 0.4)
+                            break
+
+                    # Fill company
+                    for _sel in ["[data-automation-id='company'] input",
+                                 "input[data-automation-id='company']"]:
+                        _f = page.locator(_sel).first
+                        if _f.count() > 0 and _f.is_visible(timeout=1500):
+                            _f.fill(job.get("company", ""))
+                            _human_pause(0.2, 0.4)
+                            # dismiss typeahead if it opens
+                            try:
+                                page.keyboard.press("Escape")
+                            except Exception:
+                                pass
+                            break
+
+                    # Fill location
+                    if job.get("location"):
+                        for _sel in ["[data-automation-id='location'] input",
+                                     "input[data-automation-id='location']"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(job["location"])
+                                _human_pause(0.15, 0.3)
+                                try:
+                                    page.keyboard.press("Escape")
+                                except Exception:
+                                    pass
+                                break
+
+                    # Fill start date (month / year)
+                    if job.get("start_month") and job.get("start_year"):
+                        for _sel in ["[data-automation-id='dateSectionMonth-input']",
+                                     "[data-automation-id='startDateMonth'] input"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(job["start_month"])
+                                _human_pause(0.15, 0.25)
+                                break
+                        for _sel in ["[data-automation-id='dateSectionYear-input']",
+                                     "[data-automation-id='startDateYear'] input"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(job["start_year"])
+                                _human_pause(0.15, 0.25)
+                                break
+
+                    # Current job toggle
+                    if job.get("current"):
+                        for _sel in ["[data-automation-id='currentlyWorkingHere'] input",
+                                     "input[data-automation-id='currentlyWorkingHere']",
+                                     "[aria-label*='currently' i] input"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0:
+                                try:
+                                    _f.check(timeout=2000)
+                                    _human_pause(0.2, 0.4)
+                                    break
+                                except Exception:
+                                    pass
+                    elif job.get("end_month") and job.get("end_year"):
+                        # Fill end date
+                        for _sel in ["[data-automation-id='endDateMonth'] input"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(job["end_month"])
+                                _human_pause(0.15, 0.25)
+                                break
+                        for _sel in ["[data-automation-id='endDateYear'] input"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(job["end_year"])
+                                _human_pause(0.15, 0.25)
+                                break
+
+                    # Fill description
+                    if job.get("description"):
+                        for _sel in ["[data-automation-id='description'] textarea",
+                                     "textarea[data-automation-id='description']",
+                                     "textarea"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(job["description"])
+                                _human_pause(0.2, 0.4)
+                                break
+
+                    # Save / Done button
+                    _saved = False
+                    for _sel in [
+                        "[data-automation-id='done-button']",
+                        "button[data-automation-id='done-button']",
+                        "button:has-text('Save')",
+                        "button:has-text('Done')",
+                        "button:has-text('Add')",
+                    ]:
+                        _f = page.locator(_sel).first
+                        if _f.count() > 0 and _f.is_visible(timeout=1500):
+                            _human_click(page, _f)
+                            _human_pause(1.0, 1.5)
+                            _saved = True
+                            break
+                    if _saved:
+                        logger.info("app_id=%d Workday: added work entry %d/%d: %s @ %s step=%d",
+                                    app_id, idx + 1, len(work_history),
+                                    job.get("title", "?"), job.get("company", "?"), step)
+                    else:
+                        logger.warning("app_id=%d Workday: could not save work entry %d step=%d", app_id, idx, step)
+                except Exception as _je:
+                    logger.warning("app_id=%d Workday: error adding work entry %d step=%d: %s", app_id, idx, step, _je)
+    except Exception as exc:
+        logger.warning("app_id=%d Workday: work experience fill error step=%d: %s", app_id, step, exc)
+
+    # ── Education ────────────────────────────────────────────────────────────
+    try:
+        existing_edu = page.locator(
+            "[data-automation-id='education'] [data-automation-id='educationItem'],"
+            "[data-automation-id='educationSection'] .gwt-Label"
+        ).count()
+        if existing_edu > 0:
+            logger.info("app_id=%d Workday: education already has %d entries step=%d — skipping",
+                        app_id, existing_edu, step)
+        else:
+            logger.info("app_id=%d Workday: education empty — filling %d entries step=%d",
+                        app_id, len(education_history), step)
+            for idx, edu in enumerate(education_history):
+                try:
+                    _add_btn = None
+                    for _add_sel in [
+                        "[data-automation-id='education'] [data-automation-id='addButton']",
+                        "[data-automation-id='educationSection'] [data-automation-id='addButton']",
+                        "[data-automation-id='education'] button:has-text('Add')",
+                    ]:
+                        _loc = page.locator(_add_sel).first
+                        if _loc.count() > 0:
+                            try:
+                                _loc.scroll_into_view_if_needed(timeout=2000)
+                            except Exception:
+                                pass
+                            if _loc.is_visible(timeout=2000):
+                                _add_btn = _loc
+                                break
+                    if _add_btn is None:
+                        logger.warning("app_id=%d Workday: education Add button not found idx=%d step=%d",
+                                       app_id, idx, step)
+                        break
+                    _human_click(page, _add_btn)
+                    _human_pause(1.0, 1.5)
+
+                    # School name
+                    for _sel in ["[data-automation-id='school'] input",
+                                 "input[data-automation-id='school']"]:
+                        _f = page.locator(_sel).first
+                        if _f.count() > 0 and _f.is_visible(timeout=1500):
+                            _f.fill(edu.get("school", ""))
+                            _human_pause(0.2, 0.3)
+                            try:
+                                page.keyboard.press("Escape")
+                            except Exception:
+                                pass
+                            break
+
+                    # Degree
+                    for _sel in ["[data-automation-id='degree'] input",
+                                 "input[data-automation-id='degree']",
+                                 "[data-automation-id='degreeType'] input"]:
+                        _f = page.locator(_sel).first
+                        if _f.count() > 0 and _f.is_visible(timeout=1500):
+                            _f.fill(edu.get("degree", ""))
+                            _human_pause(0.15, 0.3)
+                            try:
+                                page.keyboard.press("Escape")
+                            except Exception:
+                                pass
+                            break
+
+                    # Field of study
+                    if edu.get("field"):
+                        for _sel in ["[data-automation-id='fieldOfStudy'] input",
+                                     "input[data-automation-id='fieldOfStudy']"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(edu["field"])
+                                _human_pause(0.15, 0.25)
+                                break
+
+                    # GPA
+                    if edu.get("gpa"):
+                        for _sel in ["[data-automation-id='gradePointAverage'] input",
+                                     "input[data-automation-id='gradePointAverage']"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(edu["gpa"])
+                                _human_pause(0.15, 0.25)
+                                break
+
+                    # Start/end year (education typically uses year only)
+                    if edu.get("start_year"):
+                        for _sel in ["[data-automation-id='startYear'] input",
+                                     "input[data-automation-id='startYear']"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(edu["start_year"])
+                                _human_pause(0.15, 0.25)
+                                break
+                    if edu.get("end_year"):
+                        for _sel in ["[data-automation-id='endYear'] input",
+                                     "input[data-automation-id='endYear']"]:
+                            _f = page.locator(_sel).first
+                            if _f.count() > 0 and _f.is_visible(timeout=1500):
+                                _f.fill(edu["end_year"])
+                                _human_pause(0.15, 0.25)
+                                break
+
+                    # Save
+                    _saved = False
+                    for _sel in [
+                        "[data-automation-id='done-button']",
+                        "button:has-text('Save')",
+                        "button:has-text('Done')",
+                    ]:
+                        _f = page.locator(_sel).first
+                        if _f.count() > 0 and _f.is_visible(timeout=1500):
+                            _human_click(page, _f)
+                            _human_pause(1.0, 1.5)
+                            _saved = True
+                            break
+                    if _saved:
+                        logger.info("app_id=%d Workday: added education %d/%d: %s step=%d",
+                                    app_id, idx + 1, len(education_history), edu.get("school", "?"), step)
+                    else:
+                        logger.warning("app_id=%d Workday: could not save education entry %d step=%d", app_id, idx, step)
+                except Exception as _ee:
+                    logger.warning("app_id=%d Workday: error adding education entry %d step=%d: %s", app_id, idx, step, _ee)
+    except Exception as exc:
+        logger.warning("app_id=%d Workday: education fill error step=%d: %s", app_id, step, exc)
+
+
 def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 300) -> None:
     """Step through Workday applyManually multi-page wizard until submitted.
 
@@ -2940,6 +3236,11 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                                     _human_pause(2.0, 3.0)
                             except Exception as _fi_exc:
                                 logger.debug("Workday file input fallback: %s", _fi_exc)
+
+            # After resume upload on My Experience step, fill work history and
+            # education if Workday's PDF parser left those sections empty.
+            if _resume_uploaded:
+                _fill_workday_experience(page, app_id, answers, step)
 
         # Scroll to bottom so all nav buttons are in reach
         try:
