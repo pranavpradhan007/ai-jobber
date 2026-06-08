@@ -197,6 +197,21 @@ def precompute_screener_answers(
     merged.update({k: v for k, v in candidate_answers.items() if isinstance(v, str)})
     merged.update(_STATIC_SYNTHETIC)
 
+    # Bootstrap from previously seen portal questions (learned from actual form fills).
+    # Only applies when the answer has been 100% consistent across all prior occurrences.
+    _universal_keys = {key for _, _, key in _QUESTION_BANK if key not in ("_llm", "_yes", "_no", "_start_date")}
+    try:
+        from src.learning.defaults import load_seen_questions  # noqa: PLC0415
+        for q_text, entry in load_seen_questions().items():
+            if entry.get("count", 0) >= 1 and entry.get("answers"):
+                match = match_question_to_category(q_text)
+                if match and match[1] in _universal_keys:
+                    unique_answers = list(dict.fromkeys(entry["answers"]))
+                    if len(unique_answers) == 1:
+                        merged.setdefault(match[1], unique_answers[0])
+    except Exception:
+        pass
+
     # Determine which open-ended categories might be needed
     llm_categories = [cat for cat, _, key in _QUESTION_BANK if key == "_llm"]
     llm_called = False

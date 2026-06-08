@@ -249,6 +249,37 @@ def _submit_approved(
                 "portal submitted app_id=%d receipt=%s screenshot=%s",
                 app_id, result.receipt, result.screenshot_path,
             )
+            # Learning loop: write application note and record screener answers
+            try:
+                from src.learning.notes import write_learning_note  # noqa: PLC0415
+                from src.learning.defaults import record_question    # noqa: PLC0415
+                write_learning_note(conn, app_id)
+                # Record universal screener answers so future apps reuse consistent answers
+                _ROLE_SPECIFIC = {"why_this_company", "why_this_role", "strengths",
+                                   "biggest_project", "challenge_overcome",
+                                   "tell_us_about", "relevant_experience"}
+                _CANONICAL_LABELS = {
+                    "eeo_gender": "What is your gender?",
+                    "eeo_race": "What is your race/ethnicity?",
+                    "eeo_ethnicity": "What is your race/ethnicity?",
+                    "eeo_hispanic": "Are you Hispanic or Latino?",
+                    "eeo_veteran": "What is your veteran status?",
+                    "eeo_disability": "Do you have a disability?",
+                    "requires_sponsorship": "Do you require visa sponsorship for employment?",
+                    "work_authorization": "Are you authorized to work in the United States?",
+                    "salary_expectation": "What is your expected salary?",
+                    "years_experience": "How many years of relevant experience do you have?",
+                    "willing_to_relocate": "Are you willing to relocate?",
+                    "remote_preference": "What is your preference for remote work?",
+                    "graduation_year": "What year did you graduate?",
+                    "education_degree": "What is your highest level of education?",
+                }
+                for key, canonical_q in _CANONICAL_LABELS.items():
+                    val = answers.get(key)
+                    if val and isinstance(val, str):
+                        record_question(canonical_q, val, application_id=app_id)
+            except Exception as _le:
+                logger.debug("learning loop post-submit: %s", _le)
         elif result.captcha_detected:
             transition(conn, app_id, "WAITING_FOR_CAPTCHA",
                        reason="CAPTCHA on portal form")

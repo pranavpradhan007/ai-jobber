@@ -73,6 +73,21 @@ def record_question(
     return None
 
 
+def load_seen_questions(log_file: Optional[str] = None) -> dict:
+    """
+    Load the seen-questions log. Returns {} if file absent or corrupt.
+    Keys are lowercase question texts; values are {count, answers, question} dicts.
+    """
+    log_file = log_file or QUESTION_LOG_FILE
+    if not os.path.exists(log_file):
+        return {}
+    with open(log_file, encoding="utf-8") as fh:
+        try:
+            return json.load(fh)
+        except json.JSONDecodeError:
+            return {}
+
+
 def _write_proposal(
     question: str,
     answers: list[str],

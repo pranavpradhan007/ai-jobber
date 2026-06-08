@@ -1950,7 +1950,7 @@ def _fill_greenhouse_location(page, answers: dict) -> None:
         logger.warning("Greenhouse location fill: %s", exc)
 
 
-def _fill_workday_screener_questions(page, answers: dict) -> int:
+def _fill_workday_screener_questions(page, answers: dict, app_id=None) -> int:
     """Fill Workday Application Questions page with custom combobox dropdowns.
 
     Workday screener questions use Workday's custom React combobox component
@@ -2098,6 +2098,11 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
                         raise RuntimeError(f"exact option '{chosen}' not found in dropdown")
                     logger.info("Workday screener: '%s' → %s", label_text[:60], chosen)
                     filled += 1
+                    try:
+                        from src.learning.defaults import record_question as _rq  # noqa: PLC0415
+                        _rq(label_text, chosen, application_id=app_id)
+                    except Exception:
+                        pass
                     _human_pause(0.3, 0.6)
                 except Exception as exc:
                     logger.debug("Workday screener: option '%s' not found for '%s': %s", chosen, label_text[:40], exc)
@@ -2185,8 +2190,14 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
                                     continue
                         if best_opt:
                             best_opt.click(timeout=2000)
-                            logger.info("Workday screener (fuzzy): '%s' → %s", label_text[:40], (best_opt.inner_text() or "")[:40])
+                            _actual_chosen = (best_opt.inner_text() or "").split('\n')[0].strip()
+                            logger.info("Workday screener (fuzzy): '%s' → %s", label_text[:40], _actual_chosen[:40])
                             filled += 1
+                            try:
+                                from src.learning.defaults import record_question as _rq  # noqa: PLC0415
+                                _rq(label_text, _actual_chosen, application_id=app_id)
+                            except Exception:
+                                pass
                             _human_pause(0.3, 0.6)
                         else:
                             logger.info("Workday screener: no option match label='%s' chosen='%s'", label_text[:40], chosen)
@@ -3164,7 +3175,7 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
             fast_fill_form(page, detected, answers)
 
         # Fill Workday questionnaire pages (native <select> screener questions)
-        sq_filled = _fill_workday_screener_questions(page, answers)
+        sq_filled = _fill_workday_screener_questions(page, answers, app_id=app_id)
         if sq_filled:
             logger.info("app_id=%d Workday: filled %d screener question(s) step=%d", app_id, sq_filled, step)
 
