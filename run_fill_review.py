@@ -111,8 +111,10 @@ candidates = conn.execute("""
     WHERE a.state IN ('WAITING_FOR_USER_APPROVAL','SKIPPED')
       AND a.approved_by_user = 1
     ORDER BY
-      CASE WHEN j.url LIKE '%workday%' OR j.url LIKE '%greenhouse%'
+      CASE WHEN LOWER(j.platform) IN ('workday','greenhouse','lever','ashby','taleo','icims')
+                OR j.url LIKE '%workday%' OR j.url LIKE '%greenhouse%'
                 OR j.url LIKE '%lever%' OR j.url LIKE '%ashby%' THEN 0
+           WHEN LOWER(j.platform) = 'linkedin' THEN 2
            ELSE 1 END,
       a.score DESC
     LIMIT 10
@@ -211,8 +213,12 @@ for attempt, _cand in enumerate(candidates):
         pause_before_submit=True,
     )
 
-    if _result.error and ("closed" in (_result.error or "").lower() or "no longer" in (_result.error or "").lower()):
-        print(f"  Job is closed — trying next candidate...")
+    _err = (_result.error or "").lower()
+    _skip_signals = ("closed", "no longer", "no longer accepting", "not found",
+                     "could not find submit", "form may have multiple", "no apply button",
+                     "404", "page not found")
+    if _result.error and any(s in _err for s in _skip_signals):
+        print(f"  Skipping (job unavailable or no form): {_result.error[:80]}")
         continue
 
     app_id = _app_id
