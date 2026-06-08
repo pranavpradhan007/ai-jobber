@@ -25,8 +25,8 @@
   "education_gpa": "3.667",
   "graduation_year": "2026",
 
-  "work_authorization": "I am authorized to work in the United States and will require visa sponsorship in the future.",
-  "requires_sponsorship": "Yes",
+  "work_authorization": "I am authorized to work in the United States and do not require visa sponsorship at this time.",
+  "requires_sponsorship": "No",
   "us_citizen_or_pr": "No",
   "visa_status": "F-1 Student Visa (OPT eligible)",
 

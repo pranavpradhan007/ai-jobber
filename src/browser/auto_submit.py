@@ -132,6 +132,7 @@ _SMARTAPPLY_HOST = "smartapply.indeed.com"
 # Workday applyManually multi-step navigation
 _WORKDAY_NEXT_SELECTORS = [
     "[data-automation-id='bottom-navigation-next-button']",
+    "[data-automation-id='pageFooterNextButton']",
     "button:has-text('Next')",
     "button[aria-label='Next']",
     "button[aria-label*='next' i]",
@@ -319,6 +320,7 @@ def auto_submit_portal(
                 pass
         # Retry new_page() — transient "Failed to open a new tab" errors occur
         # when the previous browser session hasn't fully released resources yet.
+        # On final failure, relaunch Chrome and try once more.
         page = None
         for _np_attempt in range(3):
             try:
@@ -326,7 +328,17 @@ def auto_submit_portal(
                 break
             except Exception as _np_exc:
                 if _np_attempt == 2:
-                    raise
+                    # Last resort: full Chrome relaunch
+                    logger.warning("context.new_page failed (attempt %d): %s — relaunching Chrome", _np_attempt + 1, _np_exc)
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
+                    _release_profile_lock(os.path.abspath(_BROWSER_PROFILE_DIR))
+                    time.sleep(3)
+                    context = _open_chrome_context(pw, chrome_dir, profile, cdp_port)
+                    page = context.new_page()
+                    break
                 logger.warning("context.new_page failed (attempt %d): %s — retrying in 3s", _np_attempt + 1, _np_exc)
                 time.sleep(3)
         try:
@@ -520,21 +532,39 @@ def _release_profile_lock(profile_dir: str) -> None:
         except Exception as exc:
             logger.debug("_release_profile_lock lock file %s: %s", lock_rel, exc)
 
-    # Also clear any crash-recovery state that would trigger a restore dialog
+    # Clear crash-recovery state that would trigger a restore dialog
     try:
         prefs = os.path.join(profile_dir, "Default", "Preferences")
         if os.path.isfile(prefs):
             import json as _json
             with open(prefs, encoding="utf-8") as fh:
                 data = _json.load(fh)
+            changed = False
             if data.get("profile", {}).get("exit_type") != "Normal":
                 data.setdefault("profile", {})["exit_type"] = "Normal"
-                data.setdefault("profile", {})["exited_cleanly"] = True
+                changed = True
+            data.setdefault("profile", {})["exited_cleanly"] = True
+            if changed or not data["profile"].get("exited_cleanly"):
                 with open(prefs, "w", encoding="utf-8") as fh:
                     _json.dump(data, fh)
                 logger.info("Reset Chrome exit_type to Normal in Preferences")
     except Exception as exc:
         logger.debug("_release_profile_lock prefs reset: %s", exc)
+
+    # Delete session/tab restore files so Chrome starts clean (not in restore mode)
+    import shutil as _shutil
+    default_dir = os.path.join(profile_dir, "Default")
+    for _session_rel in ["Sessions", "Session Storage", "Last Session", "Last Tabs", "Current Session", "Current Tabs"]:
+        _sp = os.path.join(default_dir, _session_rel)
+        try:
+            if os.path.isdir(_sp):
+                _shutil.rmtree(_sp, ignore_errors=True)
+                logger.debug("_release_profile_lock: cleared session dir %s", _session_rel)
+            elif os.path.isfile(_sp):
+                os.remove(_sp)
+                logger.debug("_release_profile_lock: removed session file %s", _session_rel)
+        except Exception as exc:
+            logger.debug("_release_profile_lock session cleanup %s: %s", _session_rel, exc)
 
 
 def _chrome_cdp_reachable(port: int) -> bool:
@@ -683,6 +713,28 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
 
     # Workday applyManually is a 6-step wizard — dispatch to the multi-step handler
     # which fills each page and clicks Next until it reaches Submit.
+    # If we land on a plain Workday /apply URL (no active session → sign-in page),
+    # try to rewrite the URL to include locale + /applyManually and navigate there.
+    if portal == "workday" and "applymanually" not in page.url.lower():
+        cur_url = page.url
+        # Build the applyManually URL: insert en-US locale if missing, append /applyManually
+        try:
+            import re as _re
+            # Replace /DanaherJobs/ (or similar) with /en-US/DanaherJobs/ if locale missing
+            apply_url = cur_url
+            if "/en-US/" not in apply_url and "/en-us/" not in apply_url.lower():
+                apply_url = _re.sub(r'(\.com/)([^/]+/job/)', r'\1en-US/\2', apply_url)
+            # Replace /apply (end or with query) with /apply/applyManually
+            if "/apply/applyManually" not in apply_url and "/apply/applymanually" not in apply_url.lower():
+                apply_url = _re.sub(r'/apply(\?|$)', r'/apply/applyManually\1', apply_url)
+            if "applyManually" in apply_url and apply_url != cur_url:
+                logger.info("app_id=%d Workday: rewriting sign-in URL to applyManually: %s", app_id, apply_url)
+                page.goto(apply_url, wait_until="domcontentloaded", timeout=30_000)
+                _human_pause(2.0, 3.0)
+                html = page.content()
+                portal = classify_portal(html=html, url=page.url)
+        except Exception as _rw_exc:
+            logger.debug("app_id=%d Workday URL rewrite failed: %s", app_id, _rw_exc)
     if portal == "workday" and "applymanually" in page.url.lower():
         logger.info("app_id=%d Workday multi-step form — dispatching to page loop", app_id)
         _handle_workday_pages(page, app_id, answers, folder_path, fill_delay)
@@ -1911,7 +1963,7 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
     _RULES = [
         (["18 years", "18 year", "age or older", "legal age"], "Yes"),
         (["legally authorized", "authorized to work in the united states", "work in the us", "authorized to work"], "Yes"),
-        (["sponsorship", "employment visa", "visa sponsorship", "require sponsorship"], "Yes"),
+        (["sponsorship", "employment visa", "visa sponsorship", "require sponsorship"], answers.get("requires_sponsorship", "No")),
         (["previously employed", "employed by danaher", "affiliate companies", "previously worked for"], "No"),
         (["background check", "background investigation"], "Yes"),
         (["drug test", "drug screen"], "Yes"),
@@ -1919,13 +1971,13 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
         (["non-compete"], "No"),
         # EEO Voluntary Disclosures — safe defaults; override via eeo_* keys in application_answers.json
         (["race/ethnicity", "race or ethnicity", "racial", "identify yourself", "race and ethnicity", "ethnicity which most"],
-         answers.get("eeo_race", "I choose not to self-identify")),
-        (["select your gender", "your gender", "please select your gender"],
-         answers.get("eeo_gender", "I choose not to self-identify")),
+         answers.get("eeo_race") or answers.get("eeo_ethnicity") or "Asian"),
+        (["select your gender", "your gender", "please select your gender", "gender"],
+         answers.get("eeo_gender", "Male")),
         (["veteran status", "protected veteran", "veteran"],
          answers.get("eeo_veteran", "I am not a protected veteran")),
         (["disability", "disabled", "ada coverage", "disabled or veteran"],
-         answers.get("eeo_disability", "I don't wish to answer")),
+         answers.get("eeo_disability") or "I don't wish to answer"),
         (["hispanic or latino", "hispanic/latino", "indicate if you are hispanic", "hispanic", "latino"],
          answers.get("eeo_hispanic", "No, Not Hispanic or Latino")),
     ]
@@ -1940,7 +1992,7 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
             "[role='combobox']:has-text('Select One'), "
             "[role='button']:has-text('Select One')"
         ).all()
-        logger.debug("Workday screener: found %d 'Select One' buttons", len(select_btns))
+        logger.info("Workday screener: found %d 'Select One' buttons step=?", len(select_btns))
 
         for btn in select_btns:
             try:
@@ -1953,13 +2005,46 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
                 if not btn.is_visible(timeout=1000):
                     continue
 
-                # Get question text from surrounding container
+                # Get question text by walking backward through siblings first (handles
+                # EEO Voluntary Disclosures pages where disclosure <p> tags precede
+                # question labels), then falling back to container querySelector for
+                # Application Questions pages where labels are nested inside divs.
                 label_text = (btn.evaluate("""el => {
+                    // Step 1: Walk backward through element's own siblings
+                    let sib = el.previousElementSibling;
+                    while (sib) {
+                        const tag = sib.tagName;
+                        if (['P','LABEL','LEGEND','H3','H4','STRONG','B'].includes(tag)) {
+                            const txt = (sib.innerText || sib.textContent || '').trim();
+                            if (txt.length > 4 && txt.length < 200) return txt;
+                        }
+                        sib = sib.previousElementSibling;
+                    }
+                    // Step 2: Walk up one level and try preceding siblings of parent
+                    let parent = el.parentElement;
+                    if (parent) {
+                        let psib = parent.previousElementSibling;
+                        while (psib) {
+                            const tag = psib.tagName;
+                            if (['P','LABEL','LEGEND','H3','H4','STRONG','B'].includes(tag)) {
+                                const txt = (psib.innerText || psib.textContent || '').trim();
+                                if (txt.length > 4 && txt.length < 200) return txt;
+                            }
+                            psib = psib.previousElementSibling;
+                        }
+                    }
+                    // Step 3: Container querySelector fallback (Application Questions page:
+                    // label is nested inside a div sibling of the select wrapper)
                     let p = el.closest('div[class*="formField"],div[data-automation-id],fieldset,li,section');
                     if (!p) p = el.parentElement?.parentElement;
                     if (!p) return '';
-                    let lbl = p.querySelector('label,legend,p,h3,h4,[class*="label"]');
-                    if (lbl) return lbl.innerText?.trim() || '';
+                    let lbl = p.querySelector('label,legend');
+                    if (lbl) return (lbl.innerText || lbl.textContent || '').trim();
+                    let ptag = p.querySelector('p,h3,h4,[class*="label"]');
+                    if (ptag) {
+                        const txt = (ptag.innerText || ptag.textContent || '').trim();
+                        if (txt.length > 4 && txt.length < 200) return txt;
+                    }
                     return p.innerText?.split('\\n')[0]?.trim() || '';
                 }""") or "").lower().strip()
 
@@ -1973,7 +2058,7 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
                         chosen = answer
                         break
                 if chosen is None:
-                    logger.debug("Workday screener: no rule for '%s'", label_text[:60])
+                    logger.info("Workday screener: no rule for label='%s'", label_text[:80])
                     continue
 
                 # Click button to open the Workday custom dropdown
@@ -1984,26 +2069,133 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
                     logger.debug("Workday screener: btn click failed '%s': %s", label_text[:40], exc)
                     continue
 
-                # Wait for dropdown options to appear
-                opt_sel = (
-                    f"[data-automation-id='promptOption']:has-text('{chosen}'), "
-                    f"li:has-text('{chosen}'), "
-                    f"[role='option']:has-text('{chosen}')"
+                # Wait for dropdown options to appear, then click EXACT text match.
+                # IMPORTANT: use :text-is() not :has-text() — has-text() is a
+                # substring match and would click "Female" for chosen="Male"
+                # (because "male" is a substring of "female").
+                opt_any_sel = (
+                    "[data-automation-id='promptOption'], "
+                    "li[id*='option'], "
+                    "[role='option']"
                 )
                 try:
-                    page.wait_for_selector(opt_sel, state="visible", timeout=4000)
-                    page.locator(opt_sel).first.click(timeout=3000)
+                    page.wait_for_selector(opt_any_sel, state="visible", timeout=4000)
+                    # Find the option whose EXACT text equals chosen (case-insensitive).
+                    # Compare only the first line of inner_text() — Workday options sometimes
+                    # include multi-line descriptions after the label.
+                    chosen_lower = chosen.lower()
+                    _clicked = False
+                    for _opt in page.locator(opt_any_sel).all():
+                        try:
+                            _opt_first_line = (_opt.inner_text() or "").split('\n')[0].strip()
+                            if _opt_first_line.lower() == chosen_lower:
+                                _opt.click(timeout=2000)
+                                _clicked = True
+                                break
+                        except Exception:
+                            continue
+                    if not _clicked:
+                        raise RuntimeError(f"exact option '{chosen}' not found in dropdown")
                     logger.info("Workday screener: '%s' → %s", label_text[:60], chosen)
                     filled += 1
                     _human_pause(0.3, 0.6)
                 except Exception as exc:
-                    # Try clicking first option if exact match not found
                     logger.debug("Workday screener: option '%s' not found for '%s': %s", chosen, label_text[:40], exc)
-                    # Close the dropdown if open
+                    # Dropdown may have auto-closed during the 4s wait — reopen it before fuzzy scan
                     try:
-                        page.keyboard.press("Escape")
+                        try: page.keyboard.press("Escape")
+                        except Exception: pass
+                        _human_pause(0.2, 0.3)
+                        btn.scroll_into_view_if_needed(timeout=2000)
+                        btn.click(timeout=2000)
+                        # Wait for the dropdown options to render before enumerating
+                        try:
+                            page.wait_for_selector(
+                                "[data-automation-id='promptOption'], [role='option']",
+                                timeout=3000
+                            )
+                        except Exception:
+                            pass
+                        _human_pause(0.3, 0.5)
                     except Exception:
                         pass
+                    # Fuzzy: enumerate all visible dropdown options and pick best match
+                    try:
+                        all_opts = page.locator(
+                            "[data-automation-id='promptOption'], [role='option'], li[id*='option']"
+                        ).all()
+                        logger.debug("Workday screener fuzzy: %d options visible for '%s'", len(all_opts), label_text[:40])
+                        chosen_lower = chosen.lower()
+                        chosen_words = [w for w in chosen_lower.split() if len(w) > 3]
+                        best_opt = None
+                        # For veteran labels: first pass for exact "not a protected veteran",
+                        # then fall back to word-overlap if not found (options may vary by locale).
+                        _is_veteran_q = "veteran" in label_text
+                        _want_not_veteran = _is_veteran_q and "not" in chosen_lower
+                        if _is_veteran_q:
+                            # Log all available options so we can diagnose mismatches
+                            try:
+                                _vet_opts = [(opt.inner_text() or "").split('\n')[0].strip() for opt in all_opts]
+                                logger.info("Workday veteran options available: %s", _vet_opts)
+                            except Exception:
+                                pass
+                        if _want_not_veteran:
+                            # Prefer options that say "not a veteran" (user never served)
+                            # then "not a protected veteran" without "but"
+                            for opt in all_opts:
+                                try:
+                                    opt_first = (opt.inner_text() or "").split('\n')[0].strip().lower()
+                                    if any(phrase in opt_first for phrase in (
+                                        "i am not a veteran",
+                                        "not a veteran",
+                                        "have not served",
+                                        "never served",
+                                    )):
+                                        best_opt = opt; break
+                                except Exception:
+                                    continue
+                            if best_opt is None:
+                                for opt in all_opts:
+                                    try:
+                                        opt_first = (opt.inner_text() or "").split('\n')[0].strip().lower()
+                                        if opt_first == "i am not a protected veteran" or (
+                                            "not a protected veteran" in opt_first and "but" not in opt_first
+                                        ):
+                                            best_opt = opt; break
+                                    except Exception:
+                                        continue
+                        if best_opt is None:
+                            for opt in all_opts:
+                                try:
+                                    opt_first_line = (opt.inner_text() or "").split('\n')[0].strip()
+                                    if not opt_first_line or opt_first_line.lower() in ("select one", "please select", ""):
+                                        continue
+                                    opt_lower = opt_first_line.lower()
+                                    # Exact first-line match
+                                    if opt_lower == chosen_lower:
+                                        best_opt = opt; break
+                                    # Substring match — guard "Male"⊂"Female" specifically
+                                    if chosen_lower == "male" and "female" in opt_lower:
+                                        continue
+                                    if chosen_lower in opt_lower or opt_lower in chosen_lower:
+                                        best_opt = opt; break
+                                    if chosen_words and sum(1 for w in chosen_words if w in opt_lower) >= 2:
+                                        best_opt = opt; break
+                                except Exception:
+                                    continue
+                        if best_opt:
+                            best_opt.click(timeout=2000)
+                            logger.info("Workday screener (fuzzy): '%s' → %s", label_text[:40], (best_opt.inner_text() or "")[:40])
+                            filled += 1
+                            _human_pause(0.3, 0.6)
+                        else:
+                            logger.info("Workday screener: no option match label='%s' chosen='%s'", label_text[:40], chosen)
+                            try: page.keyboard.press("Escape")
+                            except Exception: pass
+                    except Exception as exc2:
+                        logger.debug("Workday screener fallback: %s", exc2)
+                        try: page.keyboard.press("Escape")
+                        except Exception: pass
             except Exception as exc:
                 logger.debug("Workday screener btn: %s", exc)
     except Exception as exc:
@@ -2077,11 +2269,74 @@ def _fill_workday_screener_questions(page, answers: dict) -> int:
     except Exception:
         pass
 
+    # Handle EEO radio-button groups (race/ethnicity can render as radio inputs instead of combobox)
+    try:
+        _eeo_radio_map = [
+            (["race", "ethnicity"], answers.get("eeo_race") or answers.get("eeo_ethnicity") or "Asian"),
+            (["gender", "sex"], answers.get("eeo_gender", "Male")),
+            (["veteran"], answers.get("eeo_veteran", "I am not a protected veteran")),
+            (["disability", "disabled"], answers.get("eeo_disability") or "I don't have a disability"),
+            (["hispanic", "latino"], answers.get("eeo_hispanic", "No, Not Hispanic or Latino")),
+        ]
+        fieldsets = page.locator("fieldset").all()
+        for fs in fieldsets:
+            try:
+                legend = (fs.locator("legend").first.inner_text() or "").lower().strip()
+                if not legend:
+                    continue
+                chosen = None
+                for keywords, answer in _eeo_radio_map:
+                    if any(kw in legend for kw in keywords):
+                        chosen = answer
+                        break
+                if chosen is None:
+                    continue
+                # Find already-selected radio — skip if filled
+                if fs.locator("input[type='radio']:checked").count() > 0:
+                    continue
+                chosen_lower = chosen.lower()
+                chosen_words = [w for w in chosen_lower.split() if len(w) > 3]
+                _is_vet_q = "veteran" in legend
+                _want_not_vet = _is_vet_q and "not" in chosen_lower
+                radio_labels = fs.locator("label").all()
+                best_lbl = None
+                for rl in radio_labels:
+                    try:
+                        rl_txt = (rl.inner_text() or "").strip()
+                        rl_lower = rl_txt.split('\n')[0].strip().lower()
+                        # Veteran guard: skip options like "Veteran but Not a Protected Veteran"
+                        # when we want "I am not a protected veteran" (user is not a veteran at all)
+                        if _want_not_vet and "but" in rl_lower:
+                            continue
+                        if chosen_lower in rl_lower or rl_lower in chosen_lower:
+                            best_lbl = rl; break
+                        if chosen_words and sum(1 for w in chosen_words if w in rl_lower) >= 2:
+                            best_lbl = rl; break
+                    except Exception:
+                        continue
+                if best_lbl:
+                    try:
+                        best_lbl.scroll_into_view_if_needed(timeout=2000)
+                        best_lbl.click(timeout=2000)
+                        logger.info("Workday EEO radio: '%s' → %s", legend[:40], (best_lbl.inner_text() or "")[:40])
+                        filled += 1
+                        _human_pause(0.2, 0.4)
+                    except Exception as re:
+                        logger.debug("Workday EEO radio click: %s", re)
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.debug("_fill_workday_screener_questions radio: %s", exc)
+
     # Handle Workday consent checkboxes (e.g. "Yes, I have read and consent to the terms and conditions")
     try:
         for cb in page.locator("input[type='checkbox']").all():
             try:
-                if not cb.is_visible(timeout=500):
+                try:
+                    cb.scroll_into_view_if_needed(timeout=2000)
+                except Exception:
+                    pass
+                if not cb.is_visible(timeout=1000):
                     continue
                 if cb.is_checked():
                     continue
@@ -2152,13 +2407,13 @@ def _fill_workday_eeo_selects(page, answers: dict) -> int:
         (["hispanic or latino", "hispanic", "latino"],
          answers.get("eeo_hispanic", "No, Not Hispanic or Latino")),
         (["race/ethnicity", "race or ethnicity", "ethnicity", "identify yourself", "racial"],
-         answers.get("eeo_race", "I choose not to self-identify")),
+         answers.get("eeo_race") or answers.get("eeo_ethnicity") or "Asian"),
         (["gender", "sex"],
-         answers.get("eeo_gender", "I choose not to self-identify")),
+         answers.get("eeo_gender", "Male")),
         (["veteran status", "protected veteran", "veteran"],
          answers.get("eeo_veteran", "I am not a protected veteran")),
         (["disability", "disabled", "ada"],
-         answers.get("eeo_disability", "I don't wish to answer")),
+         answers.get("eeo_disability") or "I don't wish to answer"),
     ]
 
     filled = 0
@@ -2400,6 +2655,138 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
     raise RuntimeError(f"WhiteCarrot: exceeded {MAX_STEPS} steps without submitting")
 
 
+def _fill_workday_cc305(page, app_id: int, step: int) -> None:
+    """Fill the OFCCP CC-305 Voluntary Self-Identification of Disability form.
+
+    This is a separate Workday page with:
+      - A Language select (already English, skip)
+      - A Date field (today's date in MM/DD/YYYY)
+      - A checkbox group: Yes disability / No disability / Prefer not to answer
+    """
+    import datetime as _dt
+    filled = 0
+    today_str = _dt.date.today().strftime("%m/%d/%Y")
+
+    # 1. Fill the Date field.
+    # Playwright's CSS locator fails to match these inputs even though
+    # document.querySelector() finds them (Workday wraps them in custom elements).
+    # Strategy: use evaluate_handle() to get a real ElementHandle via JS, then call
+    # Playwright's native click()+type() on the handle — this generates the keyboard
+    # events that Workday's React state machine requires for validation.
+    try:
+        month_s, day_s, year_s = today_str.split("/")
+        _date_fields = [
+            ("dateSectionMonth-input", month_s, "month"),
+            ("dateSectionDay-input", day_s, "day"),
+            ("dateSectionYear-input", year_s, "year"),
+        ]
+        parts_filled = 0
+        for auto_id, val, part_name in _date_fields:
+            _part_done = False
+            # Primary: get ElementHandle via JS querySelector (works even inside custom elements)
+            try:
+                handle = page.evaluate_handle(
+                    f"""() => document.querySelector("input[data-automation-id='{auto_id}']")"""
+                )
+                el = handle.as_element() if handle else None
+                if el is not None:
+                    try:
+                        el.scroll_into_view_if_needed(timeout=2000)
+                    except Exception:
+                        pass
+                    el.click(click_count=3, timeout=3000)
+                    el.type(val, delay=60)
+                    parts_filled += 1
+                    _part_done = True
+                    _human_pause(0.15, 0.25)
+                    logger.debug("CC-305 date part %s filled via evaluate_handle", part_name)
+            except Exception as _pe:
+                logger.debug("CC-305 date part %s evaluate_handle error: %s", part_name, _pe)
+
+            if not _part_done:
+                # Fallback: individual Playwright locators (no comma — avoids selector-list issues)
+                _auto_prefix = auto_id.split("-")[0]
+                for _sel in [
+                    f"input[data-automation-id='{auto_id}']",
+                    f"input[data-automation-id*='{_auto_prefix}']",
+                ]:
+                    try:
+                        _loc = page.locator(_sel).first
+                        if _loc.count() > 0 and _loc.is_visible(timeout=1500):
+                            _loc.click(click_count=3, timeout=2000)
+                            _loc.type(val, delay=60)
+                            parts_filled += 1
+                            _part_done = True
+                            _human_pause(0.15, 0.25)
+                            logger.debug("CC-305 date part %s filled via locator sel=%r", part_name, _sel)
+                            break
+                    except Exception:
+                        continue
+
+        if parts_filled == 3:
+            filled += 1
+            logger.info("app_id=%d CC-305 Date filled: %s strategy=evaluate-handle step=%d",
+                        app_id, today_str, step)
+        elif parts_filled > 0:
+            filled += 1
+            logger.warning("app_id=%d CC-305 Date partially filled (%d/3 parts) step=%d",
+                           app_id, parts_filled, step)
+        else:
+            # Debug dump: log all visible inputs to diagnose
+            try:
+                _vis = page.evaluate("""() =>
+                    Array.from(document.querySelectorAll('input')).map(e => ({
+                        auto: e.getAttribute('data-automation-id'),
+                        ph: e.placeholder, type: e.type, vis: e.offsetParent !== null
+                    }))
+                """)
+                logger.warning("app_id=%d CC-305: date field NOT filled at step=%d — inputs: %s",
+                               app_id, step, _vis)
+            except Exception:
+                logger.warning("app_id=%d CC-305: date field NOT filled at step=%d", app_id, step)
+        _human_pause(0.3, 0.5)
+    except Exception as exc:
+        logger.warning("app_id=%d CC-305 date fill error at step=%d: %s", app_id, step, exc)
+
+    # 2. Click "No, I don't have a disability" checkbox/radio
+    try:
+        _no_disability_keywords = [
+            "no, i don",          # "No, I don't have a disability"
+            "no, i do not",       # "No, I do not have a disability"
+            "i don't have a disability",
+            "i do not have a disability",
+            "no disability",
+        ]
+        inputs = page.locator("input[type='checkbox'], input[type='radio']").all()
+        for inp in inputs:
+            try:
+                inp_id = inp.get_attribute("id") or ""
+                # Try label[for=id] first
+                lbl = page.locator(f"label[for='{inp_id}']").first if inp_id else None
+                if lbl and lbl.count() > 0:
+                    lbl_text = (lbl.inner_text() or "").lower()
+                else:
+                    # Try closest ancestor label
+                    lbl_text = (inp.evaluate(
+                        "el => { let p = el.closest('label'); return p ? p.textContent : ''; }"
+                    ) or "").lower()
+                if not lbl_text:
+                    continue
+                if any(kw in lbl_text for kw in _no_disability_keywords):
+                    inp.scroll_into_view_if_needed(timeout=2000)
+                    inp.check(timeout=2000)
+                    logger.info("app_id=%d CC-305: checked 'No disability' — label: %s step=%d",
+                                app_id, lbl_text[:60], step)
+                    filled += 1
+                    break
+            except Exception:
+                continue
+        if filled == 0:
+            logger.warning("app_id=%d CC-305: could not find 'No disability' checkbox at step=%d", app_id, step)
+    except Exception as exc:
+        logger.debug("CC-305 checkbox error: %s", exc)
+
+
 def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 300) -> None:
     """Step through Workday applyManually multi-page wizard until submitted.
 
@@ -2412,6 +2799,8 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
     """
     from src.browser.form_detector import extract_form_fields
     from src.browser.fast_autofill import fast_fill_form
+
+    _resume_uploaded = False  # upload at most once per wizard run
 
     for step in range(max_steps):
         try:
@@ -2446,6 +2835,24 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
         try:
             body_check = page.evaluate("() => document.body.innerText") or ""
             if "Errors Found" in body_check:
+                # Log the actual error field names shown in the banner for diagnostics
+                try:
+                    err_items = page.locator(
+                        "[data-automation-id='errorMessage'], "
+                        "[class*='error'] li, "
+                        "[role='alert'] li, "
+                        ".errors-found li"
+                    ).all()
+                    err_texts = [e.inner_text() for e in err_items[:10]]
+                    if err_texts:
+                        logger.warning("app_id=%d Workday errors: %s", app_id, " | ".join(err_texts[:5]))
+                    else:
+                        # Fallback: extract error text from banner paragraph
+                        banner_txt = page.locator("[data-automation-id='errorBanner'], [class*='errorBanner']").first.inner_text() if page.locator("[data-automation-id='errorBanner'], [class*='errorBanner']").count() > 0 else ""
+                        if banner_txt:
+                            logger.warning("app_id=%d Workday error banner: %s", app_id, banner_txt[:200])
+                except Exception:
+                    pass
                 logger.warning("app_id=%d Workday: 'Errors Found' at step=%d — scrolling to fill required fields", app_id, step)
                 # Scroll past the error banner to reach form fields below it
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -2495,6 +2902,45 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
         if _workday_on_my_info:
             _fill_workday_my_info(page, answers)
 
+        # CC-305 Voluntary Self-Identification of Disability form
+        if "CC-305" in body_check or "Voluntary Self-Identification of Disability" in body_check:
+            _fill_workday_cc305(page, app_id, step)
+
+        # Resume upload — Workday My Experience uses a 'select-files' button that
+        # opens a file chooser. Upload on the first step where it appears.
+        if not _resume_uploaded:
+            _resume_path = answers.get("resume", "") or answers.get("resume_path", "")
+            if _resume_path and os.path.isfile(_resume_path):
+                _sel_btn = page.locator("[data-automation-id='select-files']").first
+                if _sel_btn.count() > 0:
+                    try:
+                        _sel_btn.scroll_into_view_if_needed(timeout=1500)
+                    except Exception:
+                        pass
+                    if _sel_btn.is_visible(timeout=1500):
+                        try:
+                            with page.expect_file_chooser(timeout=5000) as _fc:
+                                _sel_btn.click()
+                            _fc.value.set_files(_resume_path)
+                            _resume_uploaded = True
+                            logger.info("app_id=%d Workday: uploaded resume via select-files step=%d path=%s",
+                                        app_id, step, _resume_path)
+                            _human_pause(3.0, 4.0)
+                        except Exception as _ru_exc:
+                            logger.warning("app_id=%d Workday: resume upload failed step=%d: %s",
+                                           app_id, step, _ru_exc)
+                            # Fallback: direct file input
+                            try:
+                                _fi = page.locator("input[type='file']").first
+                                if _fi.count() > 0:
+                                    _fi.set_input_files(_resume_path)
+                                    _resume_uploaded = True
+                                    logger.info("app_id=%d Workday: uploaded resume via file input step=%d",
+                                                app_id, step)
+                                    _human_pause(2.0, 3.0)
+                            except Exception as _fi_exc:
+                                logger.debug("Workday file input fallback: %s", _fi_exc)
+
         # Scroll to bottom so all nav buttons are in reach
         try:
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
@@ -2511,7 +2957,11 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                 loc = page.locator(sel).first
                 if loc.count() == 0:
                     continue
-                if not loc.is_visible():
+                try:
+                    loc.scroll_into_view_if_needed(timeout=1500)
+                except Exception:
+                    pass
+                if not loc.is_visible(timeout=1500):
                     continue
                 _human_click(page, loc)
                 logger.info("app_id=%d Workday: clicked Next step=%d sel=%r", app_id, step, sel)
@@ -2536,6 +2986,8 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                 if any(x in body for x in (
                     "Application Submitted", "Thank you", "Thank You",
                     "We have received your application", "successfully submitted",
+                    "Congratulations", "congratulations",
+                    "application has been submitted", "successfully applied",
                 )):
                     logger.info("app_id=%d Workday: submission confirmed via page text", app_id)
                     return
@@ -2545,6 +2997,18 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
 
         # No Next found — we must be on the final Review/Submit page
         logger.info("app_id=%d Workday: no Next button — trying Submit on step=%d url=%s", app_id, step, url)
+        # Take a full-page screenshot for user review before submitting
+        try:
+            import pathlib as _pl
+            _review_ss = str(_pl.Path(folder_path) / "pre_submit_review.png")
+            page.screenshot(path=_review_ss, full_page=True)
+            logger.info("app_id=%d Workday: PRE-SUBMIT screenshot saved → %s", app_id, _review_ss)
+        except Exception as _ss_exc:
+            logger.debug("pre-submit screenshot failed: %s", _ss_exc)
+        # Hold 45 s so user can inspect Chrome before Submit fires
+        logger.info("app_id=%d Workday: PAUSING 45s for user review — open Chrome to inspect", app_id)
+        time.sleep(45)
+        logger.info("app_id=%d Workday: pause done — clicking Submit now", app_id)
         for sel in _WORKDAY_SUBMIT_SELECTORS:
             try:
                 loc = page.locator(sel).first
@@ -2560,6 +3024,19 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
             except Exception:
                 continue
 
+        # Check if page content indicates success before raising error
+        try:
+            body = page.evaluate("() => document.body.innerText") or ""
+            if any(x in body for x in (
+                "Application Submitted", "Thank you", "Thank You",
+                "We have received your application", "successfully submitted",
+                "Congratulations", "congratulations",
+                "application has been submitted", "successfully applied",
+            )):
+                logger.info("app_id=%d Workday: submission confirmed via page text (no-submit-btn path)", app_id)
+                return
+        except Exception:
+            pass
         # Log all buttons to help diagnose selector mismatches
         try:
             btns = page.evaluate("""
