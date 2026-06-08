@@ -40,28 +40,43 @@ pathlib.Path("applications").mkdir(exist_ok=True)
 from src.db.connection import get_connection
 conn = get_connection("job_agent.db")
 
-# ── Step 1: Discover fresh LinkedIn jobs ─────────────────────────────────────
+# ── Step 1: Discover fresh LinkedIn jobs (requires Chrome on port 9222) ───────
 print("\n" + "="*60)
 print("  STEP 1: LinkedIn Discovery")
 print("="*60)
+
+# Quick port check — skip the 5-minute headless scan if Chrome isn't running
+import socket as _sock
+_chrome_up = False
 try:
-    from src.discovery.linkedin_browser import discover_jobs, LINKEDIN_ROLES, LINKEDIN_LOCATIONS
-    from src.discovery.indeed import import_jobs
-    job_dicts = discover_jobs(
-        role_queries=LINKEDIN_ROLES,
-        locations=LINKEDIN_LOCATIONS,
-        max_per_search=10,
-        headless=False,
-    )
-    if job_dicts:
-        result = import_jobs(conn, job_dicts, source="linkedin_browser")
-        conn.commit()
-        added = result.get("added", 0) if isinstance(result, dict) else result
-        print(f"  Discovered {len(job_dicts)} jobs, {added} new imported")
-    else:
-        print("  No new jobs discovered — will use existing approved apps")
-except Exception as e:
-    logger.warning("LinkedIn discovery failed: %s — using existing approved apps", e)
+    with _sock.create_connection(("localhost", 9222), timeout=1):
+        _chrome_up = True
+except OSError:
+    pass
+
+if not _chrome_up:
+    print("  Chrome not on port 9222 — skipping LinkedIn discovery.")
+    print("  To get fresh jobs: run launch_chrome_debug.bat, log into LinkedIn,")
+    print("  then re-run this script.")
+else:
+    try:
+        from src.discovery.linkedin_browser import discover_jobs, LINKEDIN_ROLES, LINKEDIN_LOCATIONS
+        from src.discovery.indeed import import_jobs
+        job_dicts = discover_jobs(
+            role_queries=LINKEDIN_ROLES,
+            locations=LINKEDIN_LOCATIONS,
+            max_per_search=10,
+            headless=False,
+        )
+        if job_dicts:
+            result = import_jobs(conn, job_dicts, source="linkedin_browser")
+            conn.commit()
+            added = result.get("added", 0) if isinstance(result, dict) else result
+            print(f"  Discovered {len(job_dicts)} jobs, {added} new imported")
+        else:
+            print("  No new jobs found on LinkedIn.")
+    except Exception as e:
+        logger.warning("LinkedIn discovery failed: %s", e)
 
 # ── Step 2: Score newly discovered DISCOVERED apps (no submission) ─────────────
 print("\n" + "="*60)
