@@ -113,6 +113,14 @@ def linkedin_easy_apply(
         raise RuntimeError(f"LinkedIn Easy Apply button not found on {job_url}")
     _human_pause(1.5, 2.5)
     _screenshot(page, folder_path, "li_02_modal_open.png")
+    # Verify the modal actually opened — if not, we clicked a wrong button
+    try:
+        page.wait_for_selector(
+            "div[data-test-modal], div[aria-label*='Easy Apply']",
+            timeout=4000, state="visible",
+        )
+    except Exception:
+        raise RuntimeError(f"LinkedIn Easy Apply: modal did not open after click — job may use external apply: {job_url}")
 
     # Work through modal steps
     max_steps = 25
@@ -161,13 +169,14 @@ def linkedin_easy_apply(
         if _click_any(page, _REVIEW_SELECTORS, timeout=2000):
             continue
 
-        if _click_any(page, _CONTINUE_SELECTORS, timeout=3000):
-            continue
-
-        # Check if modal closed (application done without explicit submit button)
+        # Check modal closed BEFORE trying Continue — stray Continue buttons on
+        # the LinkedIn background page can fool _click_any and loop 25 times.
         if _modal_closed(page):
             logger.info("app_id=%d linkedin modal closed — application likely sent", app_id)
-            return "submitted"
+            return _detect_confirmation(page) or "submitted"
+
+        if _click_any(page, _CONTINUE_SELECTORS, timeout=3000):
+            continue
 
         logger.warning("app_id=%d no actionable button at step=%d", app_id, step)
         _screenshot(page, folder_path, f"li_stuck_step{step:02d}.png")
@@ -213,7 +222,17 @@ def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: di
     _fill_field(page, "input[aria-label*='City'], input[id*='city']",
                 candidate.get("city", ""), delay)
 
-    # LinkedIn Position (current job title) — required on some additional-questions pages
+    # LinkedIn Profile URL — required on "Additional Questions" pages
+    _fill_if_empty(page,
+                   "input[aria-label='LinkedIn Profile'], "
+                   "input[aria-label*='LinkedIn profile'], "
+                   "input[aria-label*='LinkedIn URL'], "
+                   "input[placeholder*='linkedin.com/in'], "
+                   "input[id*='linkedin']:not([id*='button'])",
+                   candidate.get("linkedin_url", answers.get("linkedin_url",
+                       "https://www.linkedin.com/in/pranavpradhan")), delay)
+
+    # Current job title / position field (separate from LinkedIn profile URL)
     _fill_if_empty(page,
                    "input[aria-label*='Position'], input[id*='position'], "
                    "input[aria-label*='Job title'], input[id*='title']:not([id*='page'])",
@@ -229,8 +248,50 @@ def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: di
     # Select dropdowns
     _fill_selects(page, answers)
 
-    # Free text questions
+    # Free text questions (textareas)
     _fill_text_questions(page, answers)
+
+    # Salary / number inputs that aren't textareas
+    _fill_inline_number_inputs(page, answers)
+
+
+def _fill_inline_number_inputs(page, answers: dict):
+    """Fill visible single-line text/number inputs for salary, years-exp etc."""
+    try:
+        inputs = page.locator("input[type='text']:visible, input[type='number']:visible").all()
+        for inp in inputs:
+            try:
+                inp_id = inp.get_attribute("id") or ""
+                aria = (inp.get_attribute("aria-label") or "").lower().strip()
+                label_text = ""
+                if inp_id:
+                    lbl = page.locator(f"label[for='{inp_id}']").first
+                    if lbl.count() > 0:
+                        label_text = lbl.inner_text().lower().strip()
+                key = label_text or aria
+                if not key:
+                    continue
+                # Skip fields already handled by dedicated fillers
+                if any(x in key for x in ["phone", "email", "city", "linkedin", "position",
+                                           "title", "first name", "last name", "name"]):
+                    continue
+                cur = ""
+                try:
+                    cur = inp.input_value() or ""
+                except Exception:
+                    pass
+                if cur.strip():
+                    continue
+                if "salary" in key or "compensation" in key or "pay" in key:
+                    human_fill(page, inp, str(answers.get("salary_expectation", "110000")), long_text=False)
+                elif "year" in key and ("experience" in key or "exp" in key):
+                    human_fill(page, inp, str(answers.get("years_experience", "3")), long_text=False)
+                elif "gpa" in key:
+                    human_fill(page, inp, "3.8", long_text=False)
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.debug("fill_inline_number_inputs error: %s", exc)
 
 
 def _fill_field(page, selector: str, value: str, delay: float):
@@ -316,13 +377,21 @@ def _fill_radio_groups(page, answers: dict):
 
 def _click_radio(group, value: str):
     """Click a radio button matching 'yes' or 'no' in a fieldset."""
-    sel = f"input[type='radio'][value='{value}'], label:has-text('{value.capitalize()}')"
-    try:
-        el = group.locator(sel).first
-        if el.count() > 0 and el.is_visible():
-            el.click()
-    except Exception:
-        pass
+    cap = value.capitalize()
+    # Try multiple patterns: exact value match (both cases) and label text
+    for sel in [
+        f"input[type='radio'][value='{value}']",
+        f"input[type='radio'][value='{cap}']",
+        f"label:has-text('{cap}')",
+        f"[role='radio'][aria-label*='{cap}']",
+    ]:
+        try:
+            el = group.locator(sel).first
+            if el.count() > 0 and el.is_visible():
+                el.click()
+                return
+        except Exception:
+            pass
 
 
 def _fill_selects(page, answers: dict):
@@ -442,10 +511,13 @@ def _check_li_captcha(page):
 
 
 def _modal_closed(page) -> bool:
-    """Return True if the Easy Apply modal is no longer present."""
+    """Return True if the Easy Apply modal is no longer present or not visible."""
     try:
         modal = page.locator("div[data-test-modal], div[aria-label*='Easy Apply']").first
-        return modal.count() == 0
+        if modal.count() == 0:
+            return True
+        # LinkedIn keeps the modal element in DOM after close — check visibility
+        return not modal.is_visible()
     except Exception:
         return False
 
