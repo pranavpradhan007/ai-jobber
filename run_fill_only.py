@@ -49,14 +49,17 @@ candidates = conn.execute("""
     WHERE a.state IN ('WAITING_FOR_USER_APPROVAL','SKIPPED')
       AND a.approved_by_user = 1
       AND a.id NOT IN (3)
+      AND LOWER(j.platform) NOT IN ('remoteok','hackernews','custom')
+      AND j.url NOT LIKE '%remoteok.com%'
+      AND j.url NOT LIKE '%nomi.ai%'
     ORDER BY
-      CASE WHEN LOWER(j.platform) IN ('workday','greenhouse','lever','ashby','taleo','icims')
+      CASE WHEN LOWER(j.platform) = 'linkedin' THEN 0
+           WHEN LOWER(j.platform) IN ('workday','greenhouse','lever','ashby','taleo','icims')
                 OR j.url LIKE '%workday%' OR j.url LIKE '%greenhouse%'
-                OR j.url LIKE '%lever%' OR j.url LIKE '%ashby%' THEN 0
-           WHEN LOWER(j.platform) = 'linkedin' THEN 2
-           ELSE 1 END,
+                OR j.url LIKE '%lever%' OR j.url LIKE '%ashby%' THEN 1
+           ELSE 2 END,
       a.score DESC
-    LIMIT 10
+    LIMIT 15
 """).fetchall()
 
 if not candidates:

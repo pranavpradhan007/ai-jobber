@@ -193,29 +193,36 @@ def _search_jobs(
         "location": location,
         **_JOB_FILTER_PARAMS,
     }
-    url = "https://www.linkedin.com/jobs/search/?" + urllib.parse.urlencode(params)
+    search_url = "https://www.linkedin.com/jobs/search/?" + urllib.parse.urlencode(params)
 
     try:
-        page.goto(url, timeout=25_000, wait_until="domcontentloaded")
+        page.goto(search_url, timeout=25_000, wait_until="domcontentloaded")
         _human_pause(2.0, 4.0)
     except Exception as exc:
-        logger.warning("linkedin: navigation failed for %r: %s", url, exc)
+        logger.warning("linkedin: navigation failed for %r: %s", search_url, exc)
         return []
 
     # Scroll to load more cards
     _scroll_results(page, scrolls=4)
 
-    # Extract cards from the sidebar job list
+    # Extract card stubs from the sidebar
     jobs = _extract_job_cards(page, seen_ids)
 
-    # Enrich each job with description (visit job page)
+    # Enrich by clicking each card in-sidebar (avoids page navigation, JD loads in right panel)
     enriched: list[LinkedInJob] = []
+    cards = page.locator("[data-occludable-job-id]")
     for job in jobs[:max_results]:
         try:
-            _enrich_job(page, job)
+            # Click the card to load detail panel (no page.goto needed)
+            card = cards.filter(has=page.locator(f"[data-occludable-job-id='{job.job_id}']")).first
+            if card.count() == 0:
+                card = page.locator(f"[data-occludable-job-id='{job.job_id}']").first
+            if card.count() > 0:
+                card.click()
+                _human_pause(1.5, 2.5)
+            _enrich_job_from_panel(page, job)
             enriched.append(job)
             seen_ids.add(job.job_id)
-            _human_pause(1.5, 3.5)
         except Exception as exc:
             logger.warning("linkedin: enrich failed job_id=%s: %s", job.job_id, exc)
             enriched.append(job)  # keep partial data
@@ -341,72 +348,91 @@ def _card_text(card, selectors: list[str]) -> str:
     return ""
 
 
-def _enrich_job(page, job: LinkedInJob):
-    """Visit the job's LinkedIn page to get description and Easy Apply flag."""
-    page.goto(job.url, timeout=20_000, wait_until="domcontentloaded")
-    _human_pause(1.5, 3.0)
+def _enrich_job_from_panel(page, job: LinkedInJob):
+    """Extract description and Easy Apply flag from the right-panel detail view.
 
-    # Detect Easy Apply button
-    easy_apply_sel = [
-        "button.jobs-apply-button[aria-label*='Easy Apply']",
-        "button[aria-label*='Easy Apply']",
-        "button:has-text('Easy Apply')",
-    ]
-    for sel in easy_apply_sel:
-        try:
-            btn = page.locator(sel).first
-            if btn.count() > 0 and btn.is_visible():
-                job.easy_apply = True
-                break
-        except Exception:
-            pass
+    Called after clicking a search-result card — the detail panel loads inline
+    without a page navigation, so all data is accessible immediately.
+    """
+    # Detect Easy Apply button in the detail panel (aria-label is most reliable)
+    try:
+        ea_btn = page.evaluate("""
+            (() => {
+                const btns = Array.from(document.querySelectorAll('button'));
+                return btns.find(b => {
+                    const lbl = (b.getAttribute('aria-label') || '').toLowerCase();
+                    const txt = (b.innerText || '').trim().toLowerCase();
+                    return (lbl.includes('easy apply') || txt === 'easy apply') &&
+                           !lbl.includes('filter');
+                });
+            })()
+        """)
+        job.easy_apply = ea_btn is not None
+    except Exception:
+        pass
 
     # External apply URL
     if not job.easy_apply:
-        ext_sel = [
-            "a.jobs-apply-button[href]",
-            "a[data-tracking-control-name*='apply_link_click']",
-            "a:has-text('Apply now')",
-        ]
-        for sel in ext_sel:
-            try:
-                el = page.locator(sel).first
-                if el.count() > 0:
-                    href = el.get_attribute("href") or ""
-                    if href.startswith("http"):
-                        job.apply_url = href
-                        break
-            except Exception:
-                pass
-
-    # Description
-    desc_sel = [
-        ".jobs-description__content",
-        ".jobs-box__html-content",
-        "div[class*='description']",
-        "article",
-    ]
-    for sel in desc_sel:
         try:
-            el = page.locator(sel).first
-            if el.count() > 0:
-                text = el.inner_text()
-                if len(text) > 100:
-                    job.description = text[:6000]
-                    break
+            ext_href = page.evaluate("""
+                (() => {
+                    const sels = [
+                        'a.jobs-apply-button[href]',
+                        'a[data-tracking-control-name*="apply_link_click"]',
+                        'a[aria-label*="Apply on"]',
+                    ];
+                    for (const sel of sels) {
+                        const el = document.querySelector(sel);
+                        if (el) {
+                            const h = el.getAttribute('href') || '';
+                            if (h.startsWith('http')) return h;
+                        }
+                    }
+                    return '';
+                })()
+            """)
+            if ext_href:
+                job.apply_url = ext_href
         except Exception:
             pass
+
+    # Description — check right panel selectors
+    try:
+        desc = page.evaluate("""
+            (() => {
+                const sels = [
+                    '#job-details',
+                    '.jobs-description__content',
+                    '.jobs-box__html-content',
+                    '[class*="description__text"]',
+                    '.jobs-description-content__text',
+                ];
+                for (const sel of sels) {
+                    const el = document.querySelector(sel);
+                    if (el && el.innerText.length > 100) {
+                        return el.innerText.trim().slice(0, 6000);
+                    }
+                }
+                return '';
+            })()
+        """)
+        if desc:
+            job.description = desc
+    except Exception:
+        pass
 
 
 def _to_job_dict(job: LinkedInJob) -> dict:
     """Convert LinkedInJob to the dict format expected by import_jobs()."""
     return {
+        "url": job.url,          # primary key used by import_jobs dedup
         "title": job.title,
         "company": job.company,
         "location": job.location,
-        "apply_url": job.url,
         "description": job.description,
+        "raw_jd": job.description,
         "source": "linkedin_browser",
+        "platform": "linkedin",
         "external_id": f"li_{job.job_id}",
         "easy_apply": job.easy_apply,
         "apply_method": "linkedin_easy_apply" if job.easy_apply else "external",
