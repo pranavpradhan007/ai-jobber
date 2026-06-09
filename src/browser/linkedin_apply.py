@@ -37,11 +37,13 @@ from src.browser.human_mouse import (
 logger = logging.getLogger(__name__)
 
 _APPLY_BUTTON_SELECTORS = [
+    # Class-based: LinkedIn's apply button historically uses this class
     "button.jobs-apply-button[aria-label*='Easy Apply']",
-    "button[aria-label*='Easy Apply']",
-    # NOTE: button:has-text('Easy Apply') intentionally omitted — it matches
-    # LinkedIn's filter badge chip ("Easy Apply ×") which removes the search
-    # filter when clicked instead of opening the application modal.
+    "button.jobs-apply-button",
+    # NOTE: bare button[aria-label*='Easy Apply'] removed — on search-results pages
+    # LinkedIn's "Easy Apply ×" filter chip ALSO has aria-label*='Easy Apply',
+    # clicking it removes the search filter instead of opening the apply modal.
+    # Use _js_click_easy_apply() as the fallback instead (it excludes filter chips).
 ]
 
 _CONTINUE_SELECTORS = [
@@ -93,9 +95,12 @@ def linkedin_easy_apply(
     _check_auth_wall(page)
     _screenshot(page, folder_path, "li_01_job_page.png")
 
-    # Click Easy Apply — if not found on direct URL, try search sidebar URL
-    # (LinkedIn doesn't render Easy Apply on direct /jobs/view/ pages after SPA changes)
-    clicked = _click_any(page, _APPLY_BUTTON_SELECTORS, timeout=5000)
+    # Click Easy Apply — try class-based selectors first, then JS fallback (filter-chip safe)
+    # If not found on direct URL, fall back to search sidebar URL.
+    # (LinkedIn SPA sometimes delays rendering the apply button on /jobs/view/ pages.)
+    clicked = _click_any(page, _APPLY_BUTTON_SELECTORS, timeout=8000)
+    if not clicked:
+        clicked = _js_click_easy_apply(page)
     if not clicked:
         import re as _re
         m = _re.search(r"/jobs/view/(\d+)", job_url)
@@ -110,7 +115,10 @@ def linkedin_easy_apply(
             reading_pause()
             _check_auth_wall(page)
             _screenshot(page, folder_path, "li_01b_sidebar.png")
-            clicked = _click_any(page, _APPLY_BUTTON_SELECTORS, timeout=8000)
+            # On search results pages, use JS click to avoid the "Easy Apply ×" filter chip
+            clicked = _click_any(page, _APPLY_BUTTON_SELECTORS, timeout=5000)
+            if not clicked:
+                clicked = _js_click_easy_apply(page)
     if not clicked:
         raise RuntimeError(f"LinkedIn Easy Apply button not found on {job_url}")
     _human_pause(1.5, 2.5)
@@ -564,6 +572,44 @@ def _fill_text_questions(page, answers: dict):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _js_click_easy_apply(page) -> bool:
+    """JS-based Easy Apply click — finds the actual apply button, excludes filter chips.
+
+    LinkedIn search-results pages show an "Easy Apply ×" filter chip that also has
+    aria-label*='Easy Apply'. This function detects visible buttons with Easy Apply
+    text and skips any that contain the × removal indicator used by filter chips.
+    """
+    try:
+        clicked = page.evaluate(r"""
+            () => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const btn = buttons.find(b => {
+                    const label = (b.getAttribute('aria-label') || '').toLowerCase();
+                    const text = (b.innerText || b.textContent || '').trim();
+                    const textLower = text.toLowerCase();
+                    // Must reference Easy Apply
+                    if (!label.includes('easy apply') && textLower !== 'easy apply') return false;
+                    // Exclude filter chips — they show × (U+00D7) or plain ×
+                    if (text.includes('×') || text.includes('Ã') || text.includes('x ') || text.endsWith(' x')) return false;
+                    // Exclude if aria-label suggests removal/filter action
+                    if (label.includes('remove') || label.includes('clear') || label.includes('dismiss') || label.includes('filter')) return false;
+                    // Must be visible (nonzero bounding rect and not hidden)
+                    const rect = b.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) return false;
+                    const style = window.getComputedStyle(b);
+                    if (style.display === 'none' || style.visibility === 'hidden') return false;
+                    return true;
+                });
+                if (btn) { btn.click(); return true; }
+                return false;
+            }
+        """)
+        return bool(clicked)
+    except Exception as exc:
+        logger.debug("_js_click_easy_apply error: %s", exc)
+        return False
+
 
 def _click_any(page, selectors: list[str], timeout: int = 3000) -> bool:
     """Try each selector; click first visible match. Returns True if clicked."""
