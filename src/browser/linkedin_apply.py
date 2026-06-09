@@ -120,6 +120,9 @@ def linkedin_easy_apply(
         page_transition_pause()
         _check_auth_wall(page)
         _check_li_captcha(page)
+        # Dismiss any "Save this application?" dialog that LinkedIn shows
+        # when Continue is clicked on a validation-failed page.
+        _dismiss_save_dialog(page)
         _screenshot(page, folder_path, f"li_step{step:02d}.png")
 
         # Fill visible fields on this modal page
@@ -173,6 +176,26 @@ def linkedin_easy_apply(
     raise RuntimeError(f"LinkedIn Easy Apply: could not complete after {max_steps} steps")
 
 
+def _dismiss_save_dialog(page) -> bool:
+    """
+    Dismiss the 'Save this application?' dialog LinkedIn shows when Continue
+    is clicked on a validation-failed page. Press Escape to cancel the dialog
+    and return to the form (not Discard which deletes the application).
+    Returns True if dismissed.
+    """
+    try:
+        # Dialog detection: look for the save/discard button pair
+        discard = page.locator("button:has-text('Discard')").first
+        if discard.count() > 0 and discard.is_visible():
+            page.keyboard.press("Escape")
+            time.sleep(0.5)
+            logger.info("Dismissed 'Save this application?' dialog via Escape")
+            return True
+    except Exception as exc:
+        logger.debug("dialog dismiss error: %s", exc)
+    return False
+
+
 # ── Page filler ───────────────────────────────────────────────────────────────
 
 def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: dict, delay: float):
@@ -189,6 +212,13 @@ def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: di
     # City / location
     _fill_field(page, "input[aria-label*='City'], input[id*='city']",
                 candidate.get("city", ""), delay)
+
+    # LinkedIn Position (current job title) — required on some additional-questions pages
+    _fill_if_empty(page,
+                   "input[aria-label*='Position'], input[id*='position'], "
+                   "input[aria-label*='Job title'], input[id*='title']:not([id*='page'])",
+                   candidate.get("current_title", answers.get("current_title",
+                       answers.get("job_title", "Machine Learning Engineer"))), delay)
 
     # Resume upload — only if upload button is visible
     _upload_resume(page, resume_pdf_path)
@@ -264,8 +294,20 @@ def _fill_radio_groups(page, answers: dict):
 
             if any(k in label_text for k in ["authorized", "legally", "eligible", "right to work"]):
                 _click_radio(grp, "yes")
-            elif any(k in label_text for k in ["sponsor", "visa", "work authorization"]):
+            elif any(k in label_text for k in ["require sponsorship", "need sponsorship", "visa sponsorship",
+                                                "require work authorization", "work permit"]):
                 _click_radio(grp, "no")
+            elif any(k in label_text for k in ["sponsor", "visa"]):
+                _click_radio(grp, "no")
+            # Affirmative answers for ML/AI experience, skills, agreements
+            elif any(k in label_text for k in [
+                "built", "maintained", "production", "deployed", "trained",
+                "machine learning", "deep learning", "neural", "nlp", "llm",
+                "python", "tensorflow", "pytorch", "experience with",
+                "agree", "confirm", "acknowledge", "18 years", "18+ years", "background check",
+                "drug test", "on-site", "hybrid", "remote",
+            ]):
+                _click_radio(grp, "yes")
             elif label_text in answers:
                 _click_radio(grp, answers[label_text])
     except Exception as exc:

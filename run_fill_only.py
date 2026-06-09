@@ -49,7 +49,7 @@ candidates = conn.execute("""
     FROM applications a JOIN jobs j ON a.job_id=j.id
     WHERE a.state IN ('WAITING_FOR_USER_APPROVAL','SKIPPED')
       AND a.approved_by_user = 1
-      AND a.id NOT IN (3, 47, 48, 50, 56, 125)
+      AND a.id NOT IN (3, 47, 48, 50, 56, 93, 125, 130, 135)
       AND LOWER(j.platform) NOT IN ('remoteok','hackernews','custom')
       AND j.url NOT LIKE '%remoteok.com%'
       AND j.url NOT LIKE '%nomi.ai%'
