@@ -115,7 +115,7 @@ def linkedin_easy_apply(
     _screenshot(page, folder_path, "li_02_modal_open.png")
 
     # Work through modal steps
-    max_steps = 15
+    max_steps = 25
     for step in range(max_steps):
         page_transition_pause()
         _check_auth_wall(page)
