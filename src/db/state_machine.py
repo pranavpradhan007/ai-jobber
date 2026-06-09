@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Legal transition graph
 # ---------------------------------------------------------------------------
 LEGAL_TRANSITIONS: dict[str, set[str]] = {
-    "DISCOVERED":                 {"SCORED", "SKIPPED"},
+    "DISCOVERED":                 {"SCORED", "SKIPPED", "AI_TRAP_DETECTED"},
     "SCORED":                     {"TAILORING", "SKIPPED", "AI_TRAP_DETECTED"},
     "TAILORING":                  {"RESUME_VERIFIED", "FAILED"},
     "RESUME_VERIFIED":            {"PACKAGING"},
