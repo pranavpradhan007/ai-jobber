@@ -222,27 +222,31 @@ def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: di
     _fill_field(page, "input[aria-label*='City'], input[id*='city']",
                 candidate.get("city", ""), delay)
 
-    # LinkedIn Profile URL — required on "Additional Questions" pages
+    # LinkedIn Profile URL — use get_by_label (robust, handles aria-labelledby etc.)
+    _li_url = answers.get("linkedin_url", "https://www.linkedin.com/in/pranav-pradhan-150072236/")
+    _fill_by_label(page, "LinkedIn Profile", _li_url)
+    # CSS fallback for alternative attribute patterns
     _fill_if_empty(page,
-                   "input[aria-label='LinkedIn Profile'], "
-                   "input[aria-label*='LinkedIn profile'], "
-                   "input[aria-label*='LinkedIn URL'], "
                    "input[placeholder*='linkedin.com/in'], "
+                   "input[placeholder*='linkedin.com'], "
                    "input[id*='linkedin']:not([id*='button'])",
-                   candidate.get("linkedin_url", answers.get("linkedin_url",
-                       "https://www.linkedin.com/in/pranavpradhan")), delay)
+                   _li_url, delay)
 
-    # Current job title / position field (separate from LinkedIn profile URL)
+    # Current job title / position
+    _fill_by_label(page, "Position", candidate.get("current_title",
+                   answers.get("job_title", "Machine Learning Engineer")))
     _fill_if_empty(page,
                    "input[aria-label*='Position'], input[id*='position'], "
                    "input[aria-label*='Job title'], input[id*='title']:not([id*='page'])",
-                   candidate.get("current_title", answers.get("current_title",
-                       answers.get("job_title", "Machine Learning Engineer"))), delay)
+                   candidate.get("current_title", answers.get("job_title",
+                       "Machine Learning Engineer")), delay)
 
     # Resume upload — only if upload button is visible
     _upload_resume(page, resume_pdf_path)
 
-    # Yes/No radio groups — answer "Yes" to authorized to work, "No" to sponsorship
+    # Yes/No radio groups — JS-based (handles any container structure)
+    _fill_radio_groups_js(page)
+    # CSS fieldset fallback
     _fill_radio_groups(page, answers)
 
     # Select dropdowns
@@ -251,8 +255,101 @@ def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: di
     # Free text questions (textareas)
     _fill_text_questions(page, answers)
 
+    # Salary / number inputs — try label-based first, then CSS
+    _salary = str(answers.get("salary_expectation", "110000"))
+    for _lbl in ("salary", "Desired salary", "Starting salary", "Expected salary",
+                 "Compensation", "Annual salary"):
+        _fill_by_label(page, _lbl, _salary)
+
     # Salary / number inputs that aren't textareas
     _fill_inline_number_inputs(page, answers)
+
+
+def _fill_by_label(page, label_text: str, value: str):
+    """Fill a field by matching its visible label text via Playwright's get_by_label.
+    Handles aria-label, aria-labelledby, and label[for=id] automatically."""
+    if not value:
+        return
+    try:
+        el = page.get_by_label(label_text, exact=False).first
+        if el.count() > 0 and el.is_visible():
+            cur = ""
+            try:
+                cur = el.input_value() or ""
+            except Exception:
+                pass
+            if not cur.strip():
+                human_fill(page, el, value, long_text=False)
+                logger.debug("fill_by_label: filled %r", label_text)
+    except Exception as exc:
+        logger.debug("fill_by_label label=%r error: %s", label_text, exc)
+
+
+def _fill_radio_groups_js(page):
+    """JS-based radio fill: finds all visible unselected yes/no groups regardless of HTML structure."""
+    _YES_KEYS = [
+        "authorized", "legally", "eligible", "right to work",
+        "built", "maintained", "production", "deployed", "trained",
+        "machine learning", "deep learning", "neural", "nlp", "llm",
+        "python", "tensorflow", "pytorch", "experience with",
+        "agree", "confirm", "acknowledge", "background check",
+        "drug test", "on-site", "hybrid", "remote", "18 years", "18+ years",
+    ]
+    _NO_KEYS = ["sponsor", "visa sponsorship", "require sponsorship", "need sponsorship"]
+    try:
+        groups = page.evaluate("""
+            () => {
+                const inputs = Array.from(document.querySelectorAll('input[type="radio"]'));
+                const map = {};
+                inputs.forEach(inp => {
+                    if (!inp.offsetParent) return;
+                    const name = inp.name || inp.id || '';
+                    if (!name) return;
+                    if (!map[name]) {
+                        let q = '';
+                        let el = inp;
+                        for (let i = 0; i < 10 && el; i++, el = el.parentElement) {
+                            const lg = el.querySelector('legend');
+                            if (lg && lg.textContent.trim()) { q = lg.textContent.trim(); break; }
+                            const sp = el.querySelector('[class*="label"]:not(input):not(label[for])');
+                            if (sp && sp.textContent.trim() && sp.textContent.trim().length > 5) {
+                                q = sp.textContent.trim(); break;
+                            }
+                        }
+                        map[name] = { name, question: q.toLowerCase(), opts: [] };
+                    }
+                    map[name].opts.push({ value: inp.value, checked: inp.checked });
+                });
+                return Object.values(map);
+            }
+        """)
+        for grp in (groups or []):
+            name = grp.get("name", "")
+            question = grp.get("question", "")
+            opts = grp.get("opts", [])
+            if not name or not opts:
+                continue
+            if any(o.get("checked") for o in opts):
+                continue  # already answered
+            if any(k in question for k in _NO_KEYS):
+                target = "no"
+            elif any(k in question for k in _YES_KEYS):
+                target = "yes"
+            else:
+                continue
+            for opt in opts:
+                if opt.get("value", "").lower() == target:
+                    try:
+                        radio = page.locator(
+                            f"input[type='radio'][name='{name}'][value='{opt['value']}']"
+                        ).first
+                        if radio.count() > 0 and radio.is_visible() and not radio.is_checked():
+                            radio.click()
+                    except Exception:
+                        pass
+                    break
+    except Exception as exc:
+        logger.debug("fill_radio_groups_js error: %s", exc)
 
 
 def _fill_inline_number_inputs(page, answers: dict):
