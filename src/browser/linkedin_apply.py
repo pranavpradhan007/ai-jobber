@@ -71,6 +71,7 @@ def linkedin_easy_apply(
     folder_path: str,
     answers: dict | None = None,
     fill_delay: float = 0.15,
+    pause_before_submit: bool = False,
 ) -> str:
     """
     Attempt LinkedIn Easy Apply for the given job URL.
@@ -81,6 +82,7 @@ def linkedin_easy_apply(
     Returns the receipt URL or "submitted" if no receipt URL available.
     Raises CaptchaDetected or MFARequired on blocks.
     """
+    import time as _time
     answers = answers or {}
 
     # Navigate to job page
@@ -89,8 +91,24 @@ def linkedin_easy_apply(
     _check_auth_wall(page)
     _screenshot(page, folder_path, "li_01_job_page.png")
 
-    # Click Easy Apply
+    # Click Easy Apply — if not found on direct URL, try search sidebar URL
+    # (LinkedIn doesn't render Easy Apply on direct /jobs/view/ pages after SPA changes)
     clicked = _click_any(page, _APPLY_BUTTON_SELECTORS, timeout=5000)
+    if not clicked:
+        import re as _re
+        m = _re.search(r"/jobs/view/(\d+)", job_url)
+        if m:
+            job_id_str = m.group(1)
+            sidebar_url = (
+                f"https://www.linkedin.com/jobs/search/"
+                f"?currentJobId={job_id_str}&f_AL=true&f_JT=F"
+            )
+            logger.info("app_id=%d Easy Apply not found on direct URL, trying sidebar URL", app_id)
+            page.goto(sidebar_url, timeout=25_000, wait_until="domcontentloaded")
+            reading_pause()
+            _check_auth_wall(page)
+            _screenshot(page, folder_path, "li_01b_sidebar.png")
+            clicked = _click_any(page, _APPLY_BUTTON_SELECTORS, timeout=8000)
     if not clicked:
         raise RuntimeError(f"LinkedIn Easy Apply button not found on {job_url}")
     _human_pause(1.5, 2.5)
@@ -108,11 +126,34 @@ def linkedin_easy_apply(
         _fill_li_modal_page(page, candidate, resume_pdf_path, answers, fill_delay)
 
         # Determine next action
-        if _click_any(page, _SUBMIT_SELECTORS, timeout=3000):
-            _human_pause(2.0, 4.0)
-            _screenshot(page, folder_path, "li_submitted.png")
-            logger.info("app_id=%d linkedin easy apply submitted", app_id)
-            return _detect_confirmation(page) or "submitted"
+        submit_found = any(
+            page.locator(sel).count() > 0 for sel in _SUBMIT_SELECTORS
+        )
+        if submit_found:
+            if pause_before_submit:
+                _screenshot(page, folder_path, "pre_submit_review.png")
+                logger.info("app_id=%d LinkedIn REVIEW MODE — form filled, paused before Submit. "
+                            "Review in Chrome and click Submit manually.", app_id)
+                print(f"\n{'='*60}")
+                print(f"  REVIEW MODE — APP-{app_id} LinkedIn form is ready in Chrome")
+                print(f"  Review the form, then manually click Submit in Chrome.")
+                print(f"{'='*60}\n")
+                try:
+                    while True:
+                        _time.sleep(10)
+                        try:
+                            page.evaluate("() => document.title")
+                        except Exception:
+                            logger.info("app_id=%d Chrome closed — review mode ended", app_id)
+                            break
+                except KeyboardInterrupt:
+                    logger.info("app_id=%d review mode interrupted", app_id)
+                return "review_mode_ended"
+            if _click_any(page, _SUBMIT_SELECTORS, timeout=3000):
+                _human_pause(2.0, 4.0)
+                _screenshot(page, folder_path, "li_submitted.png")
+                logger.info("app_id=%d linkedin easy apply submitted", app_id)
+                return _detect_confirmation(page) or "submitted"
 
         if _click_any(page, _REVIEW_SELECTORS, timeout=2000):
             continue

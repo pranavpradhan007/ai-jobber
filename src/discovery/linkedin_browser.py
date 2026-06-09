@@ -126,18 +126,22 @@ def discover_jobs(
 
 def _connect_browser(pw, headless: bool):
     """Try CDP first (saved session), fall back to fresh headless Chromium."""
-    try:
-        browser = pw.chromium.connect_over_cdp(_CDP_URL)
-        contexts = browser.contexts
-        if contexts and contexts[0].pages:
-            page = contexts[0].pages[0]
-        else:
-            ctx = browser.new_context() if not contexts else contexts[0]
-            page = ctx.new_page()
-        logger.info("linkedin: connected via CDP (saved session)")
-        return browser, page
-    except Exception as exc:
-        logger.info("linkedin: CDP unavailable (%s), launching headless Chromium", exc)
+    for attempt in range(3):
+        try:
+            browser = pw.chromium.connect_over_cdp(_CDP_URL, timeout=30000)
+            contexts = browser.contexts
+            if contexts and contexts[0].pages:
+                page = contexts[0].pages[0]
+            else:
+                ctx = browser.new_context() if not contexts else contexts[0]
+                page = ctx.new_page()
+            logger.info("linkedin: connected via CDP (saved session, attempt %d)", attempt + 1)
+            return browser, page
+        except Exception as exc:
+            logger.info("linkedin: CDP connect attempt %d failed (%s)", attempt + 1, exc)
+            import time as _t; _t.sleep(2)
+
+    logger.info("linkedin: CDP unavailable after 3 attempts, launching headless Chromium")
 
     browser = pw.chromium.launch(
         headless=headless,
@@ -237,12 +241,13 @@ def _extract_job_cards(page, seen_ids: set[str]) -> list[LinkedInJob]:
     """Parse job cards from the search results sidebar."""
     jobs: list[LinkedInJob] = []
 
-    # LinkedIn job card selectors (may vary; try multiple)
+    # LinkedIn job card selectors (try in order; DOM changes over time)
     card_selectors = [
-        "li.jobs-search__results-list > div",  # authenticated feed
+        "[data-occludable-job-id]",            # 2025+ authenticated feed (primary)
+        "div[data-job-id]",                    # older authenticated feed
+        "li.jobs-search__results-list > div",  # legacy authenticated feed
         "li.job-search-card",                  # public feed
         "ul.jobs-search__results-list li",
-        "div[data-job-id]",
     ]
 
     cards = None
@@ -262,7 +267,9 @@ def _extract_job_cards(page, seen_ids: set[str]) -> list[LinkedInJob]:
             card = cards.nth(i)
 
             # Extract job ID from data attribute or URL
-            job_id = card.get_attribute("data-job-id") or card.get_attribute("data-entity-urn") or ""
+            job_id = (card.get_attribute("data-occludable-job-id")
+                      or card.get_attribute("data-job-id")
+                      or card.get_attribute("data-entity-urn") or "")
             if not job_id:
                 link = card.locator("a[href*='/jobs/view/']").first
                 if link.count() > 0:
@@ -278,15 +285,19 @@ def _extract_job_cards(page, seen_ids: set[str]) -> list[LinkedInJob]:
                 continue
 
             title = _card_text(card, [
-                "a[aria-label]", ".job-card-list__title", ".job-search-card__title",
+                ".job-card-list__title--link", ".job-card-list__title",  # 2025+
+                "a[aria-label]", ".job-search-card__title",
                 "h3.base-search-card__title", "span[aria-hidden='true']",
             ])
             company = _card_text(card, [
+                ".job-card-container__company-name",                     # 2025+
+                ".artdeco-entity-lockup__subtitle span",                 # 2025+
                 ".job-card-container__primary-description",
                 ".job-search-card__subtitle", "h4.base-search-card__subtitle",
                 "a[data-tracking-control-name*='company']",
             ])
             location = _card_text(card, [
+                ".job-card-container__metadata-item--workplace-type",    # 2025+
                 ".job-card-container__metadata-item",
                 ".job-search-card__location", "span.job-search-card__location",
                 ".base-search-card__metadata span",

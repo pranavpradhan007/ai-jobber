@@ -346,7 +346,8 @@ def auto_submit_portal(
                 logger.warning("context.new_page failed (attempt %d): %s — retrying in 3s", _np_attempt + 1, _np_exc)
                 time.sleep(3)
         try:
-            return _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay)
+            return _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay,
+                                    pause_before_submit=pause_before_submit)
         except CaptchaDetected:
             logger.warning("CAPTCHA detected for app_id=%d", app_id)
             return AutoSubmitResult(success=False, app_id=app_id, captcha_detected=True)
@@ -403,13 +404,29 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     with 'Target page, context or browser has been closed'.
 
     Strategy:
-      1. Kill all existing Chrome processes (release any profile lock).
+      0. If Chrome is already listening on cdp_port, connect directly (reuse
+         existing session with saved logins — avoids killing a logged-in browser).
+      1. Otherwise kill all existing Chrome processes (release any profile lock).
       2. Launch Chrome subprocess with --remote-debugging-port + our profile dir.
       3. Poll CDP until reachable (up to 20s).
       4. Connect via pw.chromium.connect_over_cdp (TCP — stable).
     """
     profile_dir = os.path.abspath(_BROWSER_PROFILE_DIR)
     os.makedirs(profile_dir, exist_ok=True)
+
+    # If Chrome is already running with CDP, reuse it (keeps saved logins intact)
+    if _chrome_cdp_reachable(cdp_port):
+        try:
+            browser = pw.chromium.connect_over_cdp(
+                f"http://localhost:{cdp_port}",
+                timeout=15000,
+            )
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
+            logger.info("Reusing existing Chrome CDP session on port %d", cdp_port)
+            return ctx
+        except Exception as _reuse_exc:
+            logger.info("Could not reuse existing Chrome (%s) — relaunching", _reuse_exc)
 
     # Kill everything first — ensures clean profile lock
     _release_profile_lock(profile_dir)
@@ -625,7 +642,7 @@ def _relaunch_chrome_with_cdp(chrome_dir: str, profile: str, port: int) -> None:
 # Main submission flow
 # ---------------------------------------------------------------------------
 
-def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
+def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pause_before_submit: bool = False):
     os.makedirs(folder_path, exist_ok=True)
 
     # ── Step 0: LinkedIn Easy Apply dispatch ─────────────────────────────────
@@ -633,7 +650,8 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay):
     # called recursively from the external-apply fallback path.
     if "linkedin.com/jobs/view" in url or "linkedin.com/jobs/search" in url:
         logger.info("app_id=%d detected LinkedIn job URL — using Easy Apply handler", app_id)
-        return _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay)
+        return _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay,
+                                        pause_before_submit=pause_before_submit)
 
     # ── Step 1: Navigate to listing URL ──────────────────────────────────────
     nav_url = _resolve_indeed_url(url)
@@ -3394,7 +3412,7 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
     raise RuntimeError(f"Workday: exceeded {max_steps} steps without reaching Submit")
 
 
-def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay):
+def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay, *, pause_before_submit: bool = False):
     """
     Attempt LinkedIn Easy Apply. If Easy Apply button is not found (external apply
     job), follow the external Apply link and fall through to the generic form flow.
@@ -3446,6 +3464,7 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
             folder_path=folder_path,
             answers=answers,
             fill_delay=fill_delay,
+            pause_before_submit=pause_before_submit,
         )
         ss = _screenshot(page, folder_path, "li_confirmation.png")
         return AutoSubmitResult(
