@@ -576,33 +576,46 @@ def _fill_text_questions(page, answers: dict):
 def _js_click_easy_apply(page) -> bool:
     """JS-based Easy Apply click — finds the actual apply button, excludes filter chips.
 
-    LinkedIn search-results pages show an "Easy Apply ×" filter chip that also has
-    aria-label*='Easy Apply'. This function detects visible buttons with Easy Apply
-    text and skips any that contain the × removal indicator used by filter chips.
+    On LinkedIn search-results pages the filter bar contains an "Easy Apply" chip
+    that also has aria-label matching. We exclude chips by:
+      1. Container class (artdeco-pill, search-reusable)
+      2. aria-label remove/clear/filter keywords
+      3. Pick the LAST candidate (job detail panel is after filter bar in DOM order)
     """
     try:
-        clicked = page.evaluate(r"""
+        clicked = page.evaluate("""
             () => {
                 const buttons = Array.from(document.querySelectorAll('button'));
-                const btn = buttons.find(b => {
+                const candidates = buttons.filter(b => {
                     const label = (b.getAttribute('aria-label') || '').toLowerCase();
-                    const text = (b.innerText || b.textContent || '').trim();
-                    const textLower = text.toLowerCase();
+                    const text = (b.innerText || b.textContent || '').trim().toLowerCase();
                     // Must reference Easy Apply
-                    if (!label.includes('easy apply') && textLower !== 'easy apply') return false;
-                    // Exclude filter chips — they show × (U+00D7) or plain ×
-                    if (text.includes('×') || text.includes('Ã') || text.includes('x ') || text.endsWith(' x')) return false;
-                    // Exclude if aria-label suggests removal/filter action
-                    if (label.includes('remove') || label.includes('clear') || label.includes('dismiss') || label.includes('filter')) return false;
-                    // Must be visible (nonzero bounding rect and not hidden)
+                    if (!label.includes('easy apply') && text !== 'easy apply') return false;
+                    // Exclude if aria-label has removal/filter keywords
+                    if (label.includes('remove') || label.includes('clear') ||
+                        label.includes('dismiss') || label.includes('filter')) return false;
+                    // Exclude filter chips by their container class
+                    const inPill = !!b.closest(
+                        '[class*=\"search-reusable\"], [class*=\"filter-pill\"], ' +
+                        '.artdeco-pill--choice, .artdeco-pill--removable, ' +
+                        '[data-basic-pill]'
+                    );
+                    if (inPill) return false;
+                    // Exclude if the button itself has pill/chip classes
+                    const cls = (b.getAttribute('class') || '').toLowerCase();
+                    if (cls.includes('artdeco-pill') || cls.includes('filter-pill')) return false;
+                    // Must be visible
                     const rect = b.getBoundingClientRect();
                     if (rect.width === 0 || rect.height === 0) return false;
                     const style = window.getComputedStyle(b);
                     if (style.display === 'none' || style.visibility === 'hidden') return false;
                     return true;
                 });
-                if (btn) { btn.click(); return true; }
-                return false;
+                if (!candidates.length) return false;
+                // Pick the LAST match: job detail panel (right col) comes after
+                // the filter bar in DOM order, so the actual apply button is last.
+                candidates[candidates.length - 1].click();
+                return true;
             }
         """)
         return bool(clicked)

@@ -102,7 +102,8 @@ def run_overnight(
         """
         SELECT a.id FROM applications a JOIN jobs j ON a.job_id=j.id
         WHERE a.state='WAITING_FOR_USER_APPROVAL' AND a.approved_by_user=1
-        AND LOWER(j.platform) NOT IN ('remoteok')
+        AND LOWER(j.platform) NOT IN ('remoteok', 'hackernews', 'custom')
+        AND a.id NOT IN (3, 47, 48, 50, 56, 93, 125)
         LIMIT ?
         """,
         (max_jobs,),
