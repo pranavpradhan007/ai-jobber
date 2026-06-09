@@ -75,7 +75,8 @@ print(f"\nWAITING_FOR_USER_APPROVAL apps: {len(waiting)}")
 approved_ids = []
 for r in waiting:
     already = "✓" if r["approved_by_user"] else " "
-    print(f"  [{already}] APP-{r['id']} [{r['platform']}] score={r['score']:.1f} "
+    score_str = f"{r['score']:.1f}" if r['score'] is not None else "n/a"
+    print(f"  [{already}] APP-{r['id']} [{r['platform']}] score={score_str} "
           f"— {r['company']} / {r['title'][:50]}")
 
     # Auto-approve LinkedIn Easy Apply jobs above threshold
