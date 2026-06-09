@@ -1,8 +1,8 @@
 """
-Fill-only mode: picks the best approved application, fills the form in Chrome,
-then STOPS before clicking Submit for manual review.
+Auto-submit mode: iterates all approved applications, fills and submits each one,
+then marks it as SUBMITTED in the DB.
 
-Skips LinkedIn discovery (run run_linkedin_discovery.py separately if needed).
+Skips closed/unavailable jobs and moves on to the next candidate.
 
 Usage:
   python run_fill_only.py
@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 import pathlib
+import datetime
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -37,9 +38,9 @@ pathlib.Path("applications").mkdir(exist_ok=True)
 from src.db.connection import get_connection
 conn = get_connection("job_agent.db")
 
-# ── Pick best approved app to fill ───────────────────────────────────────────
+# ── Pick all approved apps to fill ───────────────────────────────────────────
 print("\n" + "="*60)
-print("  Selecting best approved app to fill")
+print("  Auto-submit: selecting all approved apps")
 print("="*60)
 
 candidates = conn.execute("""
@@ -48,7 +49,7 @@ candidates = conn.execute("""
     FROM applications a JOIN jobs j ON a.job_id=j.id
     WHERE a.state IN ('WAITING_FOR_USER_APPROVAL','SKIPPED')
       AND a.approved_by_user = 1
-      AND a.id NOT IN (3)
+      AND a.id NOT IN (3, 47, 48, 50, 56, 125)
       AND LOWER(j.platform) NOT IN ('remoteok','hackernews','custom')
       AND j.url NOT LIKE '%remoteok.com%'
       AND j.url NOT LIKE '%nomi.ai%'
@@ -59,12 +60,12 @@ candidates = conn.execute("""
                 OR j.url LIKE '%lever%' OR j.url LIKE '%ashby%' THEN 1
            ELSE 2 END,
       a.score DESC
-    LIMIT 15
+    LIMIT 20
 """).fetchall()
 
 if not candidates:
     print("  No approved apps found.")
-    sys.exit(1)
+    sys.exit(0)
 
 for r in candidates:
     print(f"  Candidate: APP-{r['id']} [{r['platform']}] score={r['score']} — {r['company']} / {r['title']}")
@@ -72,9 +73,20 @@ for r in candidates:
 from src.browser.auto_submit import auto_submit_portal, build_candidate_answers
 from src.browser.screener_engine import precompute_screener_answers
 
-# ── Fill form — PAUSE before Submit ──────────────────────────────────────────
-app_id = None
-for attempt, _cand in enumerate(candidates):
+submitted_ids = []
+skipped_ids = []
+error_ids = []
+
+_SKIP_SIGNALS = (
+    "closed", "no longer", "no longer accepting", "not found",
+    "could not find submit", "form may have multiple", "no apply button",
+    "404", "page not found",
+    "no continue/submit button", "smartapply: no",
+    "could not complete after", "easy apply button not found",
+    "job is closed", "not accepting",
+)
+
+for _cand in candidates:
     _app_id  = _cand["id"]
     _folder  = (_cand["folder_path"] or "").replace("/", os.sep)
     _company = _cand["company"] or "Unknown"
@@ -87,9 +99,8 @@ for attempt, _cand in enumerate(candidates):
         _folder = create_application_folder(conn, _app_id).replace("/", os.sep)
 
     print(f"\n{'='*60}")
-    print(f"  Attempt {attempt+1}: APP-{_app_id} — {_company} / {_title}")
+    print(f"  APP-{_app_id} — {_company} / {_title}")
     print(f"  Platform: {_platform}  |  URL: {_url[:80]}")
-    print(f"  Pre-computing screener answers...")
     print(f"{'='*60}")
 
     _base = build_candidate_answers(_app_id, job_title=_title, company=_company,
@@ -102,52 +113,50 @@ for attempt, _cand in enumerate(candidates):
     _answers = build_candidate_answers(_app_id, job_title=_title, company=_company,
                                        resume_path=_cand["resume_path"] or "",
                                        screener_answers=_sc.answers)
-    print(f"  {len(_answers)} answers ready (llm_called={_sc.llm_called})")
-
-    print(f"\n  Launching Chrome and filling form...")
-    print(f"  Chrome will STOP before Submit — review and submit manually.")
+    print(f"  {len(_answers)} answers ready")
 
     _result = auto_submit_portal(
         _app_id, _answers,
         url=_url,
         folder_path=_folder,
-        pause_before_submit=True,
+        pause_before_submit=False,
     )
 
     _err = (_result.error or "").lower()
-    _skip_signals = (
-        "closed", "no longer", "no longer accepting", "not found",
-        "could not find submit", "form may have multiple", "no apply button",
-        "404", "page not found",
-        "no continue/submit button", "smartapply: no",
-    )
+
     if _result.mfa_detected:
-        print(f"  Skipping (login/MFA required — not logged in to this portal)")
+        print(f"  Skipping (login/MFA required)")
+        skipped_ids.append(_app_id)
         continue
-    if _result.error and any(s in _err for s in _skip_signals):
-        print(f"  Skipping (job unavailable or no form): {_result.error[:100]}")
+
+    if _result.error and any(s in _err for s in _SKIP_SIGNALS):
+        print(f"  Skipping (unavailable): {_result.error[:100]}")
+        skipped_ids.append(_app_id)
         continue
 
     if _result.error:
         print(f"  Error: {_result.error[:100]}")
-        # non-skip errors: still break and report
-    app_id = _app_id
-    break
+        error_ids.append(_app_id)
+        continue
 
-if app_id is None:
-    print("\n  All candidates failed or were unavailable.")
-    conn.close()
-    sys.exit(1)
+    if _result.success:
+        # Mark as SUBMITTED in DB
+        conn.execute(
+            "UPDATE applications SET state='SUBMITTED', submitted_at=? WHERE id=?",
+            (datetime.datetime.utcnow().isoformat(), _app_id),
+        )
+        conn.commit()
+        submitted_ids.append(_app_id)
+        print(f"  SUBMITTED APP-{_app_id} — {_company} / {_title}")
+    else:
+        print(f"  Not submitted (result.success=False, error={_result.error})")
+        error_ids.append(_app_id)
 
 print("\n" + "="*60)
-print(f"  Review mode ended for APP-{app_id}")
-print(f"  - If you manually submitted: run the command below to record it")
-print(f"  - If you abandoned: no action needed")
-print()
-print("  To mark as SUBMITTED manually, run:")
-print(f"  python -c \"import sqlite3,datetime; c=sqlite3.connect('job_agent.db'); "
-      f"c.execute(\\\"UPDATE applications SET state='SUBMITTED',submitted_at=? WHERE id={app_id}\\\", "
-      f"(datetime.datetime.utcnow().isoformat(),)); c.commit(); print('done')\"")
+print(f"  Run complete")
+print(f"  Submitted: {len(submitted_ids)} — {submitted_ids}")
+print(f"  Skipped:   {len(skipped_ids)} — {skipped_ids}")
+print(f"  Errors:    {len(error_ids)} — {error_ids}")
 print("="*60)
 
 conn.close()

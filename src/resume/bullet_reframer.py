@@ -124,6 +124,22 @@ def reframe_bullets_in_docx(
         changed += 1
         logger.debug("bullet[%d] reframed:\n  OLD: %s\n  NEW: %s", idx, old_text[:80], new_text[:80])
 
+    # Sanitize pass: fix em dashes and over-length bullets regardless of reframe_mask.
+    # These are hard rule violations that must be eliminated even in keyword-rich bullets
+    # that the rephraser skipped.
+    _MAX = 300
+    for idx, para in bullet_paras:
+        raw = _para_text(para)
+        sanitized = _EM_DASHES.sub("-", raw)
+        if len(sanitized) > _MAX:
+            # Trim at a word boundary, append "."
+            trimmed = sanitized[:_MAX].rsplit(" ", 1)[0].rstrip(".,;:")
+            sanitized = trimmed + "."
+        if sanitized != raw:
+            _write_text_to_para(para, sanitized)
+            changed += 1
+            logger.debug("bullet[%d] sanitized:\n  OLD: %s\n  NEW: %s", idx, raw[:80], sanitized[:80])
+
     doc.save(docx_path)
     logger.info("reframed %d/%d bullets in %s", changed, len(originals), docx_path)
     return changed
