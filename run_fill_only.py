@@ -49,7 +49,7 @@ candidates = conn.execute("""
     FROM applications a JOIN jobs j ON a.job_id=j.id
     WHERE a.state IN ('WAITING_FOR_USER_APPROVAL','SKIPPED')
       AND a.approved_by_user = 1
-      AND a.id NOT IN (3, 47, 48, 50, 56, 93, 125, 130, 135)
+      AND a.id NOT IN (3, 47, 48, 50, 56, 93, 125)
       AND LOWER(j.platform) NOT IN ('remoteok','hackernews','custom')
       AND j.url NOT LIKE '%remoteok.com%'
       AND j.url NOT LIKE '%nomi.ai%'
@@ -84,6 +84,7 @@ _SKIP_SIGNALS = (
     "no continue/submit button", "smartapply: no",
     "could not complete after", "easy apply button not found",
     "job is closed", "not accepting",
+    "modal did not open",  # LinkedIn job uses external apply, not Easy Apply
 )
 
 for _cand in candidates:
@@ -132,6 +133,13 @@ for _cand in candidates:
     if _result.error and any(s in _err for s in _SKIP_SIGNALS):
         print(f"  Skipping (unavailable): {_result.error[:100]}")
         skipped_ids.append(_app_id)
+        # Permanently mark as SKIPPED for signals that won't ever resolve
+        _PERMANENT_SKIP = ("modal did not open", "no longer accepting",
+                           "easy apply button not found", "job is closed")
+        if any(p in _err for p in _PERMANENT_SKIP):
+            conn.execute("UPDATE applications SET state='SKIPPED' WHERE id=?", (_app_id,))
+            conn.commit()
+            print(f"  Marked APP-{_app_id} as SKIPPED in DB (permanent)")
         continue
 
     if _result.error:
