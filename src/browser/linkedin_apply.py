@@ -39,7 +39,9 @@ logger = logging.getLogger(__name__)
 _APPLY_BUTTON_SELECTORS = [
     "button.jobs-apply-button[aria-label*='Easy Apply']",
     "button[aria-label*='Easy Apply']",
-    "button:has-text('Easy Apply')",
+    # NOTE: button:has-text('Easy Apply') intentionally omitted — it matches
+    # LinkedIn's filter badge chip ("Easy Apply ×") which removes the search
+    # filter when clicked instead of opening the application modal.
 ]
 
 _CONTINUE_SELECTORS = [
