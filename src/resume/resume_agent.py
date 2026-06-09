@@ -78,6 +78,14 @@ def run_resume_agent(
         # Copy ground truth — NEVER modify source
         shutil.copy2(source_docx, docx_path)
 
+        # Sanitize base bullets — remove em dashes and enforce 300-char limit
+        # regardless of strategy so these violations don't persist in inject-only mode
+        try:
+            from src.resume.bullet_reframer import _sanitize_bullets
+            _sanitize_bullets(docx_path)
+        except Exception:
+            pass
+
         # Apply reframing based on strategy
         kw_for_this = _keywords_for_strategy(hot_keywords, strategy)
         did_reframe = _apply_reframing(

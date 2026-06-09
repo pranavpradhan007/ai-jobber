@@ -145,6 +145,34 @@ def reframe_bullets_in_docx(
     return changed
 
 
+def _sanitize_bullets(docx_path: str) -> int:
+    """
+    Standalone sanitize pass: fix em dashes and enforce 300-char limit on all
+    List Paragraph bullets in `docx_path`, in-place.  Returns number changed.
+    Called before each reframing attempt so inject-only also gets clean bullets.
+    """
+    try:
+        from docx import Document
+    except ImportError:
+        return 0
+    _MAX = 300
+    doc = Document(docx_path)
+    bullet_paras = _collect_bullets(doc)
+    changed = 0
+    for _idx, para in bullet_paras:
+        raw = _para_text(para)
+        sanitized = _EM_DASHES.sub("-", raw)
+        if len(sanitized) > _MAX:
+            trimmed = sanitized[:_MAX].rsplit(" ", 1)[0].rstrip(".,;:")
+            sanitized = trimmed + "."
+        if sanitized != raw:
+            _write_text_to_para(para, sanitized)
+            changed += 1
+    if changed:
+        doc.save(docx_path)
+    return changed
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _collect_bullets(doc) -> list[tuple[int, object]]:
