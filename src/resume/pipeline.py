@@ -222,7 +222,7 @@ def run_tailoring(
     )
 
     fake_bullets: list[BankItem] = [
-        BankItem(item_type="keyword", value=kw, source="hot_keywords", usage_level="resume")
+        BankItem(id=0, item_type="keyword", content=kw, source_ref="hot_keywords", usage_level="resume", notes=None)
         for kw in (final_kw or hot_keywords[:3])
     ]
     diff_path = write_resume_diff(

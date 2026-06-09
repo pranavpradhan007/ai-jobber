@@ -70,9 +70,12 @@ def run_resume_agent(
     """
     attempts: list[ResumeAttempt] = []
     best: Optional[ResumeAttempt] = None
+    # If reframing consistently overflows to 2 pages, skip straight to inject-only
+    # rather than wasting 10 attempts learning the same lesson every time.
+    force_inject_only = False
 
     for attempt in range(1, max_attempts + 1):
-        strategy = _pick_strategy(attempt, max_attempts)
+        strategy = "inject-only" if force_inject_only else _pick_strategy(attempt, max_attempts)
         logger.info("resume_agent attempt=%d/%d strategy=%s", attempt, max_attempts, strategy)
 
         # Copy ground truth — NEVER modify source
@@ -153,6 +156,11 @@ def run_resume_agent(
             # (but stop early if we're in the final strategy tier and already passing)
             if strategy == "inject-only" and best is not None:
                 break
+        elif not passed_rules and did_reframe and checker.page_count > 1:
+            # Reframing pushed to 2+ pages — it won't improve on retry; skip to inject-only
+            if not force_inject_only:
+                logger.info("resume_agent: reframing caused pages=%d — switching to inject-only for remaining attempts", checker.page_count)
+                force_inject_only = True
 
     result = ResumeAgentResult(
         success=best is not None,
