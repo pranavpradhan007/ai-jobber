@@ -502,46 +502,75 @@ def _find_system_chrome() -> str | None:
     return None
 
 
-def _release_profile_lock(profile_dir: str) -> None:
-    """Kill ALL Chrome/Chromium processes and verify they are gone before returning.
+def _kill_agent_chrome_pids() -> list[int]:
+    """Kill only Chrome processes launched by the job agent.
 
-    Chrome helper processes (GPU, renderer, crashpad) don't carry --user-data-dir
-    in their command line, so a profile-specific kill misses them. Any survivor
-    causes the next launch to print 'Opening in existing browser session' and exit,
-    leaving Playwright with a dead context. We kill all chrome.exe up to 5 times
-    and verify via psutil (or tasklist fallback) that no chrome processes remain.
+    Identifies agent Chrome by exe path containing 'ms-playwright' OR
+    cmdline containing '--remote-debugging-port'. Never touches the user's
+    personal Google Chrome.
+    Returns list of PIDs killed.
+    """
+    killed = []
+    try:
+        import psutil
+        for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
+            try:
+                name = (proc.info["name"] or "").lower()
+                if "chrome" not in name:
+                    continue
+                exe = (proc.info["exe"] or "").replace("\\", "/").lower()
+                cmdline = " ".join(proc.info["cmdline"] or []).lower()
+                is_agent = (
+                    "ms-playwright" in exe
+                    or "--remote-debugging-port" in cmdline
+                )
+                if is_agent:
+                    proc.kill()
+                    killed.append(proc.info["pid"])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except ImportError:
+        # psutil unavailable — fall back to WMIC to get cmdlines, kill by PID
+        import subprocess
+        try:
+            out = subprocess.run(
+                ["wmic", "process", "where", "name='chrome.exe'",
+                 "get", "ProcessId,CommandLine", "/FORMAT:CSV"],
+                capture_output=True, text=True, timeout=10,
+            ).stdout
+            for line in out.splitlines():
+                if "--remote-debugging-port" in line or "ms-playwright" in line.lower():
+                    parts = line.strip().split(",")
+                    for p in parts:
+                        if p.strip().isdigit():
+                            pid = int(p.strip())
+                            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                                           capture_output=True)
+                            killed.append(pid)
+        except Exception:
+            pass
+    return killed
+
+
+def _release_profile_lock(profile_dir: str) -> None:
+    """Kill only the job-agent Chrome instance (Playwright Chromium / CDP port).
+
+    Never kills the user's personal Google Chrome session.
     """
     import subprocess
 
-    # Graceful close first so Chrome can flush its profile to disk cleanly
-    try:
-        subprocess.run(["taskkill", "/IM", "chrome.exe"],
-                       capture_output=True, timeout=5)
-    except Exception:
-        pass
-    time.sleep(1)
-
-    # Force-kill loop — retry up to 5 times until no chrome.exe remains
-    for _attempt in range(5):
-        try:
-            subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"],
-                           capture_output=True, timeout=10)
-        except Exception:
-            pass
+    killed = _kill_agent_chrome_pids()
+    if killed:
+        logger.info("_release_profile_lock: killed agent Chrome PIDs %s", killed)
         time.sleep(2)
-        # Check if any chrome.exe processes survive
-        try:
-            check = subprocess.run(
-                ["tasklist", "/FI", "IMAGENAME eq chrome.exe", "/NH", "/FO", "CSV"],
-                capture_output=True, text=True, timeout=8,
-            )
-            still_running = "chrome.exe" in check.stdout.lower()
-        except Exception:
-            still_running = False  # assume gone if check fails
-        if not still_running:
-            logger.info("_release_profile_lock: all chrome processes gone (attempt %d)", _attempt + 1)
-            break
-        logger.warning("_release_profile_lock: chrome still running after attempt %d — retrying", _attempt + 1)
+        # Second pass — child helper processes (GPU, renderer) may outlive parent
+        still = _kill_agent_chrome_pids()
+        if still:
+            time.sleep(1)
+            _kill_agent_chrome_pids()
+        logger.info("_release_profile_lock: agent Chrome processes gone")
+    else:
+        logger.info("_release_profile_lock: no agent Chrome processes found")
 
     # Remove Chrome's SingletonLock file unconditionally
     for lock_rel in ["SingletonLock", "Default/LOCK"]:
@@ -599,11 +628,10 @@ def _chrome_cdp_reachable(port: int) -> bool:
 
 
 def _relaunch_chrome_with_cdp(chrome_dir: str, profile: str, port: int) -> None:
-    """Gracefully kill Chrome then relaunch with the CDP debug port open."""
-    # Graceful close first; /F force-kill only if needed
-    subprocess.run(["taskkill", "/IM", "chrome.exe"], capture_output=True)
+    """Kill only the agent Chrome instance then relaunch with the CDP debug port open."""
+    _kill_agent_chrome_pids()
     time.sleep(1.5)
-    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"], capture_output=True)
+    _kill_agent_chrome_pids()
     time.sleep(1.5)
 
     chrome_exe = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
