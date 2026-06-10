@@ -60,6 +60,51 @@ class CycleStats:
     errors: list[str] = field(default_factory=list)
 
 
+try:
+    from anthropic import RateLimitError as _AnthropicRateLimit
+    _RateLimitError = _AnthropicRateLimit
+except ImportError:
+    _RateLimitError = type("_NeverRaised", (Exception,), {})
+
+
+def _handle_rate_limit(exc, recipient: str, gmail_client) -> None:
+    """Email user, then sleep until daily reset (midnight UTC). Auto-resumes — no human needed."""
+    import math
+    now = datetime.now(timezone.utc)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    from datetime import timedelta
+    next_reset = midnight + timedelta(days=1)
+    wait_sec = max(60, int((next_reset - now).total_seconds()))
+    logger.warning("Rate limit hit — sleeping %d min until %s UTC", wait_sec // 60, next_reset.strftime("%H:%M"))
+    if recipient and gmail_client:
+        try:
+            gmail_client.send_email(
+                to=recipient,
+                subject="[ai-jobber] Rate limit reached — auto-resuming at midnight",
+                body=f"Daily API limit hit at {now.strftime('%H:%M UTC')}.\n"
+                     f"Loop paused. Will auto-resume at {next_reset.strftime('%Y-%m-%d %H:%M UTC')}.\n"
+                     f"No action needed.\n\nError: {exc}",
+            )
+        except Exception:
+            pass
+    time.sleep(wait_sec)
+
+
+def _alert_unrecoverable(exc, recipient: str, gmail_client) -> None:
+    """Email user for unrecoverable errors (5 consecutive failures)."""
+    logger.error("UNRECOVERABLE: %s", exc)
+    if recipient and gmail_client:
+        try:
+            gmail_client.send_email(
+                to=recipient,
+                subject="[ai-jobber] Loop stopped — unrecoverable error",
+                body=f"The job agent loop stopped after 5 consecutive errors.\n\n"
+                     f"Last error: {exc}\n\nRestart with: python run_continuous_loop.py",
+            )
+        except Exception:
+            pass
+
+
 def run_continuous(
     conn: sqlite3.Connection,
     *,
@@ -90,6 +135,8 @@ def run_continuous(
     cycle = 0
     last_discovery_at: Optional[float] = None   # epoch seconds
 
+    _consecutive_errors = 0
+
     while not _STOP:
         cycle += 1
         stats = CycleStats(cycle=cycle)
@@ -98,50 +145,58 @@ def run_continuous(
         logger.info("CYCLE %d  %s", cycle, now_str)
         logger.info("─" * 56)
 
-        # ── Discovery (every discover_interval hours) ────────────────────────
-        now_epoch = time.time()
-        run_discovery = (
-            not skip_discover
-            and (
-                last_discovery_at is None
-                or (now_epoch - last_discovery_at) >= discover_interval * 60
+        try:
+            # ── Discovery ────────────────────────────────────────────────────
+            now_epoch = time.time()
+            run_discovery = (
+                not skip_discover
+                and (last_discovery_at is None
+                     or (now_epoch - last_discovery_at) >= discover_interval * 60)
             )
-        )
+            if run_discovery:
+                stats.discovered += _run_discovery(conn, cycle, gmail_client)
+                last_discovery_at = time.time()
+            else:
+                next_in = max(0, discover_interval - int((now_epoch - (last_discovery_at or 0)) / 60))
+                logger.info("DISCOVER: skipping (next in ~%d min)", next_in)
 
-        if run_discovery:
-            stats.discovered += _run_discovery(conn, cycle, gmail_client)
-            last_discovery_at = time.time()
-        else:
-            mins_since = int((now_epoch - (last_discovery_at or 0)) / 60)
-            next_in    = max(0, discover_interval - mins_since)
-            logger.info("DISCOVER: skipping (next sweep in ~%d min)", next_in)
+            # ── Pipeline ─────────────────────────────────────────────────────
+            _run_pipeline(conn, stats, scorer_fn, rephraser_fn, extractor_fn,
+                          gmail_client, candidate_name, max_jobs_per_cycle)
 
-        # ── Pipeline ─────────────────────────────────────────────────────────
-        _run_pipeline(conn, stats, scorer_fn, rephraser_fn, extractor_fn,
-                      gmail_client, candidate_name, max_jobs_per_cycle)
+            # ── Approvals ────────────────────────────────────────────────────
+            if not skip_approvals:
+                stats.approvals = _run_approvals(conn, gmail_client)
 
-        # ── Approvals ────────────────────────────────────────────────────────
-        if not skip_approvals:
-            stats.approvals = _run_approvals(conn, gmail_client)
+            # ── Digest ───────────────────────────────────────────────────────
+            if stats.gated > 0 and recipient:
+                _send_digest(conn, recipient, gmail_client)
 
-        # ── Digest ───────────────────────────────────────────────────────────
-        if stats.gated > 0 and recipient:
-            _send_digest(conn, recipient, gmail_client)
+            _consecutive_errors = 0
 
-        # ── Summary ──────────────────────────────────────────────────────────
+        except _RateLimitError as exc:
+            _handle_rate_limit(exc, recipient, gmail_client)
+            continue  # _handle_rate_limit sleeps until reset then returns
+
+        except Exception as exc:
+            _consecutive_errors += 1
+            logger.error("Cycle %d error (#%d): %s", cycle, _consecutive_errors, exc, exc_info=True)
+            stats.errors.append(str(exc))
+            if _consecutive_errors >= 5:
+                _alert_unrecoverable(exc, recipient, gmail_client)
+                break
+            _sleep(60)
+            continue
+
         logger.info(
-            "DONE  discovered=%d scored=%d skipped=%d tailored=%d "
-            "submitted=%d gated=%d approvals=%d errors=%d",
-            stats.discovered, stats.scored, stats.skipped, stats.tailored,
-            stats.submitted, stats.gated, stats.approvals, len(stats.errors),
+            "DONE  disc=%d scored=%d sub=%d gated=%d approvals=%d err=%d",
+            stats.discovered, stats.scored, stats.submitted,
+            stats.gated, stats.approvals, len(stats.errors),
         )
-        for e in stats.errors:
-            logger.warning("  %s", e)
 
         if once or _STOP:
             break
-
-        logger.info("Sleeping %d min until next cycle…", pipeline_interval)
+        logger.info("Sleeping %d min…", pipeline_interval)
         _sleep(pipeline_interval * 60)
 
     logger.info("Runner stopped after %d cycle(s).", cycle)

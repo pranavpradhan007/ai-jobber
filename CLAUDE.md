@@ -75,6 +75,48 @@ learning/     — per-application notes (auto-written by agent)
 pending/      — facts awaiting your approval (agent writes here, not verified_facts)
 ```
 
+## Corporate hierarchy — prompt delegation
+
+Every task in this repo follows a strict reporting chain. Prompts must be
+addressed to the correct level; work is never done at a level above what is
+needed.
+
+| Role | Responsibility |
+|------|---------------|
+| **CEO (User)** | Sets goals, approves applications, starts the loop once per laptop boot |
+| **CTO (Claude Code)** | Architecture, sprint planning, code review, final sign-off |
+| **EM (Engineering Manager)** | Sprint ceremony, ticket expansion, scope guard |
+| **Engineer** | Implementation, commits, unit tests |
+| **QA** | Smoke + regression, gate sign-off |
+| **Security** | Audits any sprint touching secrets/browser/Gmail |
+| **Release Manager** | Exit-criteria check before advancing |
+
+**Rule:** Claude Code must delegate to the correct role and never conflate levels.
+A bug fix is Engineer work. An architecture change escalates to CTO.
+User (CEO) is contacted only for: approval decisions, MFA/CAPTCHA, laptop boot.
+
+## Loop autonomy — humans out of the runtime loop
+
+The continuous loop runs without human intervention after the initial laptop boot.
+
+1. **Rate/token limits:** If Claude Code hits a daily or weekly API limit,
+   it must email the user (via SMTP), schedule a wakeup for the reset window
+   (daily = midnight, weekly = Monday 00:00), and resume automatically.
+   It must NOT terminate or wait for human input.
+
+2. **Any recoverable error** (network blip, Chrome crash, portal timeout):
+   log it, sleep 60 s, retry. Never surface to user unless unrecoverable.
+
+3. **Unrecoverable errors** (DB corruption, missing `.env`, disk full):
+   email the user with the exact error + file path, then pause the loop.
+
+4. **Digest emails:** sent via SMTP (`GMAIL_APP_PASSWORD`). If SMTP fails,
+   retry 3× with 5-minute backoff before alerting user.
+
+5. **Token efficiency:** every prompt must be as short as possible.
+   No filler, no summaries unless requested. Lean code — delete redundant
+   functions before adding new ones.
+
 ## Key files
 
 | File | Purpose |
