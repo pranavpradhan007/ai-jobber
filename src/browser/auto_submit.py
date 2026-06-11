@@ -1097,7 +1097,8 @@ def _handle_smartapply_pages(page, app_id: int, answers: dict, folder_path: str,
         except Exception:
             pass
 
-        _screenshot(page, folder_path, f"smartapply_step{step:02d}.png")
+        if step < 2:
+            _screenshot(page, folder_path, f"smartapply_step{step:02d}.png")
 
         # Try Submit first — only on the review page (all SmartApply pages
         # contain "submit" in their JS source, so we gate on the URL instead)
@@ -2613,7 +2614,8 @@ def _handle_whitecarrot_multistep(page, answers: dict, folder_path: str) -> None
         _wc_dismiss_modals(page)
         _human_pause(0.5, 1.0)
 
-        _screenshot(page, folder_path, f"wc_step{step:02d}.png")
+        if step < 2:
+            _screenshot(page, folder_path, f"wc_step{step:02d}.png")
 
         # Check for confirmation
         try:
@@ -3145,7 +3147,7 @@ def _fill_workday_experience(page, app_id: int, answers: dict, step: int) -> Non
         logger.warning("app_id=%d Workday: education fill error step=%d: %s", app_id, step, exc)
 
 
-def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 300, *, pause_before_submit: bool = False) -> None:
+def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float, max_steps: int = 60, *, pause_before_submit: bool = False) -> None:
     """Step through Workday applyManually multi-page wizard until submitted.
 
     Workday's applyManually form has up to 6 named steps:
@@ -3169,7 +3171,8 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
 
         url = page.url
         logger.info("app_id=%d Workday step=%d url=%s", app_id, step, url)
-        _screenshot(page, folder_path, f"workday_step{step:02d}.png")
+        if step < 2:  # only screenshot first 2 steps to save memory
+            _screenshot(page, folder_path, f"workday_step{step:02d}.png")
 
         _check_auth_wall(page)
 

@@ -133,15 +133,26 @@ def linkedin_easy_apply(
         raise RuntimeError(f"LinkedIn Easy Apply: modal did not open after click — job may use external apply: {job_url}")
 
     # Work through modal steps
-    max_steps = 25
+    max_steps = 15
+    _consecutive_save_dialogs = 0  # bail if stuck dismissing save dialogs repeatedly
     for step in range(max_steps):
         page_transition_pause()
         _check_auth_wall(page)
         _check_li_captcha(page)
-        # Dismiss any "Save this application?" dialog that LinkedIn shows
-        # when Continue is clicked on a validation-failed page.
-        _dismiss_save_dialog(page)
-        _screenshot(page, folder_path, f"li_step{step:02d}.png")
+        # Dismiss any "Save this application?" dialog LinkedIn shows on validation failure
+        dismissed = _dismiss_save_dialog(page)
+        if dismissed:
+            _consecutive_save_dialogs += 1
+            if _consecutive_save_dialogs >= 4:
+                _screenshot(page, folder_path, "li_stuck_save_dialog.png")
+                raise RuntimeError(
+                    f"LinkedIn Easy Apply: stuck — save dialog dismissed "
+                    f"{_consecutive_save_dialogs}x without progress (unfilled required fields)"
+                )
+        else:
+            _consecutive_save_dialogs = 0
+        if step < 2:  # only screenshot early steps to save memory
+            _screenshot(page, folder_path, f"li_step{step:02d}.png")
 
         # Fill visible fields on this modal page
         _fill_li_modal_page(page, candidate, resume_pdf_path, answers, fill_delay)
