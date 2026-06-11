@@ -134,6 +134,7 @@ def run_continuous(
 
     cycle = 0
     last_discovery_at: Optional[float] = None   # epoch seconds
+    last_daily_digest_day: Optional[int] = None  # calendar day of last daily digest
 
     _consecutive_errors = 0
 
@@ -169,7 +170,13 @@ def run_continuous(
                 stats.approvals = _run_approvals(conn, gmail_client)
 
             # ── Digest ───────────────────────────────────────────────────────
-            if stats.gated > 0 and recipient:
+            # Daily summary at 8am local time (once per calendar day)
+            local_now = datetime.now()
+            if recipient and local_now.hour == 8 and last_daily_digest_day != local_now.day:
+                _send_daily_summary(conn, recipient, gmail_client)
+                last_daily_digest_day = local_now.day
+            # Also send when new gated apps arrive (needs-review notification)
+            elif stats.gated > 0 and recipient:
                 _send_digest(conn, recipient, gmail_client)
 
             _consecutive_errors = 0
@@ -358,6 +365,65 @@ def _send_approval_confirmation(conn, gmail_client, results, recipient: str) -> 
         logger.info("Sent approval confirmation to %s (%d actions)", recipient, len(results))
     except Exception as exc:
         logger.warning("Could not send approval confirmation: %s", exc)
+
+
+def _send_daily_summary(conn, recipient, gmail_client) -> None:
+    """Send a daily 8am status email regardless of gated-app count."""
+    try:
+        from datetime import datetime as _dt
+        submitted = conn.execute(
+            "SELECT a.id, j.company, j.title FROM applications a "
+            "JOIN jobs j ON a.job_id=j.id "
+            "WHERE a.state IN ('SUBMITTED','MONITORING') ORDER BY a.id DESC"
+        ).fetchall()
+        queued = conn.execute(
+            "SELECT a.id, j.company, j.title, a.score FROM applications a "
+            "JOIN jobs j ON a.job_id=j.id "
+            "WHERE a.state='WAITING_FOR_USER_APPROVAL' AND a.approved_by_user=1 "
+            "ORDER BY a.score DESC"
+        ).fetchall()
+        needs = conn.execute(
+            "SELECT a.id, j.company, j.title, a.score FROM applications a "
+            "JOIN jobs j ON a.job_id=j.id "
+            "WHERE a.state='WAITING_FOR_USER_APPROVAL' "
+            "AND (a.approved_by_user IS NULL OR a.approved_by_user=0) "
+            "ORDER BY a.score DESC"
+        ).fetchall()
+        skipped = conn.execute(
+            "SELECT COUNT(*) FROM applications WHERE state='SKIPPED'"
+        ).fetchone()[0]
+
+        lines = [
+            f"Hi Pranav — morning update from ai-jobber ({_dt.now().strftime('%b %d %Y')}).",
+            "",
+            f"SUBMITTED ({len(submitted)} total)",
+            "-" * 40,
+        ]
+        for r in submitted[:20]:
+            lines.append(f"  APP-{r['id']:3d}  {r['company'][:28]:28s}  {r['title'][:38]}")
+        if len(submitted) > 20:
+            lines.append(f"  ... and {len(submitted)-20} more")
+
+        lines += ["", f"QUEUED FOR SUBMISSION ({len(queued)} approved, will be submitted tonight)", "-" * 40]
+        for r in queued[:15]:
+            lines.append(f"  APP-{r['id']:3d}  score={r['score'] or 0:.0f}  {r['company'][:25]:25s}  {r['title'][:35]}")
+
+        lines += ["", f"NEEDS YOUR REVIEW ({len(needs)} unapproved — reply to approve)", "-" * 40]
+        for r in needs:
+            lines.append(f"  APP-{r['id']:3d}  score={r['score'] or 0:.0f}  {r['company'][:25]:25s}  {r['title'][:35]}")
+            lines.append(f"         Reply: APP-{r['id']} APPROVE  or  APP-{r['id']} REJECT")
+
+        lines += ["", f"SKIPPED: {skipped}", "", "-- ai-jobber"]
+
+        subject = (
+            f"[ai-jobber] Morning update — "
+            f"{len(submitted)} submitted, {len(queued)} queued"
+            + (f", {len(needs)} need review" if needs else "")
+        )
+        gmail_client.send_email(to=recipient, subject=subject, body="\n".join(lines))
+        logger.info("Daily summary sent to %s", recipient)
+    except Exception as exc:
+        logger.warning("daily summary failed: %s", exc)
 
 
 def _send_digest(conn, recipient, gmail_client) -> None:
