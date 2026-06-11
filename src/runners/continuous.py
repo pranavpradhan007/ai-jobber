@@ -135,6 +135,7 @@ def run_continuous(
     cycle = 0
     last_discovery_at: Optional[float] = None   # epoch seconds
     last_daily_digest_day: Optional[int] = None  # calendar day of last daily digest
+    last_cleanup_day: Optional[int] = None       # calendar day of last screenshot cleanup
 
     _consecutive_errors = 0
 
@@ -168,6 +169,15 @@ def run_continuous(
             # ── Approvals ────────────────────────────────────────────────────
             if not skip_approvals:
                 stats.approvals = _run_approvals(conn, gmail_client)
+
+            # ── Screenshot cleanup (every 2 days at 3am) ─────────────────────
+            local_now = datetime.now()
+            if local_now.hour == 3 and (
+                last_cleanup_day is None
+                or (local_now.toordinal() - last_cleanup_day) >= 2
+            ):
+                _cleanup_screenshots(conn)
+                last_cleanup_day = local_now.toordinal()
 
             # ── Digest ───────────────────────────────────────────────────────
             # Daily summary at 8am local time (once per calendar day)
@@ -365,6 +375,35 @@ def _send_approval_confirmation(conn, gmail_client, results, recipient: str) -> 
         logger.info("Sent approval confirmation to %s (%d actions)", recipient, len(results))
     except Exception as exc:
         logger.warning("Could not send approval confirmation: %s", exc)
+
+
+def _cleanup_screenshots(conn, older_than_days: int = 2) -> None:
+    """Delete .png screenshots from submitted/skipped/monitoring app folders older than N days."""
+    import os, time as _time
+    from pathlib import Path
+    cutoff = _time.time() - older_than_days * 86400
+    apps_dir = Path(__file__).resolve().parents[2] / "applications"
+    if not apps_dir.exists():
+        return
+    # Get artifact_path for all terminal-state apps
+    rows = conn.execute(
+        "SELECT artifact_path FROM applications "
+        "WHERE state IN ('SUBMITTED','MONITORING','SKIPPED') AND artifact_path IS NOT NULL"
+    ).fetchall()
+    deleted = 0
+    for row in rows:
+        folder = Path(row[0]) if os.path.isabs(row[0]) else apps_dir.parent / row[0]
+        if not folder.is_dir():
+            continue
+        for png in folder.glob("*.png"):
+            try:
+                if png.stat().st_mtime < cutoff:
+                    png.unlink()
+                    deleted += 1
+            except Exception:
+                pass
+    if deleted:
+        logger.info("Screenshot cleanup: deleted %d old PNGs from submitted/skipped folders", deleted)
 
 
 def _send_daily_summary(conn, recipient, gmail_client) -> None:
