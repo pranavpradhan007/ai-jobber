@@ -296,7 +296,11 @@ def _fill_by_label(page, label_text: str, value: str):
 
 
 def _fill_radio_groups_js(page):
-    """JS-based radio fill: finds all visible unselected yes/no groups regardless of HTML structure."""
+    """JS-based radio fill: finds all visible unselected yes/no groups.
+
+    Matches by option LABEL text (Yes/No) not by value attribute, since
+    LinkedIn uses arbitrary value strings (not 'Yes'/'No').
+    """
     _YES_KEYS = [
         "authorized", "legally", "eligible", "right to work",
         "built", "maintained", "production", "deployed", "trained",
@@ -328,7 +332,19 @@ def _fill_radio_groups_js(page):
                         }
                         map[name] = { name, question: q.toLowerCase(), opts: [] };
                     }
-                    map[name].opts.push({ value: inp.value, checked: inp.checked });
+                    // Capture option label text (from <label for=id> or aria-label) as well as value
+                    let labelText = '';
+                    if (inp.id) {
+                        const lbl = document.querySelector('label[for="' + inp.id + '"]');
+                        if (lbl) labelText = lbl.textContent.trim().toLowerCase();
+                    }
+                    if (!labelText) labelText = (inp.getAttribute('aria-label') || '').toLowerCase();
+                    if (!labelText) {
+                        // walk up to find sibling/parent label text
+                        const p = inp.parentElement;
+                        if (p) labelText = p.textContent.trim().toLowerCase();
+                    }
+                    map[name].opts.push({ value: inp.value, labelText, checked: inp.checked });
                 });
                 return Object.values(map);
             }
@@ -347,17 +363,27 @@ def _fill_radio_groups_js(page):
                 target = "yes"
             else:
                 continue
+            # Match by label text first, fall back to value attribute
+            chosen = None
             for opt in opts:
-                if opt.get("value", "").lower() == target:
-                    try:
-                        radio = page.locator(
-                            f"input[type='radio'][name='{name}'][value='{opt['value']}']"
-                        ).first
-                        if radio.count() > 0 and radio.is_visible() and not radio.is_checked():
-                            radio.click()
-                    except Exception:
-                        pass
+                lbl = opt.get("labelText", "").lower()
+                val = opt.get("value", "").lower()
+                if lbl == target or lbl.startswith(target) or val == target:
+                    chosen = opt
                     break
+            # If no exact match, pick first opt for "yes" / last for "no" as positional fallback
+            if chosen is None:
+                chosen = opts[0] if target == "yes" else opts[-1]
+            try:
+                radio = page.locator(
+                    f"input[type='radio'][name='{name}'][value='{chosen['value']}']"
+                ).first
+                if radio.count() > 0 and radio.is_visible() and not radio.is_checked():
+                    radio.click()
+                    logger.debug("fill_radio_groups_js: clicked %s=%s (label=%r)",
+                                 name, chosen["value"], chosen.get("labelText"))
+            except Exception:
+                pass
     except Exception as exc:
         logger.debug("fill_radio_groups_js error: %s", exc)
 
@@ -522,49 +548,109 @@ def _fill_selects(page, answers: dict):
 
 
 def _fill_text_questions(page, answers: dict):
-    """Fill open-text questions using pre-computed screener answers + smart defaults."""
+    """Fill open-text questions (textareas + text inputs) using screener answers + smart defaults."""
     from src.browser.screener_engine import match_question_to_category
-    try:
-        textareas = page.locator("textarea:visible").all()
-        for ta in textareas:
+
+    # Fields already handled upstream — skip them to avoid double-fill
+    _SKIP_LABELS = {
+        "first name", "last name", "full name", "phone", "email", "city",
+        "linkedin profile", "position", "job title", "location", "zip", "postal",
+    }
+
+    def _get_label(el, el_id: str) -> str:
+        label = ""
+        if el_id:
             try:
-                placeholder = (ta.get_attribute("placeholder") or "").lower()
-                ta_id = ta.get_attribute("id") or ""
-                label_text = ""
-                if ta_id:
-                    lbl = page.locator(f"label[for='{ta_id}']").first
-                    if lbl.count() > 0:
-                        label_text = lbl.inner_text().lower().strip()
+                lbl = page.locator(f"label[for='{el_id}']").first
+                if lbl.count() > 0:
+                    label = lbl.inner_text().strip()
+            except Exception:
+                pass
+        if not label:
+            try:
+                aria = el.get_attribute("aria-label") or ""
+                if aria:
+                    label = aria.strip()
+            except Exception:
+                pass
+        if not label:
+            label = (el.get_attribute("placeholder") or "").strip()
+        return label.lower()
 
-                key = label_text or placeholder
-                if not key:
+    def _fill_one(el, long_text: bool):
+        try:
+            cur = el.input_value() or ""
+        except Exception:
+            cur = ""
+        if cur.strip():
+            return  # already filled
+        el_id = el.get_attribute("id") or ""
+        key = _get_label(el, el_id)
+        if not key or any(sk in key for sk in _SKIP_LABELS):
+            return
+
+        # Direct answers dict match
+        if key in answers:
+            human_fill(page, el, str(answers[key]), long_text=long_text)
+            inter_field_pause()
+            return
+
+        # screener_engine category match
+        match = match_question_to_category(key)
+        if match:
+            cat, answer_key = match
+            val = answers.get(cat) or answers.get(answer_key)
+            if val:
+                human_fill(page, el, str(val), long_text=long_text)
+                inter_field_pause()
+                return
+
+        # Smart defaults for common short-text question patterns
+        if "cover letter" in key:
+            return  # not required on LinkedIn
+        if any(w in key for w in ("salary", "compensation", "rate", "pay")):
+            human_fill(page, el, str(answers.get("salary_expectation", "110000")),
+                       long_text=False)
+            inter_field_pause()
+            return
+        if any(w in key for w in ("start date", "available", "notice period", "start")):
+            human_fill(page, el, answers.get("start_date", "2 weeks"), long_text=False)
+            inter_field_pause()
+            return
+        if any(w in key for w in ("years", "experience")):
+            human_fill(page, el, str(answers.get("years_experience", "5")), long_text=False)
+            inter_field_pause()
+            return
+        if any(w in key for w in ("github", "portfolio", "website", "url", "link")):
+            human_fill(page, el, answers.get("github_url", "https://github.com/pranavpradhan007"),
+                       long_text=False)
+            inter_field_pause()
+            return
+
+    try:
+        # Textareas — long-form answers
+        for ta in (page.locator("textarea:visible").all() or []):
+            try:
+                _fill_one(ta, long_text=True)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        # Text inputs for additional questions — short-form answers
+        # Exclude inputs already handled by _fill_field/_fill_by_label upstream
+        for inp in (page.locator(
+            "input[type='text']:visible, input[type='number']:visible"
+        ).all() or []):
+            try:
+                el_id = inp.get_attribute("id") or ""
+                # Skip if it looks like a standard contact field by ID
+                if any(x in el_id.lower() for x in
+                       ("phone", "email", "city", "location", "linkedin", "position",
+                        "title", "name", "zip", "postal")):
                     continue
-
-                # Direct key match in answers
-                if key in answers:
-                    human_fill(page, ta, str(answers[key]), long_text=True)
-                    inter_field_pause()
-                    continue
-
-                # screener_engine category match
-                match = match_question_to_category(key)
-                if match:
-                    cat, answer_key = match
-                    val = answers.get(cat) or answers.get(answer_key)
-                    if val:
-                        human_fill(page, ta, str(val), long_text=True)
-                        inter_field_pause()
-                        continue
-
-                # Skip cover letters (not required on LinkedIn)
-                if "cover letter" in key:
-                    continue
-
-                # Salary fallback
-                if "salary" in key:
-                    human_fill(page, ta, answers.get("salary_expectation", "80000"), long_text=False)
-                    inter_field_pause()
-
+                _fill_one(inp, long_text=False)
             except Exception:
                 pass
     except Exception:
