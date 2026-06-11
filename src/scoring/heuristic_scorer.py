@@ -16,6 +16,12 @@ import sqlite3
 from typing import Optional
 
 
+# Seniority: over-senior titles get a score penalty; mid/entry get a bonus.
+_SENIOR_TITLE_WORDS = {"senior", "principal", "staff", "lead", "director",
+                       "head of", "vp ", "vice president", "distinguished", "fellow"}
+_MID_TITLE_WORDS    = {"mid", "ii", "iii", "2", "3", "associate", "junior",
+                       "entry", "early career", "new grad", "graduate"}
+
 # Role-family title keywords → used for title_match
 _TITLE_KEYWORDS = {
     "high": {
@@ -80,6 +86,14 @@ def make_heuristic_scorer(conn: sqlite3.Connection):
         else:
             title_score = 55
             title_reason = f"'{jtitle}' — unclear match"
+
+        # Seniority adjustment: penalise over-senior, reward mid/entry
+        if any(w in jtitle for w in _SENIOR_TITLE_WORDS):
+            title_score = max(0, title_score - 12)
+            title_reason += " [−12 senior-level penalty]"
+        elif any(w in jtitle for w in _MID_TITLE_WORDS):
+            title_score = min(100, title_score + 5)
+            title_reason += " [+5 mid/entry-level bonus]"
 
         # ── must_have_skills (30%) ────────────────────────────────────────────
         matched_tools  = [t for t in tools  if t in jd]

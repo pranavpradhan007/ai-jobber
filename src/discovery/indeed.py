@@ -33,18 +33,31 @@ logger = logging.getLogger(__name__)
 # postings use `job-agent add-job --url <linkedin_url> ...` manually.
 
 _ROLE_SEARCHES = [
+    # ── Mid / entry level (prioritised) ──────────────────────────────────────
+    "Machine Learning Engineer II",
+    "Machine Learning Engineer mid level",
+    "Junior Machine Learning Engineer",
+    "Entry level AI Engineer",
+    "Associate Machine Learning Engineer",
+    "Data Scientist II",
+    "Junior Data Scientist",
+    "Associate Data Scientist",
+    "Mid level AI Engineer",
+    "Machine Learning Engineer 2 3 years",
+    "NLP Engineer mid level",
+    "Computer Vision Engineer mid level",
+    # ── Generic (any level — MID/ENTRY results mixed in) ─────────────────────
     "Machine Learning Engineer",
     "AI Research Engineer",
     "Applied Scientist Machine Learning",
-    "Reinforcement Learning Engineer",
     "LLM Engineer Python PyTorch",
     "Research Engineer deep learning",
     "Data Scientist machine learning",
     "MLOps ML Platform Engineer",
     "AI Engineer NLP computer vision",
-    "Scientific ML Engineer JAX",
-    "Game AI Engineer reinforcement learning",
-    "Robotics ML Engineer simulation",
+    # ── Senior kept but reduced ───────────────────────────────────────────────
+    "Senior Machine Learning Engineer",
+    "Senior Data Scientist",
 ]
 
 # ── Complete US coverage ─────────────────────────────────────────────────────
