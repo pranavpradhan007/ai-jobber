@@ -75,7 +75,6 @@ def linkedin_easy_apply(
     folder_path: str,
     answers: dict | None = None,
     fill_delay: float = 0.15,
-    pause_before_submit: bool = False,
 ) -> str:
     """
     Attempt LinkedIn Easy Apply for the given job URL.
@@ -162,25 +161,6 @@ def linkedin_easy_apply(
             page.locator(sel).count() > 0 for sel in _SUBMIT_SELECTORS
         )
         if submit_found:
-            if pause_before_submit:
-                _screenshot(page, folder_path, "pre_submit_review.png")
-                logger.info("app_id=%d LinkedIn REVIEW MODE — form filled, paused before Submit. "
-                            "Review in Chrome and click Submit manually.", app_id)
-                print(f"\n{'='*60}")
-                print(f"  REVIEW MODE — APP-{app_id} LinkedIn form is ready in Chrome")
-                print(f"  Review the form, then manually click Submit in Chrome.")
-                print(f"{'='*60}\n")
-                try:
-                    while True:
-                        _time.sleep(10)
-                        try:
-                            page.evaluate("() => document.title")
-                        except Exception:
-                            logger.info("app_id=%d Chrome closed — review mode ended", app_id)
-                            break
-                except KeyboardInterrupt:
-                    logger.info("app_id=%d review mode interrupted", app_id)
-                return "review_mode_ended"
             if _click_any(page, _SUBMIT_SELECTORS, timeout=3000):
                 _human_pause(2.0, 4.0)
                 _screenshot(page, folder_path, "li_submitted.png")

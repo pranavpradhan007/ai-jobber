@@ -3495,7 +3495,6 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
             folder_path=folder_path,
             answers=answers,
             fill_delay=fill_delay,
-            pause_before_submit=pause_before_submit,
         )
         ss = _screenshot(page, folder_path, "li_confirmation.png")
         return AutoSubmitResult(
