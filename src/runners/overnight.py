@@ -101,7 +101,7 @@ def run_overnight(
     cur = conn.execute(
         """
         SELECT a.id FROM applications a JOIN jobs j ON a.job_id=j.id
-        WHERE a.state='WAITING_FOR_USER_APPROVAL' AND a.approved_by_user=1
+        WHERE a.state IN ('WAITING_FOR_USER_APPROVAL', 'READY_TO_SUBMIT') AND a.approved_by_user=1
         AND LOWER(j.platform) NOT IN ('remoteok', 'hackernews', 'custom')
         AND a.id NOT IN (3, 47, 48, 50, 56, 93, 125)
         LIMIT ?
@@ -317,6 +317,7 @@ def _submit_approved(
                 "job is closed", "no longer accepting", "modal did not open",
                 "no easy apply", "no external apply", "easy apply button not found",
                 "stuck", "unfilled required fields",
+                "no continue/submit button", "form may have a required field",
             )
             if any(p in err.lower() for p in _PERMANENT_ERRORS):
                 try:
@@ -432,21 +433,9 @@ def _process_one(
     transition(conn, app_id, "PACKAGING", reason="tailoring complete")
     transition(conn, app_id, "READY_TO_SUBMIT", reason="packaging complete")
 
-    # Auto-approve all jobs — no manual gate, submit immediately
-    if gate["submit_tier"] == "gated":
-        conn.execute(
-            "UPDATE applications SET approved_by_user=1 WHERE id=?", (app_id,)
-        )
-        conn.commit()
+    # Always approve immediately — route to portal submit path
+    conn.execute("UPDATE applications SET approved_by_user=1 WHERE id=?", (app_id,))
+    conn.commit()
 
-    # ── 7. Submit ────────────────────────────────────────────────────────────
-    result = submit_auto_safe(
-        conn, app_id,
-        gmail_client=gmail_client,
-        dry_run=dry_run,
-    )
-    if result.success:
-        transition(conn, app_id, "MONITORING", reason="submitted successfully")
-        stats.submitted += 1
-    else:
-        stats.failed += 1
+    # ── 8. Submit via portal browser (covers both auto_safe and gated) ───────
+    _submit_approved(conn, app_id, stats, gmail_client=gmail_client, dry_run=dry_run)
