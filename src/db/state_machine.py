@@ -40,7 +40,7 @@ LEGAL_TRANSITIONS: dict[str, set[str]] = {
                                       "REJECTED",
                                       "MONITORING",   # re-entry for additional events
                                   },
-    "WAITING_FOR_CAPTCHA":        {"SUBMITTING", "FAILED"},
+    "WAITING_FOR_CAPTCHA":        {"SUBMITTING", "FAILED", "READY_TO_SUBMIT"},
     "WAITING_FOR_MFA":            {"SUBMITTING", "FAILED"},
     "WAITING_FOR_GMAIL_VERIFICATION": {"SUBMITTING", "FAILED"},
     "SNOOZED":                    {"WAITING_FOR_USER_APPROVAL"},

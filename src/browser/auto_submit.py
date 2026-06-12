@@ -422,7 +422,12 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
                 timeout=15000,
             )
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
+            ctx.add_init_script("""
+                Object.defineProperty(navigator,'webdriver',{get:()=>undefined});
+                Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3,4,5]});
+                Object.defineProperty(navigator,'languages',{get:()=>['en-US','en']});
+                window.chrome={runtime:{}};
+            """)
             logger.info("Reusing existing Chrome CDP session on port %d", cdp_port)
             return ctx
         except Exception as _reuse_exc:
@@ -432,14 +437,14 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
     _release_profile_lock(profile_dir)
     time.sleep(2)
 
-    # Find Chrome executable: prefer Playwright's bundled Chromium (guaranteed
-    # installed), fall back to system Chrome.
-    chrome_exe = _find_playwright_chromium()
+    # Find Chrome executable: prefer system Google Chrome (better Cloudflare
+    # fingerprint), fall back to Playwright's bundled Chromium.
+    chrome_exe = _find_system_chrome()
     if not chrome_exe:
-        chrome_exe = _find_system_chrome()
+        chrome_exe = _find_playwright_chromium()
     if not chrome_exe:
         raise FileNotFoundError(
-            "No Chrome/Chromium found. Run: playwright install chromium"
+            "No Chrome/Chromium found. Install Google Chrome or run: playwright install chromium"
         )
     logger.info("Launching Chrome via CDP: %s", chrome_exe)
 
@@ -474,7 +479,12 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
         timeout=15000,
     )
     ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-    ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
+    ctx.add_init_script("""
+        Object.defineProperty(navigator,'webdriver',{get:()=>undefined});
+        Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3,4,5]});
+        Object.defineProperty(navigator,'languages',{get:()=>['en-US','en']});
+        window.chrome={runtime:{}};
+    """)
     return ctx
 
 
