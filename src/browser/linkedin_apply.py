@@ -133,23 +133,20 @@ def linkedin_easy_apply(
 
     # Work through modal steps
     max_steps = 15
-    _consecutive_save_dialogs = 0  # bail if stuck dismissing save dialogs repeatedly
+    _total_save_dialogs = 0  # total across all steps — reset resets were hiding stuck state
     for step in range(max_steps):
         page_transition_pause()
         _check_auth_wall(page)
         _check_li_captcha(page)
         # Dismiss any "Save this application?" dialog LinkedIn shows on validation failure
-        dismissed = _dismiss_save_dialog(page)
-        if dismissed:
-            _consecutive_save_dialogs += 1
-            if _consecutive_save_dialogs >= 4:
+        if _dismiss_save_dialog(page):
+            _total_save_dialogs += 1
+            if _total_save_dialogs >= 5:
                 _screenshot(page, folder_path, "li_stuck_save_dialog.png")
                 raise RuntimeError(
                     f"LinkedIn Easy Apply: stuck — save dialog dismissed "
-                    f"{_consecutive_save_dialogs}x without progress (unfilled required fields)"
+                    f"{_total_save_dialogs}x (unfilled required fields)"
                 )
-        else:
-            _consecutive_save_dialogs = 0
         if step < 2:  # only screenshot early steps to save memory
             _screenshot(page, folder_path, f"li_step{step:02d}.png")
 
