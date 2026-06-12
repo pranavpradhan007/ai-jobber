@@ -45,20 +45,29 @@ _DEFAULT_CHROME_DIR = os.path.join(
 
 # Selectors for "Apply" / "Apply Now" buttons on listing pages
 _APPLY_SELECTORS = [
-    ".ia-IndeedApplyButton",         # Indeed Easy Apply
+    ".ia-IndeedApplyButton",         # Indeed Easy Apply (SmartApply)
     "[data-testid='applyButton']",
     "#indeedApplyButton",
     "[class*='IndeedApplyButton']",
     "[data-tn-element='apply-now']",
     "[data-tn-element='indeedApplyButton']",
     "button[data-id*='apply']",
+    # Indeed viewjob "Apply now" / "Easily apply" for external jobs
+    "[class*='applyButton']",
+    "[class*='apply-button']",
+    "button:has-text('Easily apply')",
+    "a:has-text('Easily apply')",
+    "button:has-text('Apply on company site')",
+    "a:has-text('Apply on company site')",
     # eightfold.ai / Phenom People career portals (NYL, many enterprise firms)
     "button[data-ph-at-id='apply-btn']",
     "a[data-ph-at-id='apply-btn']",
     ".apply-btn",
     "button:has-text('Apply Now')",
+    "button:has-text('Apply now')",
     "button:has-text('Apply')",
     "a:has-text('Apply Now')",
+    "a:has-text('Apply now')",
     "a:has-text('Apply')",
     ".btn-apply",
     "[data-mapped='true']",
@@ -117,6 +126,13 @@ _SMARTAPPLY_CONTINUE_SELECTORS = [
     "button:has-text('Start')",
     # Catch-all: any primary/cta button not labelled cancel/back/close
     "button[type='submit']:not([aria-label*='cancel' i]):not([aria-label*='back' i])",
+    # Resume module web components
+    "button:has-text('Get started')",
+    "button:has-text('Got it')",
+    "button:has-text('Skip')",
+    "button:has-text('Accept')",
+    "button:has-text('Confirm')",
+    ".ia-Button",
 ]
 
 _SMARTAPPLY_SUBMIT_SELECTORS = [
@@ -329,6 +345,14 @@ def auto_submit_portal(
         for _np_attempt in range(3):
             try:
                 page = context.new_page()
+                # Apply playwright-stealth fingerprint patches on new pages
+                try:
+                    if getattr(context, '_stealth_ready', False):
+                        from playwright_stealth import stealth_sync
+                        stealth_sync(page)
+                        logger.debug("playwright-stealth applied to new page")
+                except Exception as _st_exc:
+                    logger.debug("playwright-stealth skipped: %s", _st_exc)
                 break
             except Exception as _np_exc:
                 if _np_attempt == 2:
@@ -340,8 +364,14 @@ def auto_submit_portal(
                         pass
                     _release_profile_lock(os.path.abspath(_BROWSER_PROFILE_DIR))
                     time.sleep(3)
-                    context = _open_chrome_context(pw, chrome_dir, profile, cdp_port)
+                    context = _open_chrome_context(pw, chrome_dir, chrome_profile, cdp_port)
                     page = context.new_page()
+                    try:
+                        if getattr(context, '_stealth_ready', False):
+                            from playwright_stealth import stealth_sync
+                            stealth_sync(page)
+                    except Exception:
+                        pass
                     break
                 logger.warning("context.new_page failed (attempt %d): %s — retrying in 3s", _np_attempt + 1, _np_exc)
                 time.sleep(3)
@@ -447,6 +477,11 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
             "No Chrome/Chromium found. Install Google Chrome or run: playwright install chromium"
         )
     logger.info("Launching Chrome via CDP: %s", chrome_exe)
+    # Reset session warmup flag — new Chrome process needs fresh warmup
+    import sys as _sys
+    _mod = _sys.modules.get(__name__)
+    if _mod and hasattr(_mod, '_INDEED_WARMED'):
+        _mod._INDEED_WARMED = False
 
     # Launch Chrome detached — we'll connect via TCP, not stdin/stdout pipe
     subprocess.Popen(
@@ -484,7 +519,21 @@ def _open_chrome_context(pw, chrome_dir: str, profile: str, cdp_port: int):
         Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3,4,5]});
         Object.defineProperty(navigator,'languages',{get:()=>['en-US','en']});
         window.chrome={runtime:{}};
+        // Remove CDP-specific properties
+        delete window.__playwright;
+        delete window.__pw_manual;
+        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+        delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
     """)
+    # Apply playwright-stealth if available (extra fingerprint patches)
+    try:
+        from playwright_stealth import stealth_sync
+        # stealth_sync applies to a page, so we use a context-level approach
+        ctx._stealth_ready = True
+        logger.info("playwright-stealth available — will apply per-page")
+    except ImportError:
+        pass
     return ctx
 
 
@@ -693,6 +742,11 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pau
 
     # ── Step 1: Navigate to listing URL ──────────────────────────────────────
     nav_url = _resolve_indeed_url(url)
+
+    # Warm up the session: if we haven't visited Indeed yet this Chrome launch,
+    # load the homepage first to establish normal browsing context.
+    _warm_indeed_session(page)
+
     logger.info("app_id=%d navigating to %s", app_id, nav_url)
     page.goto(nav_url, wait_until="domcontentloaded", timeout=30_000)
     reading_pause()   # 1.5-3.5 s — simulate reading the page
@@ -705,8 +759,29 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pau
         page.goto(resolved, wait_until="domcontentloaded", timeout=30_000)
         _human_pause(2.0, 3.0)
 
-    # ── Step 2: Detect auth walls early ──────────────────────────────────────
+    # ── Step 2: Screenshot + detect auth walls early ──────────────────────────
+    # Save a debug screenshot so we can see what Indeed is actually showing
+    try:
+        ss_dir = folder_path
+        os.makedirs(ss_dir, exist_ok=True)
+        page.screenshot(path=os.path.join(ss_dir, "viewjob_state.png"), full_page=False, timeout=10_000)
+    except Exception:
+        pass
     _check_auth_wall(page)
+
+    # Screenshot AFTER challenge resolution — shows the real viewjob state
+    try:
+        page.screenshot(path=os.path.join(folder_path, "viewjob_ready.png"), full_page=False, timeout=10_000)
+    except Exception:
+        pass
+
+    # Log page URL + first 300 chars of body so we can diagnose no-button issues
+    try:
+        _body_preview = page.evaluate("() => document.body?.innerText?.slice(0,300)||''") or ""
+        logger.info("app_id=%d viewjob ready at %s | body: %s", app_id, page.url,
+                    _body_preview[:200].replace('\n', ' '))
+    except Exception:
+        pass
 
     # ── Step 2b: Dismiss cookie / consent modals ──────────────────────────────
     # Cookie banners intercept clicks on Apply buttons (e.g. eightfold.ai portals).
@@ -999,16 +1074,176 @@ def _check_auth_wall(page) -> None:
     ]
     if any(p in u for p in auth_patterns):
         raise MFADetected(f"Login wall detected at {page.url}")
-    # Cloudflare bot challenge — shown when Indeed detects automated browser
+    # Cloudflare / bot challenge detection
     try:
-        title = (page.title() or "").lower()
-        body_text = page.evaluate("() => document.body?.innerText?.slice(0, 500) || ''") or ""
-        if "additional verification required" in body_text.lower() or "verify you are human" in body_text.lower():
-            raise CaptchaDetected(f"Cloudflare bot challenge at {page.url}")
+        body_text = page.evaluate("() => document.body?.innerText?.slice(0, 800) || ''") or ""
+        body_lower = body_text.lower()
+        challenge_phrases = [
+            "additional verification required",
+            "verify you are human",
+            "checking if the site connection is secure",
+            "enable javascript and cookies to continue",
+            "please complete the security check",
+        ]
+        if any(p in body_lower for p in challenge_phrases):
+            # Screenshot for debugging
+            try:
+                ss_path = os.path.join("applications", f"captcha_debug_{int(time.time())}.png")
+                os.makedirs("applications", exist_ok=True)
+                page.screenshot(path=ss_path, full_page=False)
+                logger.info("CAPTCHA screenshot saved: %s", ss_path)
+            except Exception:
+                pass
+            # Try to solve Cloudflare turnstile / reCAPTCHA checkbox before giving up
+            solved = _try_solve_challenge(page)
+            if solved:
+                logger.info("Challenge solved automatically at %s", page.url)
+                return
+            raise CaptchaDetected(f"Bot challenge at {page.url}")
     except (CaptchaDetected, MFADetected):
         raise
     except Exception:
         pass
+
+
+_INDEED_WARMED = False  # module-level flag per process
+
+
+def _warm_indeed_session(page) -> None:
+    """Navigate to Indeed homepage once per Chrome launch to establish session context."""
+    global _INDEED_WARMED
+    if _INDEED_WARMED:
+        return
+    try:
+        current = page.url
+        if "indeed.com" in current and "viewjob" not in current and "apply" not in current:
+            # Already on Indeed non-job page
+            _INDEED_WARMED = True
+            return
+        logger.info("Warming Indeed session: visiting homepage")
+        page.goto("https://www.indeed.com", wait_until="domcontentloaded", timeout=20_000)
+        _human_pause(2.0, 3.0)
+        # If homepage also shows Cloudflare, solve it during warmup
+        try:
+            body = page.evaluate("() => document.body?.innerText?.slice(0,500)||''") or ""
+            if "additional verification" in body.lower() or "verifying" in body.lower():
+                logger.info("Cloudflare on Indeed homepage during warmup — attempting auto-solve")
+                _try_solve_challenge(page)
+        except Exception:
+            pass
+        # Simulate reading by scrolling slightly
+        try:
+            page.evaluate("window.scrollTo(0, 300)")
+            _human_pause(1.0, 2.0)
+        except Exception:
+            pass
+        # Visit search results page — establishes natural browsing context on Indeed
+        # Cloudflare is less aggressive when the browser has viewd a search page first
+        try:
+            page.goto("https://www.indeed.com/jobs?q=software+engineer&l=New+York%2C+NY",
+                      wait_until="domcontentloaded", timeout=20_000)
+            _human_pause(2.0, 3.0)
+            try:
+                body2 = page.evaluate("() => document.body?.innerText?.slice(0,500)||''") or ""
+                if "additional verification" in body2.lower() or "verifying" in body2.lower():
+                    logger.info("Cloudflare on Indeed search during warmup — attempting auto-solve")
+                    _try_solve_challenge(page)
+            except Exception:
+                pass
+            try:
+                page.evaluate("window.scrollTo(0, 600)")
+                _human_pause(1.0, 2.0)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        _INDEED_WARMED = True
+    except Exception as e:
+        logger.debug("Session warmup skipped: %s", e)
+
+
+def _try_solve_challenge(page) -> bool:
+    """Attempt to auto-solve common bot challenges (reCAPTCHA checkbox, simple turnstile).
+    Returns True if the challenge appears to have been resolved."""
+    import time as _time
+    # Try clicking reCAPTCHA checkbox
+    try:
+        frame = page.frame_locator("iframe[title*='recaptcha' i], iframe[src*='recaptcha']").first
+        checkbox = frame.locator(".recaptcha-checkbox-border, #recaptcha-anchor").first
+        if checkbox.count() > 0 and checkbox.is_visible(timeout=2000):
+            checkbox.click(timeout=3000)
+            logger.info("Clicked reCAPTCHA checkbox — waiting for auto-verify")
+            _time.sleep(3)
+            # Recheck
+            body_text = page.evaluate("() => document.body?.innerText?.slice(0, 500) || ''") or ""
+            if not any(p in body_text.lower() for p in ["verify you are human", "additional verification"]):
+                return True
+    except Exception:
+        pass
+    # Cloudflare Managed Challenge / Turnstile shows "Verifying..." and often
+    # auto-completes within 5-20s. Poll BODY TEXT until the challenge phrases are gone.
+    # Note: do NOT check page.url — the challenge is served AT the viewjob URL, so
+    # the URL stays on viewjob throughout, and a URL check gives a false positive.
+    _CHALLENGE_PHRASES_POLL = [
+        "additional verification required",
+        "verify you are human",
+        "checking if the site connection is secure",
+        "enable javascript and cookies to continue",
+        "please complete the security check",
+    ]
+    challenge_resolved = False
+    for poll_sec in range(60):  # up to 60s — Cloudflare managed challenges can take 15-45s
+        _time.sleep(1)
+        try:
+            # Check a larger body slice to catch all challenge text
+            body_text = page.evaluate("() => document.body?.innerText?.slice(0, 1200) || ''") or ""
+            body_lower = body_text.lower()
+            if not any(p in body_lower for p in _CHALLENGE_PHRASES_POLL):
+                # Double-check: make sure the page has real content (Apply button or job title)
+                has_content = any(kw in body_lower for kw in [
+                    "apply", "job description", "qualifications", "salary",
+                    "about the", "responsibilities", "requirements"
+                ])
+                if has_content or poll_sec >= 15:
+                    logger.info("Cloudflare challenge resolved after %ds (body clear)", poll_sec + 1)
+                    challenge_resolved = True
+                    break
+        except Exception:
+            pass
+    if challenge_resolved:
+        # Wait for the Cloudflare redirect to finish loading the real page
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=10_000)
+            _time.sleep(2.5)  # extra buffer — SPA frameworks need time after domcontentloaded
+        except Exception:
+            pass
+        return True
+    # Try clicking any visible Cloudflare / challenge button
+    for sel in [
+        "input[type='button'][value*='Verify' i]",
+        "button:has-text('Verify')",
+        "button:has-text('I am human')",
+        "[id*='challenge-stage'] button",
+        "form#challenge-form input[type='submit']",
+        "input[value='Verify you are human']",
+    ]:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() > 0 and loc.is_visible(timeout=1000):
+                loc.click(timeout=3000)
+                logger.info("Clicked challenge button %r", sel)
+                # Wait up to 10s for page to advance
+                for _ in range(10):
+                    _time.sleep(1)
+                    try:
+                        body_text = page.evaluate("() => document.body?.innerText?.slice(0, 500) || ''") or ""
+                        if not any(p in body_text.lower() for p in ["verify you are human", "additional verification", "verifying..."]):
+                            return True
+                    except Exception:
+                        pass
+        except Exception:
+            continue
+    return False
 
 
 def _click_apply(page, app_id: int) -> None:
@@ -1023,17 +1258,37 @@ def _click_apply(page, app_id: int) -> None:
         except Exception:
             continue
 
-    # Indeed viewjob fallback: extract jk param and navigate directly to SmartApply
-    import re as _re
-    jk_m = _re.search(r'[?&]jk=([a-f0-9]+)', page.url)
-    if jk_m and "indeed.com/viewjob" in page.url:
-        smartapply_url = f"https://www.indeed.com/apply/start?jk={jk_m.group(1)}&from=viewjobDesktop"
-        logger.info("app_id=%d Indeed viewjob fallback: navigating to SmartApply %s", app_id, smartapply_url)
-        page.goto(smartapply_url, wait_until="domcontentloaded", timeout=30_000)
-        _human_pause(2.0, 3.0)
-        return
+    # No Apply button found — scroll slightly and retry once (dynamic content)
+    try:
+        page.evaluate("window.scrollTo(0, 400)")
+        time.sleep(1.5)
+    except Exception:
+        pass
+    for sel in _APPLY_SELECTORS:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() > 0 and loc.is_visible(timeout=1500):
+                _human_click(page, loc)
+                logger.info("app_id=%d clicked apply after scroll selector=%r", app_id, sel)
+                return
+        except Exception:
+            continue
 
-    logger.info("app_id=%d no Apply button found — may already be on form page", app_id)
+    # Still nothing — screenshot + log page body for diagnosis
+    try:
+        ss_path = os.path.join("applications", f"no_apply_btn_{app_id}_{int(time.time())}.png")
+        os.makedirs("applications", exist_ok=True)
+        page.screenshot(path=ss_path, full_page=True, timeout=10_000)
+        logger.info("app_id=%d no-apply-button screenshot: %s", app_id, ss_path)
+    except Exception:
+        pass
+    try:
+        body_preview = page.evaluate("() => document.body?.innerText?.slice(0,600)||''") or ""
+        logger.warning("app_id=%d no Apply button found on %s — page body: %s",
+                       app_id, page.url, body_preview[:400].replace('\n', ' '))
+    except Exception:
+        pass
+    logger.info("app_id=%d no Apply button found — may be logged-out wall, expired job, or external ATS", app_id)
 
 
 def _click_submit(page, app_id: int) -> None:
@@ -1071,11 +1326,50 @@ def _click_submit(page, app_id: int) -> None:
     )
 
 
+def _get_smartapply_page_name(page) -> str:
+    """Get current SmartApply page identifier from URL or SPA hash/content."""
+    url = page.url
+    # Old flow: smartapply.indeed.com/beta/indeedapply/form/profile-location
+    page_name = url.split("/")[-1]
+    # New flow: indeed.com/apply/start?jk=... — use JS to read SPA route from DOM
+    if "apply/start" in url or (page_name.startswith("start?") and "indeed.com" in url):
+        try:
+            # SmartApply sets a data attribute or aria landmark that indicates current step
+            name = page.evaluate("""() => {
+                // Try data-testid on the form container
+                const form = document.querySelector('[data-testid*="apply"]') ||
+                             document.querySelector('[class*="ia-BasePage"]') ||
+                             document.querySelector('[class*="indeedApply"]');
+                if (form) return form.getAttribute('data-page-name') || form.getAttribute('data-testid') || '';
+                // Try reading from the React component state via __reactFiber
+                const h1 = document.querySelector('h1');
+                if (h1) return 'h1:' + h1.innerText.trim().slice(0, 40).toLowerCase().replace(/\\s+/g,'_');
+                return '';
+            }""") or ""
+            if name:
+                return name
+        except Exception:
+            pass
+        # Try to detect page from visible button text and heading
+        try:
+            body = page.evaluate("() => document.body?.innerText?.slice(0, 300) || ''") or ""
+            body_l = body.lower()
+            if "review your application" in body_l or "ready to submit" in body_l:
+                return "review"
+            if "submit" in body_l and ("application" in body_l or "applying" in body_l):
+                return "review"
+        except Exception:
+            pass
+    return page_name
+
+
 def _handle_smartapply_pages(page, app_id: int, answers: dict, folder_path: str, fill_delay: float) -> None:
     """Step through Indeed SmartApply multi-page form until submitted."""
     from src.browser.form_detector import extract_form_fields
     from src.browser.fast_autofill import fast_fill_form, verify_form_complete
-    max_steps = 12
+    max_steps = 25
+    prev_page_content = ""
+    stuck_count = 0
     for step in range(max_steps):
         page_transition_pause()
         # Wait for page to be interactive (SmartApply uses SPA routing)
@@ -1089,8 +1383,22 @@ def _handle_smartapply_pages(page, app_id: int, answers: dict, folder_path: str,
         # visible reCAPTCHA checkbox (which appears on the review page) below.
 
         url = page.url
-        page_name = url.split("/")[-1]
+        page_name = _get_smartapply_page_name(page)
         logger.info("app_id=%d SmartApply step=%d page=%s", app_id, step, page_name)
+
+        # Detect if we're stuck (same content after clicking Continue)
+        try:
+            cur_content = page.evaluate("() => document.body?.innerText?.slice(0, 200) || ''") or ""
+            if cur_content == prev_page_content and step > 0:
+                stuck_count += 1
+                if stuck_count >= 3:
+                    logger.warning("app_id=%d SmartApply stuck at step=%d — aborting", app_id, step)
+                    break
+            else:
+                stuck_count = 0
+            prev_page_content = cur_content
+        except Exception:
+            pass
 
         # Review module shows a loading spinner — wait for it to finish rendering
         if "review" in page_name:
@@ -1117,12 +1425,63 @@ def _handle_smartapply_pages(page, app_id: int, answers: dict, folder_path: str,
         except Exception:
             pass
 
-        if step < 2:
+        if step < 8:
             _screenshot(page, folder_path, f"smartapply_step{step:02d}.png")
 
-        # Try Submit first — only on the review page (all SmartApply pages
-        # contain "submit" in their JS source, so we gate on the URL instead)
-        if "review" in page_name or "submit" in page_name:
+        # structured-data-intro: click through resume data review module
+        # This page introduces the structured data section and needs a "Get started" / "Continue"
+        if "structured-data-intro" in page_name or "structured-data-intro" in url:
+            extra_selectors = [
+                "button:has-text('Get started')",
+                "button:has-text('Get Started')",
+                "button:has-text('Review')",
+                "button:has-text('Begin')",
+                "button:has-text('Accept')",
+                "button:has-text('Got it')",
+                "button:has-text('Skip')",
+                "button:has-text('Confirm')",
+                ".ia-Button",
+                "[data-tn-element='structured-data-submit']",
+                "button[class*='primary' i]",
+                "button[class*='continue' i]",
+                # Web components used by the resume module
+                "ia-button",
+                "[part='button']",
+            ]
+            for sel in extra_selectors:
+                try:
+                    loc = page.locator(sel).first
+                    if loc.count() > 0:
+                        loc.scroll_into_view_if_needed(timeout=2000)
+                        loc.click(timeout=3000)
+                        logger.info("app_id=%d structured-data-intro: clicked %r on step=%d", app_id, sel, step)
+                        try:
+                            page.wait_for_load_state("domcontentloaded", timeout=10_000)
+                        except Exception:
+                            pass
+                        _human_pause(1.0, 2.0)
+                        break
+                except Exception:
+                    continue
+            else:
+                # Try pressing Enter or Escape to dismiss the intro screen
+                try:
+                    page.keyboard.press("Enter")
+                    _human_pause(1.0, 2.0)
+                    logger.info("app_id=%d structured-data-intro: pressed Enter to advance", app_id)
+                except Exception:
+                    pass
+            continue  # Skip normal Continue/Submit detection for this special step
+
+        # Try Submit — on review page OR whenever the URL doesn't change between steps
+        # (direct apply/start SPA flow: URL is static, so we try Submit on every step >= 2)
+        is_static_url = "apply/start" in url or (page_name.startswith("start?") and "indeed.com" in url)
+        should_try_submit = (
+            "review" in page_name
+            or "submit" in page_name
+            or (is_static_url and step >= 2)
+        )
+        if should_try_submit:
             # Click reCAPTCHA checkbox if present — same click a human makes.
             # If Google scores it as high-risk and shows an image challenge,
             # the checkbox stays unchecked and we raise CaptchaDetected below.
