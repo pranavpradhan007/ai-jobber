@@ -978,7 +978,7 @@ def _resolve_indeed_url(url: str) -> str:
 
 
 def _check_auth_wall(page) -> None:
-    """Raise MFADetected if we landed on a login/auth page."""
+    """Raise MFADetected if we landed on a login/auth page, or CaptchaDetected for bot challenges."""
     u = page.url.lower()
     auth_patterns = [
         "secure.indeed.com/auth",
@@ -989,6 +989,16 @@ def _check_auth_wall(page) -> None:
     ]
     if any(p in u for p in auth_patterns):
         raise MFADetected(f"Login wall detected at {page.url}")
+    # Cloudflare bot challenge — shown when Indeed detects automated browser
+    try:
+        title = (page.title() or "").lower()
+        body_text = page.evaluate("() => document.body?.innerText?.slice(0, 500) || ''") or ""
+        if "additional verification required" in body_text.lower() or "verify you are human" in body_text.lower():
+            raise CaptchaDetected(f"Cloudflare bot challenge at {page.url}")
+    except (CaptchaDetected, MFADetected):
+        raise
+    except Exception:
+        pass
 
 
 def _click_apply(page, app_id: int) -> None:
