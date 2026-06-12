@@ -310,11 +310,23 @@ def _submit_approved(
                        reason="AI trap found on portal form")
             stats.skipped += 1
         else:
-            logger.error(
-                "portal submit failed app_id=%d error=%s",
-                app_id, result.error,
+            err = result.error or ""
+            logger.error("portal submit failed app_id=%d error=%s", app_id, err)
+            # Permanent failures → SKIPPED so they are never retried
+            _PERMANENT_ERRORS = (
+                "job is closed", "no longer accepting", "modal did not open",
+                "no easy apply", "no external apply", "easy apply button not found",
+                "stuck", "unfilled required fields",
             )
-            stats.failed += 1
+            if any(p in err.lower() for p in _PERMANENT_ERRORS):
+                try:
+                    transition(conn, app_id, "SKIPPED", reason=f"permanent: {err[:120]}")
+                    logger.info("app_id=%d permanently skipped: %s", app_id, err[:80])
+                    stats.skipped += 1
+                except Exception:
+                    stats.failed += 1
+            else:
+                stats.failed += 1
 
 
 def _process_one(
