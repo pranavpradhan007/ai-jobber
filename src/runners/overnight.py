@@ -113,13 +113,6 @@ def run_overnight(
     logger.info("overnight: %d approved gated apps to submit", len(approved_ids))
 
     for app_id in approved_ids:
-        # Stop early if LinkedIn daily rate limit is active — no point trying more jobs
-        if stats.rate_limited > 0:
-            logger.info(
-                "overnight: rate limit active — skipping remaining %d approved jobs",
-                len(approved_ids) - approved_ids.index(app_id),
-            )
-            break
         try:
             _submit_approved(conn, app_id, stats, gmail_client=gmail_client, dry_run=dry_run)
         except Exception as exc:
