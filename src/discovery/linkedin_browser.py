@@ -30,6 +30,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _CDP_URL = "http://localhost:9222"
+_CDP_PORT_DEFAULT = 9222
 
 # Role + location search matrix for LinkedIn
 LINKEDIN_ROLES = [
@@ -81,6 +82,7 @@ def discover_jobs(
     locations: list[str] | None = None,
     max_per_search: int = 20,
     headless: bool = True,
+    cdp_port: int = _CDP_PORT_DEFAULT,
 ) -> list[dict]:
     """
     Main entry point. Returns list of job dicts compatible with import_jobs().
@@ -98,7 +100,7 @@ def discover_jobs(
     seen_ids: set[str] = set()
 
     with sync_playwright() as pw:
-        browser, page = _connect_browser(pw, headless)
+        browser, page = _connect_browser(pw, headless, cdp_port=cdp_port)
         try:
             if not _ensure_logged_in(page):
                 logger.error("LinkedIn login required — open JobAgent Chrome, log into linkedin.com, then retry")
@@ -124,11 +126,12 @@ def discover_jobs(
     return [_to_job_dict(j) for j in jobs]
 
 
-def _connect_browser(pw, headless: bool):
+def _connect_browser(pw, headless: bool, cdp_port: int = _CDP_PORT_DEFAULT):
     """Try CDP first (saved session), fall back to fresh headless Chromium."""
+    cdp_url = f"http://localhost:{cdp_port}"
     for attempt in range(3):
         try:
-            browser = pw.chromium.connect_over_cdp(_CDP_URL, timeout=30000)
+            browser = pw.chromium.connect_over_cdp(cdp_url, timeout=30000)
             contexts = browser.contexts
             if contexts and contexts[0].pages:
                 page = contexts[0].pages[0]
