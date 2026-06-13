@@ -864,6 +864,14 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pau
             # Replace /apply (end or with query) with /apply/applyManually
             if "/apply/applyManually" not in apply_url and "/apply/applymanually" not in apply_url.lower():
                 apply_url = _re.sub(r'/apply(\?|$)', r'/apply/applyManually\1', apply_url)
+            # Also handle bare job listing URLs: .../job/LOCATION/TITLE_ID?params
+            # → .../job/LOCATION/TITLE_ID/apply/applyManually?params
+            if "applyManually" not in apply_url and "myworkdayjobs.com" in apply_url:
+                apply_url = _re.sub(
+                    r'(/job/[^/]+/[^/?#]+)(\?|#|$)',
+                    r'\1/apply/applyManually\2',
+                    apply_url,
+                )
             if "applyManually" in apply_url and apply_url != cur_url:
                 logger.info("app_id=%d Workday: rewriting sign-in URL to applyManually: %s", app_id, apply_url)
                 page.goto(apply_url, wait_until="domcontentloaded", timeout=30_000)
