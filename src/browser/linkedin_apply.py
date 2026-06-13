@@ -373,7 +373,9 @@ def _fill_radio_groups_js(page):
                 const inputs = Array.from(document.querySelectorAll('input[type="radio"]'));
                 const map = {};
                 inputs.forEach(inp => {
-                    if (!inp.offsetParent) return;
+                    // offsetParent is null for elements inside position:fixed modal — use rect instead
+                    const rect = inp.getBoundingClientRect();
+                    if (inp.disabled || (rect.width === 0 && rect.height === 0)) return;
                     const name = inp.name || inp.id || '';
                     if (!name) return;
                     if (!map[name]) {
