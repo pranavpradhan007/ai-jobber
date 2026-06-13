@@ -141,13 +141,15 @@ def linkedin_easy_apply(
         # Dismiss any "Save this application?" dialog LinkedIn shows on validation failure
         if _dismiss_save_dialog(page):
             _total_save_dialogs += 1
+            time.sleep(0.8)  # wait for dialog to fully close before screenshot
+            _screenshot(page, folder_path, f"li_save_dialog_{_total_save_dialogs:02d}.png")
             if _total_save_dialogs >= 5:
                 _screenshot(page, folder_path, "li_stuck_save_dialog.png")
                 raise RuntimeError(
                     f"LinkedIn Easy Apply: stuck — save dialog dismissed "
                     f"{_total_save_dialogs}x (unfilled required fields)"
                 )
-        if step < 2:  # only screenshot early steps to save memory
+        if step < 8:  # screenshot first 8 steps for debugging
             _screenshot(page, folder_path, f"li_step{step:02d}.png")
 
         # Fill visible fields on this modal page
