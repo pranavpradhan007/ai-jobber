@@ -1192,8 +1192,10 @@ def _try_solve_challenge(page) -> bool:
         "please complete the security check",
     ]
     challenge_resolved = False
-    for poll_sec in range(60):  # up to 60s — Cloudflare managed challenges can take 15-45s
+    for poll_sec in range(300):  # up to 5 min — user can manually solve the challenge
         _time.sleep(1)
+        if poll_sec > 0 and poll_sec % 15 == 0:
+            logger.info("Waiting for Cloudflare challenge to clear... %ds elapsed (solve it in the Chrome window)", poll_sec)
         try:
             # Check a larger body slice to catch all challenge text
             body_text = page.evaluate("() => document.body?.innerText?.slice(0, 1200) || ''") or ""
@@ -3866,6 +3868,7 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
         raise RuntimeError(f"LinkedIn job is closed (no longer accepting applications): {url}")
 
     # Try Easy Apply first
+    _rate_limited = False
     try:
         receipt = linkedin_easy_apply(
             page, url, app_id,
@@ -3882,9 +3885,14 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
             screenshot_path=ss,
         )
     except RuntimeError as e:
-        if "Easy Apply button not found" not in str(e):
+        err_str = str(e)
+        if "Easy Apply button not found" in err_str:
+            logger.info("app_id=%d no Easy Apply — looking for external Apply link", app_id)
+        elif "daily rate limit reached" in err_str:
+            logger.info("app_id=%d Easy Apply rate-limited — trying external Apply link", app_id)
+            _rate_limited = True
+        else:
             raise
-        logger.info("app_id=%d no Easy Apply — looking for external Apply link", app_id)
 
     # External apply fallback: find Apply link and follow it.
     # LinkedIn's "Apply on company website" button opens a NEW TAB (target=_blank),
@@ -3957,6 +3965,10 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
         # Hand off to generic form flow
         return _run_submit_flow(page, app_id, answers, external_url, folder_path, fill_delay)
 
+    if _rate_limited:
+        # Pure Easy Apply job — no external link. Re-raise rate limit so overnight
+        # keeps it in READY_TO_SUBMIT for retry when the daily cap resets.
+        raise RuntimeError(f"LinkedIn Easy Apply: daily rate limit reached — retry tomorrow: {url}")
     raise RuntimeError(f"LinkedIn: no Easy Apply and no external Apply link found on {url}")
 
 
