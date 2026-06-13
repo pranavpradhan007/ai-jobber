@@ -3829,6 +3829,15 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                 "Create Account" in body_check
                 and ("Password" in body_check or "password" in body_check)
             )
+            _has_sign_in_buttons = False
+            try:
+                _has_sign_in_buttons = page.locator(
+                    "#GoogleSignInButton, #SignInWithEmailButton, "
+                    "button:has-text('Sign in with Google'), "
+                    "button:has-text('Sign in with email')"
+                ).count() > 0
+            except Exception:
+                pass
             _has_sign_in_wall = (
                 step == 0
                 and not ("My Information" in body_check or "My Experience" in body_check)
@@ -3837,7 +3846,7 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                     "Email Address" in body_check
                     or "Sign in with Google" in body_check
                     or "Sign in with email" in body_check
-                    or "SignInWithEmailButton" in (page.content() or "")
+                    or _has_sign_in_buttons
                 )
             )
             if _has_create_account or _has_sign_in_wall:
