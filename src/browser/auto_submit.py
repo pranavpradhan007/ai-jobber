@@ -3886,8 +3886,8 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
         )
     except RuntimeError as e:
         err_str = str(e)
-        if "Easy Apply button not found" in err_str:
-            logger.info("app_id=%d no Easy Apply — looking for external Apply link", app_id)
+        if "Easy Apply button not found" in err_str or "modal did not open" in err_str:
+            logger.info("app_id=%d no functional Easy Apply — trying external Apply link", app_id)
         elif "daily rate limit reached" in err_str:
             logger.info("app_id=%d Easy Apply rate-limited — trying external Apply link", app_id)
             _rate_limited = True
@@ -3966,8 +3966,6 @@ def _run_linkedin_easy_apply(page, app_id, answers, url, folder_path, fill_delay
         return _run_submit_flow(page, app_id, answers, external_url, folder_path, fill_delay)
 
     if _rate_limited:
-        # Pure Easy Apply job — no external link. Re-raise rate limit so overnight
-        # keeps it in READY_TO_SUBMIT for retry when the daily cap resets.
         raise RuntimeError(f"LinkedIn Easy Apply: daily rate limit reached — retry tomorrow: {url}")
     raise RuntimeError(f"LinkedIn: no Easy Apply and no external Apply link found on {url}")
 
