@@ -336,6 +336,40 @@ def _fill_radio_groups_js(page):
     try:
         groups = page.evaluate("""
             () => {
+                function extractQuestion(inp) {
+                    let el = inp;
+                    for (let i = 0; i < 12 && el; i++, el = el.parentElement) {
+                        // 1. fieldset > legend
+                        const lg = el.querySelector('legend');
+                        if (lg && lg.textContent.trim()) return lg.textContent.trim();
+                        // 2. aria-labelledby on current ancestor
+                        const lby = el.getAttribute('aria-labelledby');
+                        if (lby) {
+                            for (const lid of lby.split(' ')) {
+                                const le = document.getElementById(lid);
+                                if (le && le.textContent.trim().length > 5) return le.textContent.trim();
+                            }
+                        }
+                        // 3. aria-label on group container (role=group / fieldset)
+                        const role = el.getAttribute('role');
+                        const al = el.getAttribute('aria-label');
+                        if (al && al.trim().length > 5 && (role === 'group' || el.tagName === 'FIELDSET'))
+                            return al.trim();
+                        // 4. class-based label within ancestor
+                        const sp = el.querySelector('[class*="label"]:not(input):not(label[for])');
+                        if (sp && sp.textContent.trim().length > 5 &&
+                            !sp.querySelector('input,select,textarea'))
+                            return sp.textContent.trim();
+                        // 5. preceding sibling span/p with enough text
+                        if (el.previousElementSibling) {
+                            const sib = el.previousElementSibling;
+                            const txt = sib.textContent.trim();
+                            if (txt.length > 8 && !sib.querySelector('input,select,textarea'))
+                                return txt;
+                        }
+                    }
+                    return '';
+                }
                 const inputs = Array.from(document.querySelectorAll('input[type="radio"]'));
                 const map = {};
                 inputs.forEach(inp => {
@@ -343,19 +377,9 @@ def _fill_radio_groups_js(page):
                     const name = inp.name || inp.id || '';
                     if (!name) return;
                     if (!map[name]) {
-                        let q = '';
-                        let el = inp;
-                        for (let i = 0; i < 10 && el; i++, el = el.parentElement) {
-                            const lg = el.querySelector('legend');
-                            if (lg && lg.textContent.trim()) { q = lg.textContent.trim(); break; }
-                            const sp = el.querySelector('[class*="label"]:not(input):not(label[for])');
-                            if (sp && sp.textContent.trim() && sp.textContent.trim().length > 5) {
-                                q = sp.textContent.trim(); break;
-                            }
-                        }
+                        const q = extractQuestion(inp);
                         map[name] = { name, question: q.toLowerCase(), opts: [] };
                     }
-                    // Capture option label text (from <label for=id> or aria-label) as well as value
                     let labelText = '';
                     if (inp.id) {
                         const lbl = document.querySelector('label[for="' + inp.id + '"]');
@@ -363,7 +387,6 @@ def _fill_radio_groups_js(page):
                     }
                     if (!labelText) labelText = (inp.getAttribute('aria-label') || '').toLowerCase();
                     if (!labelText) {
-                        // walk up to find sibling/parent label text
                         const p = inp.parentElement;
                         if (p) labelText = p.textContent.trim().toLowerCase();
                     }
