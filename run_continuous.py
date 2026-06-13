@@ -17,6 +17,21 @@ import sys
 import time
 import urllib.request
 
+# Single-instance guard — exit immediately if another copy is already running.
+_LOCK_PATH = pathlib.Path("job_agent_continuous.lock")
+_lock_fh = None
+try:
+    import msvcrt as _msvcrt
+    _lock_fh = open(_LOCK_PATH, "w")
+    _msvcrt.locking(_lock_fh.fileno(), _msvcrt.LK_NBLCK, 1)
+    _lock_fh.write(str(os.getpid()))
+    _lock_fh.flush()
+except OSError:
+    print("Another run_continuous.py instance is already running — exiting.")
+    sys.exit(0)
+except Exception:
+    pass  # Non-Windows fallback: proceed without lock
+
 from dotenv import load_dotenv
 load_dotenv()
 
