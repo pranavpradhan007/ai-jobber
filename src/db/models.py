@@ -23,6 +23,7 @@ class Job:
     login_required: int = 0
     platform: Optional[str] = None
     email_apply_addr: Optional[str] = None
+    easy_apply: int = 0
     discovered_at: Optional[str] = None
     created_at: Optional[str] = None
 
