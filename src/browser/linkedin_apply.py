@@ -225,7 +225,7 @@ def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: di
     # e.g. "+1 (929) 754-5592" → "(929) 754-5592"  (LinkedIn's +1 country-code select covers the prefix)
     _phone_raw = candidate.get("phone", "")
     _phone_local = re.sub(r'^\+?1[\s\-]?', '', _phone_raw).strip()
-    _fill_field(page, "input[id*='phoneNumber'], input[aria-label*='Phone number'], "
+    _fill_field(page, "input[id*='phoneNumber'], input[aria-label*='Phone'], "
                 "input[name*='phone'], input[type='tel']",
                 _phone_local or _phone_raw, delay)
 
@@ -774,7 +774,10 @@ def _fill_text_questions(page, answers: dict):
                        long_text=False)
             inter_field_pause()
             return
-        if any(w in key for w in ("start date", "available", "notice period", "start")):
+        if any(w in key for w in ("notice period", "notice_period")):
+            # LinkedIn notice-period fields expect a decimal number, not text like "2 weeks"
+            human_fill(page, el, "14", long_text=False)
+        elif any(w in key for w in ("start date", "available", "start")):
             human_fill(page, el, answers.get("start_date", "2 weeks"), long_text=False)
             inter_field_pause()
             return
