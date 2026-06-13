@@ -455,14 +455,27 @@ def _fill_if_empty(page, selector: str, value: str, delay: float):
 
 
 def _upload_resume(page, resume_pdf_path: str):
-    """Upload resume PDF via file input if visible."""
+    """Upload resume PDF — skip if an existing resume radio is already selected."""
     if not resume_pdf_path or not Path(resume_pdf_path).is_file():
         return
     try:
+        # If an existing LinkedIn-profile resume is already checked, leave it selected.
+        # set_input_files() would deselect it and trigger an async upload that races with Next.
+        already_selected = page.evaluate("""
+            (() => {
+                const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                return radios.some(r => r.checked &&
+                    (r.name || r.id || '').toLowerCase().includes('resume'));
+            })()
+        """)
+        if already_selected:
+            logger.debug("linkedin: existing resume radio selected — skipping upload")
+            return
+
         file_input = page.locator("input[type='file']").first
         if file_input.count() > 0:
             file_input.set_input_files(resume_pdf_path)
-            _human_pause(1.0, 2.0)
+            _human_pause(2.0, 3.0)  # allow upload to complete before Next
             logger.info("linkedin: resume uploaded from %s", resume_pdf_path)
     except Exception as exc:
         logger.warning("linkedin: resume upload failed: %s", exc)
