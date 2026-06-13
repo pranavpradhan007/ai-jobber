@@ -850,6 +850,7 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pau
         "pinterestcareers.com", "careers.ey.com", "healthcaresource.com",
         "ibegin.tcsapps.com", "pageuppeople.com", "thebigjobsite.com",
         "healthcare.wd1.myworkdayjobs.com", "jobs.citi.com",
+        "rex.zone",
     )
     if any(d in page.url for d in _UNSUPPORTED_PORTAL_DOMAINS):
         raise RuntimeError(f"unsupported portal (no auto-submit): {page.url[:80]}")
