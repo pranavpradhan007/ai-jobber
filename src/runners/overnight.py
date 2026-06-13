@@ -69,6 +69,19 @@ def run_overnight(
 
     stats = OvernightStats()
 
+    # Recovery: reset any apps stuck in mid-pipeline transient states back to DISCOVERED
+    # (happens when the process is killed during tailoring/packaging)
+    stuck = conn.execute(
+        "SELECT id FROM applications WHERE state IN ('TAILORING', 'PACKAGING', 'VERIFYING')"
+    ).fetchall()
+    if stuck:
+        stuck_ids = [r["id"] for r in stuck]
+        logger.warning("overnight: recovering %d stuck apps from transient state: %s", len(stuck_ids), stuck_ids)
+        conn.execute(
+            "UPDATE applications SET state='DISCOVERED' WHERE state IN ('TAILORING', 'PACKAGING', 'VERIFYING')"
+        )
+        conn.commit()
+
     # Phase 1: DISCOVERED apps (full pipeline)
     cur = conn.execute(
         "SELECT id FROM applications WHERE state='DISCOVERED' LIMIT ?",
@@ -448,6 +461,11 @@ def _process_one(
         stats.tailored += 1
     except (VerifierGateError, PageLimitError) as exc:
         transition(conn, app_id, "FAILED", reason=str(exc))
+        stats.failed += 1
+        return
+    except Exception as exc:
+        logger.error("app_id=%d tailoring error: %s", app_id, exc, exc_info=True)
+        transition(conn, app_id, "FAILED", reason=f"tailoring_error: {exc}")
         stats.failed += 1
         return
 
