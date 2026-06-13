@@ -101,14 +101,14 @@ def run_discovery() -> int:
         headless=False,
         cdp_port=CDP_PORT,
     )
-    easy_apply = [j for j in job_dicts if j.get("easy_apply") or j.get("apply_method") == "linkedin_easy_apply"]
-    logger.info("Discovery: %d total / %d Easy Apply", len(job_dicts), len(easy_apply))
+    easy_apply_count = sum(1 for j in job_dicts if j.get("easy_apply") or j.get("apply_method") == "linkedin_easy_apply")
+    logger.info("Discovery: %d total / %d Easy Apply", len(job_dicts), easy_apply_count)
 
-    if not easy_apply:
+    if not job_dicts:
         return 0
 
     conn = get_connection("job_agent.db")
-    result = import_jobs(conn, easy_apply, source="linkedin_browser")
+    result = import_jobs(conn, job_dicts, source="linkedin_browser")
     conn.commit()
     conn.close()
     added = result.get("added", 0) if isinstance(result, dict) else result
@@ -181,10 +181,9 @@ def main() -> None:
                 apply_stats = run_apply()
                 total_submitted += apply_stats.get("submitted", 0)
                 if apply_stats.get("rate_limited", 0) > 0:
-                    logger.warning(
-                        "LinkedIn daily Easy Apply limit reached — sleeping 8 hours before retry"
+                    logger.info(
+                        "LinkedIn Easy Apply rate-limited — continuing with external-apply jobs"
                     )
-                    time.sleep(8 * 3600)
 
             # Ensure Chrome is up before discovery (apply may have left it in odd state)
             if not _ensure_chrome():
@@ -201,10 +200,9 @@ def main() -> None:
                     apply_stats2 = run_apply()
                     total_submitted += apply_stats2.get("submitted", 0)
                     if apply_stats2.get("rate_limited", 0) > 0:
-                        logger.warning(
-                            "LinkedIn daily Easy Apply limit reached — sleeping 8 hours before retry"
+                        logger.info(
+                            "LinkedIn Easy Apply rate-limited — continuing with external-apply jobs"
                         )
-                        time.sleep(8 * 3600)
 
             logger.info("Pass %d complete. Total submitted this session: %d", pass_num, total_submitted)
 
