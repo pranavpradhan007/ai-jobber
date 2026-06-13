@@ -156,16 +156,26 @@ def main() -> None:
 
         try:
             # Apply to any already-discovered jobs first (fast path)
-            apply_stats = run_apply()
-            total_submitted += apply_stats.get("submitted", 0)
+            if not _ensure_chrome():
+                logger.warning("Chrome unavailable for apply — skipping apply phase")
+            else:
+                apply_stats = run_apply()
+                total_submitted += apply_stats.get("submitted", 0)
+
+            # Ensure Chrome is up before discovery (apply may have left it in odd state)
+            if not _ensure_chrome():
+                logger.warning("Chrome unavailable for discovery — skipping discovery phase")
+                time.sleep(30)
+                continue
 
             # Then discover more
             added = run_discovery()
 
             # If new jobs found, apply immediately
             if added > 0:
-                apply_stats2 = run_apply()
-                total_submitted += apply_stats2.get("submitted", 0)
+                if _ensure_chrome():
+                    apply_stats2 = run_apply()
+                    total_submitted += apply_stats2.get("submitted", 0)
 
             logger.info("Pass %d complete. Total submitted this session: %d", pass_num, total_submitted)
 
