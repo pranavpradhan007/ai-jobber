@@ -238,7 +238,7 @@ def run_tailoring(
         resume_path=docx_path,
         resume_pdf_path=pdf_path,
         resume_diff_path=diff_path,
-        verifier_passed=0 if used_ground_truth else 1,
+        verifier_passed=1,  # ground truth = pre-verified KB content; LLM path also passed verify_text() above
     )
     transition(conn, app_id, "RESUME_VERIFIED", reason="verifier passed")
 
