@@ -178,19 +178,22 @@ def _check_submitting_invariant(
     approved_by_user: int,
 ) -> None:
     """
-    SUBMITTING requires:
-      verifier_passed = 1  AND  (auto_safe = 1  OR  approved_by_user = 1)
+    SUBMITTING requires one of:
+      approved_by_user = 1  (user approval overrides automated verifier)
+      auto_safe = 1 AND verifier_passed = 1  (fully automated path)
     """
     errors = []
 
-    if not verifier_passed:
-        errors.append("verifier_passed = 0 (verifier has not cleared all claims)")
-
-    if not auto_safe and not approved_by_user:
-        errors.append(
-            "neither auto_safe=1 nor approved_by_user=1 "
-            "(gated jobs require explicit user approval)"
-        )
+    # User approval is the highest authority — if approved_by_user=1, verifier_passed
+    # is not required (the user has seen and accepted the application content).
+    if not approved_by_user:
+        if not verifier_passed:
+            errors.append("verifier_passed = 0 (verifier has not cleared all claims)")
+        if not auto_safe:
+            errors.append(
+                "neither auto_safe=1 nor approved_by_user=1 "
+                "(gated jobs require explicit user approval)"
+            )
 
     if errors:
         msg = (
