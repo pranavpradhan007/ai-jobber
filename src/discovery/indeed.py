@@ -505,6 +505,7 @@ def import_jobs(
                 has_screener=1 if raw.get("has_screener") else 0,
                 login_required=0,
                 email_apply_addr=raw.get("email_apply_addr") or None,
+                easy_apply=1 if raw.get("easy_apply") else 0,
             )
             if jd_hash:
                 conn.execute("UPDATE jobs SET jd_hash=? WHERE id=?", (jd_hash, job.id))

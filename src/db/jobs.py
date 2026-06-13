@@ -27,6 +27,7 @@ def create_job(
     login_required: int = 0,
     platform: Optional[str] = None,
     email_apply_addr: Optional[str] = None,
+    easy_apply: int = 0,
 ) -> Job:
     """Insert a new job row. Returns the created Job. Raises on duplicate URL."""
     jd_hash = _hash_jd(clean_jd) if clean_jd else None
@@ -36,12 +37,12 @@ def create_job(
         INSERT INTO jobs
             (source, url, jd_hash, company, title, location, remote,
              raw_jd, clean_jd, has_screener, login_required, platform,
-             email_apply_addr)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+             email_apply_addr, easy_apply)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (source, url, jd_hash, company, title, location, remote,
          raw_jd, clean_jd, has_screener, login_required, platform,
-         email_apply_addr),
+         email_apply_addr, easy_apply),
     )
     conn.commit()
     job_id = cur.lastrowid

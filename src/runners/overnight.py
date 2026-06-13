@@ -101,7 +101,8 @@ def run_overnight(
     # RemoteOK is excluded — bot detection too strong, no reliable apply URL
     cur = conn.execute(
         """
-        SELECT a.id, j.url FROM applications a JOIN jobs j ON a.job_id=j.id
+        SELECT a.id, j.url, COALESCE(j.easy_apply, 0) AS easy_apply
+        FROM applications a JOIN jobs j ON a.job_id=j.id
         WHERE a.state IN ('WAITING_FOR_USER_APPROVAL', 'READY_TO_SUBMIT') AND a.approved_by_user=1
         AND LOWER(j.platform) NOT IN ('remoteok', 'hackernews', 'custom')
         AND a.id NOT IN (3, 47, 48, 50, 56, 93, 125)
@@ -109,15 +110,14 @@ def run_overnight(
         """,
         (max_jobs,),
     )
-    approved_rows = [(row["id"], row["url"]) for row in cur.fetchall()]
+    approved_rows = [(row["id"], row["easy_apply"]) for row in cur.fetchall()]
     logger.info("overnight: %d approved gated apps to submit", len(approved_rows))
 
-    for app_id, job_url in approved_rows:
-        # When EA rate limit is active, skip LinkedIn EA jobs immediately (no browser needed).
+    for app_id, is_easy_apply in approved_rows:
+        # When EA rate limit is active, skip LinkedIn EA-only jobs immediately.
         # External-apply jobs (Greenhouse, Ashby, Workday, etc.) continue unblocked.
-        _is_linkedin_url = "linkedin.com" in (job_url or "")
-        if stats.rate_limited > 0 and _is_linkedin_url:
-            logger.debug("app_id=%d EA rate-limited — skipping LinkedIn URL for retry tomorrow", app_id)
+        if stats.rate_limited > 0 and is_easy_apply:
+            logger.debug("app_id=%d EA-only job, rate-limited — skipping for retry tomorrow", app_id)
             stats.rate_limited += 1
             continue
         try:
