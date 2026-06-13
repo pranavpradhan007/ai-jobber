@@ -849,6 +849,7 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pau
         "jobright.ai", "bestjobtool.com",
         "pinterestcareers.com", "careers.ey.com", "healthcaresource.com",
         "ibegin.tcsapps.com", "pageuppeople.com", "thebigjobsite.com",
+        "healthcare.wd1.myworkdayjobs.com",
     )
     if any(d in page.url for d in _UNSUPPORTED_PORTAL_DOMAINS):
         raise RuntimeError(f"unsupported portal (no auto-submit): {page.url[:80]}")
@@ -3840,16 +3841,25 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                 pass
             _has_sign_in_wall = (
                 step == 0
-                and not ("My Information" in body_check or "My Experience" in body_check)
-                and ("Sign In" in body_check or "Sign in" in body_check)
                 and (
-                    "Email Address" in body_check
-                    or "Sign in with Google" in body_check
-                    or "Sign in with email" in body_check
-                    or _has_sign_in_buttons
+                    # Definitive: sign-in buttons are present regardless of breadcrumbs
+                    _has_sign_in_buttons
+                    or (
+                        not ("My Information" in body_check or "My Experience" in body_check)
+                        and ("Sign In" in body_check or "Sign in" in body_check)
+                        and (
+                            "Email Address" in body_check
+                            or "Sign in with Google" in body_check
+                            or "Sign in with email" in body_check
+                        )
+                    )
                 )
             )
             if _has_create_account or _has_sign_in_wall:
+                if not os.environ.get("WORKDAY_PASSWORD"):
+                    raise RuntimeError(
+                        f"app_id={app_id} Workday account gate requires WORKDAY_PASSWORD — set it in .env to auto-apply on {page.url}"
+                    )
                 logger.info("app_id=%d Workday: account gate detected at step=%d — attempting account creation", app_id, step)
                 _workday_handle_account_gate(page, app_id, answers)
                 try:
