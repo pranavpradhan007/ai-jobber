@@ -3561,6 +3561,27 @@ def _workday_handle_account_gate(page, app_id: int, answers: dict) -> None:
             f"app_id={app_id} Workday account gate: set WORKDAY_PASSWORD in .env to auto-create accounts"
         )
 
+    # If the page shows "Sign in with email" button (Google-first layout),
+    # click it to expand the email/password form before filling fields.
+    for expand_sel in [
+        "button[id='SignInWithEmailButton']",
+        "button:has-text('Sign in with email')",
+        "button:has-text('Sign In with Email')",
+    ]:
+        try:
+            loc = page.locator(expand_sel).first
+            if loc.count() > 0 and loc.is_visible(timeout=1500):
+                _human_click(page, loc)
+                logger.info("app_id=%d Workday account gate: clicked 'Sign in with email' to expand form", app_id)
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=8_000)
+                except Exception:
+                    pass
+                _human_pause(1.0, 2.0)
+                break
+        except Exception:
+            continue
+
     # Fill email if the field is visible and empty
     for email_sel in [
         "input[data-automation-id='email']",
@@ -3776,10 +3797,15 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                 and ("Password" in body_check or "password" in body_check)
             )
             _has_sign_in_wall = (
-                "Sign In" in body_check
-                and "Email Address" in body_check
-                and step == 0
+                step == 0
                 and not ("My Information" in body_check or "My Experience" in body_check)
+                and ("Sign In" in body_check or "Sign in" in body_check)
+                and (
+                    "Email Address" in body_check
+                    or "Sign in with Google" in body_check
+                    or "Sign in with email" in body_check
+                    or "SignInWithEmailButton" in (page.content() or "")
+                )
             )
             if _has_create_account or _has_sign_in_wall:
                 logger.info("app_id=%d Workday: account gate detected at step=%d — attempting account creation", app_id, step)
