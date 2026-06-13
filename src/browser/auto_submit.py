@@ -849,7 +849,7 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pau
         "jobright.ai", "bestjobtool.com",
         "pinterestcareers.com", "careers.ey.com", "healthcaresource.com",
         "ibegin.tcsapps.com", "pageuppeople.com", "thebigjobsite.com",
-        "healthcare.wd1.myworkdayjobs.com",
+        "healthcare.wd1.myworkdayjobs.com", "jobs.citi.com",
     )
     if any(d in page.url for d in _UNSUPPORTED_PORTAL_DOMAINS):
         raise RuntimeError(f"unsupported portal (no auto-submit): {page.url[:80]}")
@@ -3792,7 +3792,9 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
 
         # Detect Workday job listing page — /apply/applyManually sometimes loads the
         # job description instead of the form (no inputs, has an Apply button).
-        # Click Apply to navigate to the actual application form.
+        # Click Apply to navigate to the actual application form, then re-enter
+        # the step loop so subsequent checks see the updated page state.
+        _clicked_listing_apply = False
         try:
             body_check = page.evaluate("() => document.body.innerText") or ""
             _is_job_listing = (
@@ -3816,11 +3818,14 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
                             except Exception:
                                 pass
                             _human_pause(2.0, 3.0)
+                            _clicked_listing_apply = True
                             break
                     except Exception:
                         continue
         except Exception:
             pass
+        if _clicked_listing_apply:
+            continue  # re-enter step loop so gate/form checks see the new page
 
         # Detect Workday "Create Account / Sign In" gate — appears as step 0 on
         # companies that require an account before showing the application form.
