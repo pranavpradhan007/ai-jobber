@@ -3789,6 +3789,38 @@ def _handle_workday_pages(page, app_id: int, answers: dict, folder_path: str, fi
         except Exception:
             pass
 
+        # Detect Workday job listing page — /apply/applyManually sometimes loads the
+        # job description instead of the form (no inputs, has an Apply button).
+        # Click Apply to navigate to the actual application form.
+        try:
+            body_check = page.evaluate("() => document.body.innerText") or ""
+            _is_job_listing = (
+                step == 0
+                and not ("My Information" in body_check or "My Experience" in body_check)
+                and not ("Create Account" in body_check or "Sign In" in body_check or "Sign in" in body_check)
+                and page.locator("input, textarea, select").count() < 2
+            )
+            if _is_job_listing:
+                for _apply_sel in [
+                    "a:has-text('Apply')", "button:has-text('Apply')",
+                    "[data-automation-id='Apply']", "a[href*='apply']",
+                ]:
+                    try:
+                        _loc = page.locator(_apply_sel).first
+                        if _loc.count() > 0 and _loc.is_visible(timeout=2000):
+                            _human_click(page, _loc)
+                            logger.info("app_id=%d Workday: clicked Apply on job listing page (step=%d)", app_id, step)
+                            try:
+                                page.wait_for_load_state("networkidle", timeout=12_000)
+                            except Exception:
+                                pass
+                            _human_pause(2.0, 3.0)
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
         # Detect Workday "Create Account / Sign In" gate — appears as step 0 on
         # companies that require an account before showing the application form.
         try:
