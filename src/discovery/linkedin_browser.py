@@ -359,34 +359,21 @@ def _enrich_job_from_panel(page, job: LinkedInJob):
     Called after clicking a search-result card — the detail panel loads inline
     without a page navigation, so all data is accessible immediately.
     """
-    # Detect Easy Apply button scoped to the detail panel only.
-    # Querying the whole document picks up Easy Apply buttons from other cards
-    # in the left-panel list, causing false positives for external-apply jobs.
+    # Detect Easy Apply button in the detail panel.
+    # Exclude buttons that live inside left-panel search-result cards
+    # (those cards can show Easy Apply for OTHER jobs, causing false positives).
     try:
         ea_btn = page.evaluate("""
             (() => {
-                // Detail panel selectors (right side of the split view)
-                const panelSels = [
-                    '.jobs-search__job-details--wrapper',
-                    '.jobs-unified-top-card',
-                    '.job-details-jobs-unified-top-card__container',
-                    '.jobs-details__main-content',
-                    '#job-details',
-                    '[data-job-id]',
-                ];
-                let panel = null;
-                for (const sel of panelSels) {
-                    panel = document.querySelector(sel);
-                    if (panel) break;
-                }
-                const scope = panel || document;
-                const btns = Array.from(scope.querySelectorAll('button'));
+                const btns = Array.from(document.querySelectorAll('button'));
                 return btns.find(b => {
                     const lbl = (b.getAttribute('aria-label') || '').toLowerCase();
                     const txt = (b.innerText || '').trim().toLowerCase();
-                    return (lbl.includes('easy apply') || txt === 'easy apply') &&
-                           !lbl.includes('filter') &&
-                           !b.disabled;
+                    if (!(lbl.includes('easy apply') || txt === 'easy apply')) return false;
+                    if (lbl.includes('filter')) return false;
+                    // Exclude buttons inside left-panel job-card containers
+                    if (b.closest('[data-occludable-job-id], .job-card-list__item, .jobs-search__results-list li')) return false;
+                    return true;
                 }) || null;
             })()
         """)
