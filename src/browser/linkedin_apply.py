@@ -133,21 +133,34 @@ def linkedin_easy_apply(
 
     # Work through modal steps
     max_steps = 15
-    _total_save_dialogs = 0  # total across all steps — reset resets were hiding stuck state
+    _total_save_dialogs = 0
+    _last_dialog_pct = -1   # progress % at last dialog
+    _dialogs_at_same_pct = 0  # consecutive dialogs without progress
     for step in range(max_steps):
         page_transition_pause()
         _check_auth_wall(page)
         _check_li_captcha(page)
-        # Dismiss any "Save this application?" dialog LinkedIn shows on validation failure
+        # Dismiss any "Save this application?" dialog.
+        # Some LinkedIn jobs show this dialog on EVERY step transition (not just validation
+        # failures). Track progress % to detect real stuckness vs. routine save prompts.
         if _dismiss_save_dialog(page):
             _total_save_dialogs += 1
             time.sleep(0.8)  # wait for dialog to fully close before screenshot
             _screenshot(page, folder_path, f"li_save_dialog_{_total_save_dialogs:02d}.png")
-            if _total_save_dialogs >= 5:
+            current_pct = _get_progress_pct(page)
+            if current_pct == _last_dialog_pct:
+                _dialogs_at_same_pct += 1
+            else:
+                _dialogs_at_same_pct = 1
+                _last_dialog_pct = current_pct
+            logger.info("save dialog #%d at pct=%d same_pct_streak=%d",
+                        _total_save_dialogs, current_pct, _dialogs_at_same_pct)
+            # Only abort if stuck at the SAME progress % 3+ times — progressing is fine
+            if _dialogs_at_same_pct >= 3:
                 _screenshot(page, folder_path, "li_stuck_save_dialog.png")
                 raise RuntimeError(
-                    f"LinkedIn Easy Apply: stuck — save dialog dismissed "
-                    f"{_total_save_dialogs}x (unfilled required fields)"
+                    f"LinkedIn Easy Apply: stuck — save dialog {_dialogs_at_same_pct}x "
+                    f"at same progress {current_pct}% (unfilled required fields)"
                 )
         if step < 8:  # screenshot first 8 steps for debugging
             _screenshot(page, folder_path, f"li_step{step:02d}.png")
@@ -183,6 +196,34 @@ def linkedin_easy_apply(
         break
 
     raise RuntimeError(f"LinkedIn Easy Apply: could not complete after {max_steps} steps")
+
+
+def _get_progress_pct(page) -> int:
+    """Read the Easy Apply modal's progress bar percentage (0-100). Returns -1 on failure."""
+    try:
+        return int(page.evaluate("""
+            (() => {
+                const bar = document.querySelector(
+                    '[role="progressbar"], .artdeco-completeness-meter-linear__progress-element'
+                );
+                if (bar) {
+                    const now = bar.getAttribute('aria-valuenow') || bar.getAttribute('value');
+                    if (now) return parseInt(now);
+                    const s = bar.getAttribute('style') || '';
+                    const m = s.match(/width:\\s*(\\d+)%/);
+                    if (m) return parseInt(m[1]);
+                }
+                // Fall back: find first text node that looks like "NN%"
+                const all = document.querySelectorAll('span, div');
+                for (const el of all) {
+                    const t = el.textContent.trim();
+                    if (/^\\d{1,3}%$/.test(t)) return parseInt(t);
+                }
+                return -1;
+            })()
+        """) or -1)
+    except Exception:
+        return -1
 
 
 def _dismiss_save_dialog(page) -> bool:
@@ -505,6 +546,21 @@ def _fill_inline_number_inputs(page, answers: dict):
                 if any(x in key for x in ["phone", "email", "city", "linkedin", "position",
                                            "title", "first name", "last name", "name"]):
                     continue
+                # Fallback: use placeholder if no label or aria-label found
+                if not key:
+                    ph = (inp.get_attribute("placeholder") or "").lower().strip()
+                    if ph:
+                        key = ph
+                # Fallback: check parent element text (some LinkedIn forms put label in sibling span)
+                if not key:
+                    try:
+                        parent_text = (inp.evaluate("el => el.parentElement ? el.parentElement.textContent : ''") or "").lower().strip()
+                        if len(parent_text) > 3 and len(parent_text) < 150:
+                            key = parent_text
+                    except Exception:
+                        pass
+                if not key:
+                    continue
                 cur = ""
                 try:
                     cur = inp.input_value() or ""
@@ -514,7 +570,9 @@ def _fill_inline_number_inputs(page, answers: dict):
                     continue
                 if "salary" in key or "compensation" in key or "pay" in key:
                     human_fill(page, inp, str(answers.get("salary_expectation", "110000")), long_text=False)
-                elif "year" in key and ("experience" in key or "exp" in key):
+                elif "year" in key and ("experience" in key or "exp" in key or "work" in key):
+                    human_fill(page, inp, str(answers.get("years_experience", "3")), long_text=False)
+                elif "how many year" in key or "years of" in key:
                     human_fill(page, inp, str(answers.get("years_experience", "3")), long_text=False)
                 elif "gpa" in key:
                     human_fill(page, inp, "3.8", long_text=False)
