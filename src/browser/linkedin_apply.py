@@ -187,19 +187,42 @@ def linkedin_easy_apply(
 
 def _dismiss_save_dialog(page) -> bool:
     """
-    Dismiss the 'Save this application?' dialog LinkedIn shows when Continue
-    is clicked on a validation-failed page. Press Escape to cancel the dialog
-    and return to the form (not Discard which deletes the application).
+    Dismiss the 'Save this application?' dialog LinkedIn shows when the modal
+    is navigated away or a required field causes validation.
+    Click the dialog's own X button to return to the form (not Discard/Save).
     Returns True if dismissed.
     """
     try:
         # Dialog detection: look for the save/discard button pair
         discard = page.locator("button:has-text('Discard')").first
-        if discard.count() > 0 and discard.is_visible():
+        if discard.count() == 0 or not discard.is_visible():
+            return False
+        # Try clicking the dismiss X on the dialog overlay itself
+        # (not the outer Easy Apply modal's X which would close the whole application)
+        dismissed = False
+        dismiss_selectors = [
+            "button.artdeco-modal__dismiss",
+            "[data-test-dialog-header] button",
+            "div[role='dialog'] button[aria-label='Dismiss']",
+            "div[role='dialog'] button[aria-label*='close' i]",
+            "div[role='dialog'] button[aria-label*='Close' i]",
+        ]
+        for sel in dismiss_selectors:
+            try:
+                btn = page.locator(sel).first
+                if btn.count() > 0 and btn.is_visible():
+                    btn.click()
+                    dismissed = True
+                    break
+            except Exception:
+                pass
+        if not dismissed:
+            # Fall back to Escape
             page.keyboard.press("Escape")
-            time.sleep(0.5)
-            logger.info("Dismissed 'Save this application?' dialog via Escape")
-            return True
+        time.sleep(0.5)
+        logger.info("Dismissed 'Save this application?' dialog (method=%s)",
+                    "btn" if dismissed else "Escape")
+        return True
     except Exception as exc:
         logger.debug("dialog dismiss error: %s", exc)
     return False
@@ -375,9 +398,20 @@ def _fill_radio_groups_js(page):
                 const inputs = Array.from(document.querySelectorAll('input[type="radio"]'));
                 const map = {};
                 inputs.forEach(inp => {
-                    // offsetParent is null for elements inside position:fixed modal — use rect instead
+                    if (inp.disabled) return;
+                    // LinkedIn uses custom-styled radios where the <input> itself may have
+                    // near-zero dimensions (the visible circle is a CSS pseudo-element).
+                    // Check if the input OR its associated label is visible.
                     const rect = inp.getBoundingClientRect();
-                    if (inp.disabled || (rect.width === 0 && rect.height === 0)) return;
+                    let visible = rect.width > 0 && rect.height > 0;
+                    if (!visible && inp.id) {
+                        const lbl = document.querySelector('label[for="' + inp.id + '"]');
+                        if (lbl) {
+                            const lr = lbl.getBoundingClientRect();
+                            visible = lr.width > 0 && lr.height > 0;
+                        }
+                    }
+                    if (!visible) return;
                     const name = inp.name || inp.id || '';
                     if (!name) return;
                     if (!map[name]) {
@@ -385,16 +419,17 @@ def _fill_radio_groups_js(page):
                         map[name] = { name, question: q.toLowerCase(), opts: [] };
                     }
                     let labelText = '';
+                    let labelFor = '';
                     if (inp.id) {
                         const lbl = document.querySelector('label[for="' + inp.id + '"]');
-                        if (lbl) labelText = lbl.textContent.trim().toLowerCase();
+                        if (lbl) { labelText = lbl.textContent.trim().toLowerCase(); labelFor = inp.id; }
                     }
                     if (!labelText) labelText = (inp.getAttribute('aria-label') || '').toLowerCase();
                     if (!labelText) {
                         const p = inp.parentElement;
                         if (p) labelText = p.textContent.trim().toLowerCase();
                     }
-                    map[name].opts.push({ value: inp.value, labelText, checked: inp.checked });
+                    map[name].opts.push({ value: inp.value, id: inp.id || '', labelText, labelFor, checked: inp.checked });
                 });
                 return Object.values(map);
             }
@@ -425,13 +460,25 @@ def _fill_radio_groups_js(page):
             if chosen is None:
                 chosen = opts[0] if target == "yes" else opts[-1]
             try:
-                radio = page.locator(
-                    f"input[type='radio'][name='{name}'][value='{chosen['value']}']"
-                ).first
-                if radio.count() > 0 and radio.is_visible() and not radio.is_checked():
-                    radio.click()
-                    logger.debug("fill_radio_groups_js: clicked %s=%s (label=%r)",
-                                 name, chosen["value"], chosen.get("labelText"))
+                # LinkedIn custom-styled radios: <input> may be near-invisible.
+                # Click the <label for="id"> first; fall back to check(force=True).
+                clicked = False
+                label_for = chosen.get("labelFor", "") or chosen.get("id", "")
+                if label_for:
+                    lbl_el = page.locator(f"label[for='{label_for}']").first
+                    if lbl_el.count() > 0 and lbl_el.is_visible():
+                        lbl_el.click()
+                        clicked = True
+                        logger.debug("fill_radio_groups_js: label-click %s (label=%r target=%s)",
+                                     name, chosen.get("labelText"), target)
+                if not clicked:
+                    radio = page.locator(
+                        f"input[type='radio'][name='{name}'][value='{chosen['value']}']"
+                    ).first
+                    if radio.count() > 0:
+                        radio.check(force=True)
+                        logger.debug("fill_radio_groups_js: force-check %s=%s (label=%r)",
+                                     name, chosen["value"], chosen.get("labelText"))
             except Exception:
                 pass
     except Exception as exc:
@@ -506,6 +553,26 @@ def _fill_if_empty(page, selector: str, value: str, delay: float):
 def _upload_resume(page, resume_pdf_path: str):
     """Select existing resume in modal or upload PDF if no radio choices present."""
     try:
+        # Only act on the Resume step — detect by presence of PDF resume cards or "Upload resume" btn
+        is_resume_step = page.evaluate("""
+            (() => {
+                // Resume step specific markers
+                const hasUploadBtn = !!document.querySelector(
+                    '[data-test-upload-resume], [aria-label*="Upload resume"]'
+                );
+                const hasResumeCard = !!document.querySelector(
+                    '[class*="resume-card"], [data-test-resume-icon], .jobs-resume-picker'
+                );
+                const hasFileInput = !!document.querySelector('input[type="file"]');
+                // Extra: a heading that says exactly "Resume"
+                const headings = Array.from(document.querySelectorAll('h1,h2,h3'));
+                const hasResumeHeading = headings.some(h => h.textContent.trim().toLowerCase() === 'resume');
+                return hasUploadBtn || hasResumeCard || hasFileInput || hasResumeHeading;
+            })()
+        """)
+        if not is_resume_step:
+            return  # Not the resume step — don't touch radios here
+
         # Check for checked radio inside the Easy Apply modal (resume-step radios only)
         modal_has_checked = page.evaluate("""
             (() => {
@@ -520,7 +587,7 @@ def _upload_resume(page, resume_pdf_path: str):
             logger.debug("linkedin: resume radio already selected in modal — skipping upload")
             return
 
-        # If there are unchecked radios, select the first one rather than uploading
+        # If there are unchecked resume radios, select the first one rather than uploading
         modal_has_any_radio = page.evaluate("""
             (() => {
                 const modal = document.querySelector(
@@ -532,9 +599,19 @@ def _upload_resume(page, resume_pdf_path: str):
         """)
         if modal_has_any_radio:
             try:
-                page.locator("input[type='radio']").first.click()
+                first_radio = page.locator("input[type='radio']").first
+                # Verify this looks like a resume radio (label is NOT just "Yes" or "No")
+                radio_id = first_radio.get_attribute("id") or ""
+                label_text = ""
+                if radio_id:
+                    lbl = page.locator(f"label[for='{radio_id}']").first
+                    if lbl.count() > 0:
+                        label_text = lbl.inner_text().strip().lower()
+                if label_text in ("yes", "no", "y", "n"):
+                    return  # This is a Yes/No question radio — don't touch it
+                first_radio.click(force=True)
                 _human_pause(0.5, 1.0)
-                logger.debug("linkedin: clicked first resume radio to select it")
+                logger.debug("linkedin: clicked first resume radio to select it (label=%r)", label_text)
                 return
             except Exception:
                 pass
