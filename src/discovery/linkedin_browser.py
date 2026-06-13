@@ -119,7 +119,9 @@ def discover_jobs(
         finally:
             try:
                 if browser:
-                    browser.close()
+                    # disconnect() releases our Playwright handle without closing Chrome
+                    # pages (close() on a CDP connection would kill all open tabs).
+                    browser.disconnect()
             except Exception:
                 pass
 
