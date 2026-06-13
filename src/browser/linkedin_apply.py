@@ -129,6 +129,20 @@ def linkedin_easy_apply(
             timeout=4000, state="visible",
         )
     except Exception:
+        # Check for daily rate limit banner before treating as permanent failure
+        try:
+            body_text = (page.evaluate("() => document.body.innerText") or "").lower()
+            if any(s in body_text for s in (
+                "limit daily submission", "apply tomorrow",
+                "prevent bots", "we limit daily",
+            )):
+                raise RuntimeError(
+                    f"LinkedIn Easy Apply: daily rate limit reached — retry tomorrow: {job_url}"
+                )
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
         raise RuntimeError(f"LinkedIn Easy Apply: modal did not open after click — job may use external apply: {job_url}")
 
     # Work through modal steps

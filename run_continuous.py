@@ -151,11 +151,12 @@ def run_apply() -> dict:
         dry_run=False,
     )
     conn.close()
+    rate_limited = getattr(stats, "rate_limited", 0)
     logger.info(
-        "Apply: scored=%d submitted=%d gated=%d failed=%d skipped=%d",
-        stats.scored, stats.submitted, stats.gated, stats.failed, stats.skipped,
+        "Apply: scored=%d submitted=%d gated=%d failed=%d skipped=%d rate_limited=%d",
+        stats.scored, stats.submitted, stats.gated, stats.failed, stats.skipped, rate_limited,
     )
-    return {"submitted": stats.submitted, "scored": stats.scored}
+    return {"submitted": stats.submitted, "scored": stats.scored, "rate_limited": rate_limited}
 
 
 def main() -> None:
@@ -179,6 +180,11 @@ def main() -> None:
             else:
                 apply_stats = run_apply()
                 total_submitted += apply_stats.get("submitted", 0)
+                if apply_stats.get("rate_limited", 0) > 0:
+                    logger.warning(
+                        "LinkedIn daily Easy Apply limit reached — sleeping 8 hours before retry"
+                    )
+                    time.sleep(8 * 3600)
 
             # Ensure Chrome is up before discovery (apply may have left it in odd state)
             if not _ensure_chrome():
@@ -194,6 +200,11 @@ def main() -> None:
                 if _ensure_chrome():
                     apply_stats2 = run_apply()
                     total_submitted += apply_stats2.get("submitted", 0)
+                    if apply_stats2.get("rate_limited", 0) > 0:
+                        logger.warning(
+                            "LinkedIn daily Easy Apply limit reached — sleeping 8 hours before retry"
+                        )
+                        time.sleep(8 * 3600)
 
             logger.info("Pass %d complete. Total submitted this session: %d", pass_num, total_submitted)
 

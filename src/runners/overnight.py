@@ -43,6 +43,7 @@ class OvernightStats:
     submitted: int = 0
     gated: int = 0
     failed: int = 0
+    rate_limited: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -191,6 +192,7 @@ def _submit_approved(
             clean_jd=row["clean_jd"] or row["raw_jd"] or "",
             candidate_answers=base_answers,
             cache_dir=folder,
+            llm_timeout=5,  # fail fast — manifests aren't serviced in automated runs
         )
         answers = build_candidate_answers(
             app_id,
@@ -312,6 +314,18 @@ def _submit_approved(
         else:
             err = result.error or ""
             logger.error("portal submit failed app_id=%d error=%s", app_id, err)
+            # LinkedIn daily rate limit — leave in READY_TO_SUBMIT for retry next pass
+            _RATE_LIMIT_SIGNALS = (
+                "daily rate limit reached", "limit daily submission",
+                "apply tomorrow", "prevent bots",
+            )
+            if any(p in err.lower() for p in _RATE_LIMIT_SIGNALS):
+                logger.warning(
+                    "app_id=%d LinkedIn daily rate limit hit — keeping READY_TO_SUBMIT for retry",
+                    app_id,
+                )
+                stats.rate_limited += 1
+                return  # leave state unchanged; will retry on next pass
             # Permanent failures → SKIPPED so they are never retried
             _PERMANENT_ERRORS = (
                 "job is closed", "no longer accepting", "modal did not open",
