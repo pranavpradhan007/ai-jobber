@@ -148,20 +148,28 @@ def linkedin_easy_apply(
             time.sleep(0.8)  # wait for dialog to fully close before screenshot
             _screenshot(page, folder_path, f"li_save_dialog_{_total_save_dialogs:02d}.png")
             current_pct = _get_progress_pct(page)
-            if current_pct == _last_dialog_pct:
-                _dialogs_at_same_pct += 1
+            logger.info("save dialog #%d pct=%d", _total_save_dialogs, current_pct)
+            if current_pct == -1:
+                # Progress bar unreadable — only abort after many dialogs total
+                if _total_save_dialogs >= 10:
+                    _screenshot(page, folder_path, "li_stuck_save_dialog.png")
+                    raise RuntimeError(
+                        f"LinkedIn Easy Apply: stuck — {_total_save_dialogs} save dialogs, "
+                        f"progress bar unreadable"
+                    )
             else:
-                _dialogs_at_same_pct = 1
-                _last_dialog_pct = current_pct
-            logger.info("save dialog #%d at pct=%d same_pct_streak=%d",
-                        _total_save_dialogs, current_pct, _dialogs_at_same_pct)
-            # Only abort if stuck at the SAME progress % 3+ times — progressing is fine
-            if _dialogs_at_same_pct >= 3:
-                _screenshot(page, folder_path, "li_stuck_save_dialog.png")
-                raise RuntimeError(
-                    f"LinkedIn Easy Apply: stuck — save dialog {_dialogs_at_same_pct}x "
-                    f"at same progress {current_pct}% (unfilled required fields)"
-                )
+                if current_pct == _last_dialog_pct:
+                    _dialogs_at_same_pct += 1
+                else:
+                    _dialogs_at_same_pct = 1
+                    _last_dialog_pct = current_pct
+                # Only abort if stuck at the SAME progress % 3+ times — progressing is fine
+                if _dialogs_at_same_pct >= 3:
+                    _screenshot(page, folder_path, "li_stuck_save_dialog.png")
+                    raise RuntimeError(
+                        f"LinkedIn Easy Apply: stuck — save dialog {_dialogs_at_same_pct}x "
+                        f"at same progress {current_pct}% (unfilled required fields)"
+                    )
         if step < 8:  # screenshot first 8 steps for debugging
             _screenshot(page, folder_path, f"li_step{step:02d}.png")
 
@@ -203,21 +211,27 @@ def _get_progress_pct(page) -> int:
     try:
         return int(page.evaluate("""
             (() => {
+                // 1. role=progressbar attribute
                 const bar = document.querySelector(
                     '[role="progressbar"], .artdeco-completeness-meter-linear__progress-element'
                 );
                 if (bar) {
                     const now = bar.getAttribute('aria-valuenow') || bar.getAttribute('value');
-                    if (now) return parseInt(now);
+                    if (now !== null && now !== '') return parseInt(now);
                     const s = bar.getAttribute('style') || '';
                     const m = s.match(/width:\\s*(\\d+)%/);
                     if (m) return parseInt(m[1]);
                 }
-                // Fall back: find first text node that looks like "NN%"
-                const all = document.querySelectorAll('span, div');
+                // 2. Modal-scoped: find text that looks like "NN%" (with or without trailing text)
+                const modal = document.querySelector(
+                    '[data-test-modal], [aria-label*="Easy Apply"], .jobs-easy-apply-modal'
+                ) || document.body;
+                const all = modal.querySelectorAll('span, div, p');
                 for (const el of all) {
+                    if (el.children.length > 3) continue;  // skip containers
                     const t = el.textContent.trim();
-                    if (/^\\d{1,3}%$/.test(t)) return parseInt(t);
+                    const m = t.match(/^(\\d{1,3})%/);
+                    if (m) return parseInt(m[1]);
                 }
                 return -1;
             })()
