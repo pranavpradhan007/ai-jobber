@@ -866,7 +866,29 @@ def _fill_selects(page, answers: dict):
                         _select_best_option(sel_el, str(val))
                         continue
 
-                # 3. Smart defaults for common LinkedIn dropdown patterns
+                # 3. Yes/No option check FIRST — must run before label-pattern heuristics
+                # because labels like "Do you have minimum 5 yrs of experience?" contain
+                # "experience" and would otherwise be misrouted to _select_years_option.
+                try:
+                    opt_texts = [
+                        (o.inner_text() or "").strip().lower()
+                        for o in sel_el.locator("option").all()
+                    ]
+                    real_opts = [t for t in opt_texts
+                                 if t and t not in ("select an option", "select",
+                                                    "please select", "--", "-", "")]
+                    if set(real_opts) <= {"yes", "no"}:
+                        if any(k in label for k in ("sponsor", "require.*visa", "need.*visa",
+                                                    "h-1b", "h1b", "opt", "cpt")):
+                            _select_best_option(sel_el, "No")
+                        else:
+                            _select_best_option(sel_el, "Yes")
+                        logger.debug("fill_selects: yes/no dropdown label=%r", label[:60])
+                        continue
+                except Exception:
+                    pass
+
+                # 4. Smart defaults for common LinkedIn dropdown patterns
                 if any(p in label for p in _YEARS_PATTERNS):
                     _select_years_option(sel_el, str(answers.get("years_experience", "5")))
                 elif any(p in label for p in _EDU_PATTERNS):
@@ -878,26 +900,6 @@ def _fill_selects(page, answers: dict):
                         _select_best_option(sel_el, "Yes")
                 elif any(p in label for p in _SALARY_PATTERNS):
                     _select_best_option(sel_el, str(answers.get("salary_expectation", "110000")))
-                else:
-                    # 4. Generic Yes/No select: detect by option list, answer heuristically
-                    try:
-                        opt_texts = [
-                            (o.inner_text() or "").strip().lower()
-                            for o in sel_el.locator("option").all()
-                        ]
-                        real_opts = [t for t in opt_texts
-                                     if t and t not in ("select an option", "select",
-                                                        "please select", "--", "-", "")]
-                        if set(real_opts) <= {"yes", "no"}:
-                            # Sponsorship-type questions → No; everything else → Yes
-                            if any(k in label for k in ("sponsor", "require.*visa", "need.*visa",
-                                                        "h-1b", "h1b", "opt", "cpt")):
-                                _select_best_option(sel_el, "No")
-                            else:
-                                _select_best_option(sel_el, "Yes")
-                            logger.debug("fill_selects: yes/no dropdown label=%r", label[:60])
-                    except Exception:
-                        pass
             except Exception:
                 pass
     except Exception:
