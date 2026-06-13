@@ -208,6 +208,19 @@ def _dismiss_save_dialog(page) -> bool:
 def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: dict, delay: float):
     """Fill all visible input fields in the Easy Apply modal."""
 
+    # Phone country code dropdown (required on contact step — must be set before phone number)
+    try:
+        cc_sel = "select[id*='phoneCountry'], select[name*='phoneCountry'], select[aria-label*='Phone country']"
+        cc_loc = page.locator(cc_sel).first
+        if cc_loc.count() > 0 and cc_loc.is_visible(timeout=2000):
+            cc_loc.select_option(label="United States (+1)")
+    except Exception:
+        try:
+            # fallback: select by value "+1" or "US"
+            cc_loc.select_option(value="US")
+        except Exception:
+            pass
+
     # Phone
     _fill_field(page, "input[id*='phoneNumber'], input[aria-label*='Phone'], input[name*='phone']",
                 candidate.get("phone", ""), delay)
@@ -516,19 +529,120 @@ def _click_radio(group, value: str):
 
 
 def _fill_selects(page, answers: dict):
-    """Fill visible select dropdowns from answers dict."""
+    """Fill visible select dropdowns using label matching + screener engine + smart defaults."""
+    from src.browser.screener_engine import match_question_to_category
+
+    _YEARS_PATTERNS = ("year", "experience", "exp")
+    _EDU_PATTERNS = ("degree", "education", "academic", "qualification")
+    _SPONSOR_PATTERNS = ("sponsor", "visa", "work authoriz", "authorized to work",
+                         "legally authoriz", "require.*sponsor")
+    _SALARY_PATTERNS = ("salary", "compensation", "pay", "rate", "desired")
+
+    def _get_select_label(sel_el) -> str:
+        sel_id = sel_el.get_attribute("id") or ""
+        if sel_id:
+            try:
+                lbl = page.locator(f"label[for='{sel_id}']").first
+                if lbl.count() > 0:
+                    text = lbl.inner_text().strip()
+                    if text:
+                        return text.lower()
+            except Exception:
+                pass
+        aria = (sel_el.get_attribute("aria-label") or "").strip()
+        if aria:
+            return aria.lower()
+        labelledby = (sel_el.get_attribute("aria-labelledby") or "").strip()
+        if labelledby:
+            try:
+                for lid in labelledby.split():
+                    lbl_el = page.locator(f"#{lid}").first
+                    if lbl_el.count() > 0:
+                        text = lbl_el.inner_text().strip()
+                        if text:
+                            return text.lower()
+            except Exception:
+                pass
+        return ""
+
+    def _select_best_option(sel_el, value: str) -> bool:
+        try:
+            sel_el.select_option(value=str(value))
+            return True
+        except Exception:
+            pass
+        try:
+            sel_el.select_option(label=str(value))
+            return True
+        except Exception:
+            pass
+        try:
+            opts = sel_el.locator("option").all()
+            value_lower = str(value).lower()
+            for opt in opts:
+                opt_text = (opt.inner_text() or "").strip().lower()
+                if opt_text and (value_lower in opt_text or opt_text in value_lower):
+                    sel_el.select_option(label=opt.inner_text().strip())
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _select_years_option(sel_el, years_str: str) -> bool:
+        try:
+            opts = sel_el.locator("option").all()
+            target = int("".join(filter(str.isdigit, years_str)) or "5")
+            best_opt, best_diff = None, float("inf")
+            for opt in opts:
+                opt_text = (opt.inner_text() or "").strip()
+                nums = [int(n) for n in re.findall(r"\d+", opt_text)]
+                if nums:
+                    diff = min(abs(n - target) for n in nums)
+                    if diff < best_diff:
+                        best_diff, best_opt = diff, opt_text
+            if best_opt:
+                sel_el.select_option(label=best_opt)
+                return True
+        except Exception:
+            pass
+        return False
+
     try:
         selects = page.locator("select:visible").all()
         for sel_el in selects:
             try:
-                label = ""
-                sel_id = sel_el.get_attribute("id") or ""
-                if sel_id:
-                    lbl = page.locator(f"label[for='{sel_id}']").first
-                    if lbl.count() > 0:
-                        label = lbl.inner_text().lower().strip()
+                label = _get_select_label(sel_el)
+                if not label:
+                    continue
+                if "country" in label or "phone country" in label:
+                    continue
+
+                # 1. Direct answers dict match
                 if label in answers:
-                    sel_el.select_option(label=answers[label])
+                    _select_best_option(sel_el, str(answers[label]))
+                    continue
+
+                # 2. screener_engine category match
+                match = match_question_to_category(label)
+                if match:
+                    cat, answer_key = match
+                    val = answers.get(cat) or answers.get(answer_key)
+                    if val:
+                        _select_best_option(sel_el, str(val))
+                        continue
+
+                # 3. Smart defaults for common LinkedIn dropdown patterns
+                if any(p in label for p in _YEARS_PATTERNS):
+                    _select_years_option(sel_el, str(answers.get("years_experience", "5")))
+                elif any(p in label for p in _EDU_PATTERNS):
+                    _select_best_option(sel_el, answers.get("education_degree", "Master's Degree"))
+                elif any(p in label for p in _SPONSOR_PATTERNS):
+                    if "sponsor" in label:
+                        _select_best_option(sel_el, "No")
+                    else:
+                        _select_best_option(sel_el, "Yes")
+                elif any(p in label for p in _SALARY_PATTERNS):
+                    _select_best_option(sel_el, str(answers.get("salary_expectation", "110000")))
             except Exception:
                 pass
     except Exception:
