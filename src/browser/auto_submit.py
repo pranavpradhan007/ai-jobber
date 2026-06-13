@@ -3646,14 +3646,18 @@ def _workday_handle_account_gate(page, app_id: int, answers: dict) -> None:
 
     _human_pause(0.5, 1.0)
 
-    # Click "Create Account" button
+    # Click "Create Account" / "Sign In" / "Save" button (label varies by sub-step)
     _clicked = False
     for btn_sel in [
         "button:has-text('Create Account')",
         "button[data-automation-id='createAccount']",
         "button[type='submit']:has-text('Create')",
         "input[type='submit'][value*='Create' i]",
-        "button:has-text('Sign In')",  # fallback: try Sign In if no Create Account
+        "button:has-text('Sign In')",
+        "button:has-text('Save')",
+        "button:has-text('Continue')",
+        "button:has-text('Next')",
+        "button[type='submit']",  # catch-all for any submit button on this form
     ]:
         try:
             loc = page.locator(btn_sel).first
