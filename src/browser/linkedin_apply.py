@@ -221,9 +221,13 @@ def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: di
         except Exception:
             pass
 
-    # Phone
-    _fill_field(page, "input[id*='phoneNumber'], input[aria-label*='Phone'], input[name*='phone']",
-                candidate.get("phone", ""), delay)
+    # Phone — strip country code prefix so the local-number field gets only digits/local format
+    # e.g. "+1 (929) 754-5592" → "(929) 754-5592"  (LinkedIn's +1 country-code select covers the prefix)
+    _phone_raw = candidate.get("phone", "")
+    _phone_local = re.sub(r'^\+?1[\s\-]?', '', _phone_raw).strip()
+    _fill_field(page, "input[id*='phoneNumber'], input[aria-label*='Phone number'], "
+                "input[name*='phone'], input[type='tel']",
+                _phone_local or _phone_raw, delay)
 
     # Email (usually pre-filled; skip if already has value)
     _fill_if_empty(page, "input[id*='email'], input[aria-label*='Email']",
@@ -274,6 +278,24 @@ def _fill_li_modal_page(page, candidate: dict, resume_pdf_path: str, answers: di
 
     # Salary / number inputs that aren't textareas
     _fill_inline_number_inputs(page, answers)
+
+    # Scroll the modal to the bottom so any below-the-fold required fields are visible,
+    # then re-run text/select/radio fills on newly revealed content
+    try:
+        page.evaluate("""
+            (() => {
+                const modal = document.querySelector(
+                    '.jobs-easy-apply-modal__content, [data-test-modal] .artdeco-modal__content'
+                );
+                if (modal) modal.scrollTo(0, modal.scrollHeight);
+            })()
+        """)
+        time.sleep(0.4)
+        _fill_radio_groups_js(page)
+        _fill_selects(page, answers)
+        _fill_text_questions(page, answers)
+    except Exception:
+        pass
 
 
 def _fill_by_label(page, label_text: str, value: str):
@@ -455,27 +477,51 @@ def _fill_if_empty(page, selector: str, value: str, delay: float):
 
 
 def _upload_resume(page, resume_pdf_path: str):
-    """Upload resume PDF — skip if an existing resume radio is already selected."""
+    """Select existing resume in modal or upload PDF if no radio choices present."""
+    try:
+        # Check for checked radio inside the Easy Apply modal (resume-step radios only)
+        modal_has_checked = page.evaluate("""
+            (() => {
+                const modal = document.querySelector(
+                    '[data-test-modal], [aria-label*="Easy Apply"], .jobs-easy-apply-modal__content'
+                );
+                const root = modal || document.body;
+                return root.querySelectorAll('input[type="radio"]:checked').length > 0;
+            })()
+        """)
+        if modal_has_checked:
+            logger.debug("linkedin: resume radio already selected in modal — skipping upload")
+            return
+
+        # If there are unchecked radios, select the first one rather than uploading
+        modal_has_any_radio = page.evaluate("""
+            (() => {
+                const modal = document.querySelector(
+                    '[data-test-modal], [aria-label*="Easy Apply"], .jobs-easy-apply-modal__content'
+                );
+                const root = modal || document.body;
+                return root.querySelectorAll('input[type="radio"]').length > 0;
+            })()
+        """)
+        if modal_has_any_radio:
+            try:
+                page.locator("input[type='radio']").first.click()
+                _human_pause(0.5, 1.0)
+                logger.debug("linkedin: clicked first resume radio to select it")
+                return
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # No radio buttons — fall back to file upload
     if not resume_pdf_path or not Path(resume_pdf_path).is_file():
         return
     try:
-        # If an existing LinkedIn-profile resume is already checked, leave it selected.
-        # set_input_files() would deselect it and trigger an async upload that races with Next.
-        already_selected = page.evaluate("""
-            (() => {
-                const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-                return radios.some(r => r.checked &&
-                    (r.name || r.id || '').toLowerCase().includes('resume'));
-            })()
-        """)
-        if already_selected:
-            logger.debug("linkedin: existing resume radio selected — skipping upload")
-            return
-
         file_input = page.locator("input[type='file']").first
         if file_input.count() > 0:
             file_input.set_input_files(resume_pdf_path)
-            _human_pause(2.0, 3.0)  # allow upload to complete before Next
+            _human_pause(2.0, 3.0)
             logger.info("linkedin: resume uploaded from %s", resume_pdf_path)
     except Exception as exc:
         logger.warning("linkedin: resume upload failed: %s", exc)
