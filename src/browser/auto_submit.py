@@ -743,9 +743,11 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pau
     # ── Step 1: Navigate to listing URL ──────────────────────────────────────
     nav_url = _resolve_indeed_url(url)
 
-    # Warm up the session: if we haven't visited Indeed yet this Chrome launch,
-    # load the homepage first to establish normal browsing context.
-    _warm_indeed_session(page)
+    # Warm up the session only for Indeed URLs — skipping warmup for external
+    # portals (Greenhouse, Ashby, Workday, etc.) avoids a 5-min Cloudflare delay
+    # that blocks the first external-apply job after each Chrome launch.
+    if "indeed.com" in nav_url:
+        _warm_indeed_session(page)
 
     logger.info("app_id=%d navigating to %s", app_id, nav_url)
     page.goto(nav_url, wait_until="domcontentloaded", timeout=30_000)
