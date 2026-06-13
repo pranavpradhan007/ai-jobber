@@ -111,15 +111,18 @@ def run_apply() -> dict:
 
     conn = get_connection("job_agent.db")
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM applications WHERE state='DISCOVERED'")
+    cur.execute(
+        "SELECT COUNT(*) FROM applications WHERE state IN "
+        "('DISCOVERED','SCORED','TAILORING','RESUME_VERIFIED','PACKAGING','READY_TO_SUBMIT')"
+    )
     pending = cur.fetchone()[0]
     conn.close()
 
     if pending == 0:
-        logger.info("Apply: no DISCOVERED jobs to process")
+        logger.info("Apply: no jobs in pipeline to process")
         return {}
 
-    logger.info("=== APPLY PASS starting — %d DISCOVERED jobs ===", pending)
+    logger.info("=== APPLY PASS starting — %d jobs in pipeline ===", pending)
     conn = get_connection("job_agent.db")
     scorer    = make_heuristic_scorer(conn)
     extractor = make_bank_extractor(conn)
