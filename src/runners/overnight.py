@@ -339,6 +339,7 @@ def _submit_approved(
                 "no easy apply", "no external apply", "easy apply button not found",
                 "stuck", "unfilled required fields",
                 "no continue/submit button", "form may have a required field",
+                "unsupported portal",
             )
             if any(p in err.lower() for p in _PERMANENT_ERRORS):
                 try:

@@ -843,6 +843,11 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pau
     _check_captcha_mfa(page)
 
     # ── Step 6: Classify portal and fill fields ───────────────────────────────
+    # Permanently skip portals that can't be auto-submitted (landing pages with no apply form)
+    _UNSUPPORTED_PORTAL_DOMAINS = ("sapsf.com", "successfactors.com", "icims.com")
+    if any(d in page.url for d in _UNSUPPORTED_PORTAL_DOMAINS):
+        raise RuntimeError(f"unsupported portal (no auto-submit): {page.url[:80]}")
+
     portal = classify_portal(html=html, url=page.url)
     logger.info("app_id=%d portal=%s url=%s", app_id, portal, page.url)
 
@@ -864,11 +869,12 @@ def _run_submit_flow(page, app_id, answers, url, folder_path, fill_delay, *, pau
             # Replace /apply (end or with query) with /apply/applyManually
             if "/apply/applyManually" not in apply_url and "/apply/applymanually" not in apply_url.lower():
                 apply_url = _re.sub(r'/apply(\?|$)', r'/apply/applyManually\1', apply_url)
-            # Also handle bare job listing URLs: .../job/LOCATION/TITLE_ID?params
-            # → .../job/LOCATION/TITLE_ID/apply/applyManually?params
-            if "applyManually" not in apply_url and "myworkdayjobs.com" in apply_url:
+            # Also handle bare job listing URLs (any Workday domain):
+            # .../job/LOCATION/TITLE?params or .../job/ID?params
+            # → append /apply/applyManually before query string
+            if "applyManually" not in apply_url and "applymanually" not in apply_url.lower():
                 apply_url = _re.sub(
-                    r'(/job/[^/]+/[^/?#]+)(\?|#|$)',
+                    r'(/job/(?:[^/?#]+/)*[^/?#]+)(\?|#|$)',
                     r'\1/apply/applyManually\2',
                     apply_url,
                 )
