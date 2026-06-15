@@ -100,6 +100,32 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(body)
+
+        elif self.path == "/gmail/count-receipts":
+            # Use claude CLI (which has Gmail MCP) to count application receipt emails
+            system = "You have access to Gmail via MCP. Search and count emails only. Return JSON only."
+            prompt = (
+                "Use the Gmail MCP tool to search for job application receipt emails. "
+                "Search query: subject:(\"application received\" OR \"thank you for applying\" OR "
+                "\"we received your application\" OR \"application submitted\" OR \"your application\") "
+                "newer_than:90d\n\n"
+                "Count how many emails match. "
+                "Return ONLY this JSON with no other text: {\"count\": <number>}"
+            )
+            try:
+                text = call_claude_cli(system, prompt, 200)
+                import re
+                m = re.search(r'\{[^}]*"count"\s*:\s*(\d+)[^}]*\}', text)
+                count = int(m.group(1)) if m else 0
+                body = json.dumps({"count": count, "raw": text[:200]}).encode("utf-8")
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as exc:
+                self._error(500, str(exc))
+
         else:
             self.send_response(404)
             self.end_headers()

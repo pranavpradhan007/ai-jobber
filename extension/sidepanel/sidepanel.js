@@ -166,11 +166,9 @@ function renderFields(fillResult, jobCtx, claudeStatus) {
     document.getElementById('jobInfo').style.display = '';
   }
 
-  // Stats bar
-  document.getElementById('statFilled').textContent = `${fillResult.filled || 0} filled`;
-  document.getElementById('statClaude').textContent = `${fillResult.claude || 0} via Claude`;
-  document.getElementById('statSkipped').textContent = `${fillResult.skipped || 0} skipped`;
+  // Stats bar — show Gmail-confirmed applied count
   document.getElementById('statsBar').style.display = '';
+  refreshAppliedCount();
 
   // Claude status bar
   renderClaudeStatus(claudeStatus || null);
@@ -229,6 +227,39 @@ function renderFields(fillResult, jobCtx, claudeStatus) {
     row.appendChild(labelDiv);
     row.appendChild(input);
     container.appendChild(row);
+  }
+}
+
+// ─── Applied count (Gmail-confirmed) ─────────────────────────────────────────
+
+async function refreshAppliedCount() {
+  const statEl  = document.getElementById('statApplied');
+  const subEl   = document.getElementById('statAppliedSub');
+  if (!statEl) return;
+
+  // Show logged-submission count immediately as a placeholder
+  const { applications = [] } = await chrome.storage.local.get('applications');
+  const confirmed = applications.filter(a => a.status === 'confirmed').length;
+  statEl.textContent = confirmed || applications.length;
+  if (subEl) subEl.textContent = confirmed ? 'confirmed' : 'logged (checking Gmail…)';
+
+  // Then verify via Gmail receipt count from proxy
+  try {
+    const resp = await fetch('http://localhost:3747/gmail/count-receipts', {
+      signal: AbortSignal.timeout(60000),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const gmailCount = data.count ?? null;
+      if (gmailCount !== null) {
+        statEl.textContent = gmailCount;
+        if (subEl) subEl.textContent = 'confirmed via Gmail';
+        // Sync confirmed status back to storage
+        await chrome.runtime.sendMessage({ type: 'SET_CONFIRMED_COUNT', count: gmailCount });
+      }
+    }
+  } catch(e) {
+    if (subEl) subEl.textContent = applications.length ? 'logged (proxy offline)' : '';
   }
 }
 
@@ -315,3 +346,7 @@ chrome.storage.local.get(['lastFillResult', 'lastJobCtx', 'lastClaudeStatus']).t
     renderFields(lastFillResult, lastJobCtx, lastClaudeStatus);
   }
 });
+
+// Show stats bar and load applied count immediately on open
+document.getElementById('statsBar').style.display = '';
+refreshAppliedCount();

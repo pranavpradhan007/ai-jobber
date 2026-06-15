@@ -458,26 +458,54 @@ document.getElementById('btnClearMemory').addEventListener('click', async () => 
 async function loadTracker() {
   const { applications = [] } = await chrome.storage.local.get('applications');
   const container = document.getElementById('trackerContent');
+
+  // Header with Clear All
+  const header = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <span style="font-size:12px;color:#5f6368">${applications.length} total logged</span>
+    <button id="btnClearAll" style="padding:5px 14px;border:1px solid #ea4335;border-radius:6px;background:white;color:#ea4335;font-size:12px;cursor:pointer">Clear All</button>
+  </div>`;
+
   if (!applications.length) {
-    container.innerHTML = '<p style="text-align:center;color:#80868b;padding:30px">No applications yet.</p>';
+    container.innerHTML = header + '<p style="text-align:center;color:#80868b;padding:30px">No applications logged.</p>';
+    document.getElementById('btnClearAll')?.addEventListener('click', clearAll);
     return;
   }
-  let html = `<table class="app-table"><thead><tr>
-    <th>#</th><th>Company</th><th>Role</th><th>Date</th><th>Status</th><th>Link</th>
+
+  let html = `${header}<table class="app-table"><thead><tr>
+    <th>#</th><th>Company</th><th>Role</th><th>Date</th><th>Status</th><th>Link</th><th></th>
   </tr></thead><tbody>`;
   [...applications].reverse().forEach((app, i) => {
+    const idx = applications.length - 1 - i; // original index for deletion
     const date = app.applied_at ? new Date(app.applied_at).toLocaleDateString() : '—';
+    const statusColor = app.status === 'confirmed' ? '#0f9d58' : '#5f6368';
     html += `<tr>
       <td>${applications.length - i}</td>
       <td>${app.company || '—'}</td>
       <td>${app.title || '—'}</td>
       <td>${date}</td>
-      <td><span class="status-chip">${app.status || 'applied'}</span></td>
+      <td><span class="status-chip" style="color:${statusColor}">${app.status || 'applied'}</span></td>
       <td><a href="${app.url || '#'}" target="_blank" style="color:#1a73e8;font-size:12px">Open →</a></td>
+      <td><button data-idx="${idx}" class="btn-delete-app" style="border:none;background:none;color:#ea4335;cursor:pointer;font-size:13px" title="Remove">✕</button></td>
     </tr>`;
   });
   html += '</tbody></table>';
   container.innerHTML = html;
+
+  document.getElementById('btnClearAll')?.addEventListener('click', clearAll);
+  container.querySelectorAll('.btn-delete-app').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const { applications: apps = [] } = await chrome.storage.local.get('applications');
+      apps.splice(parseInt(btn.dataset.idx), 1);
+      await chrome.storage.local.set({ applications: apps });
+      loadTracker();
+    });
+  });
+}
+
+async function clearAll() {
+  if (!confirm('Clear all logged applications?')) return;
+  await chrome.storage.local.set({ applications: [] });
+  loadTracker();
 }
 
 // ─── Resume preview loader (called when tab clicked) ──────────────────────────

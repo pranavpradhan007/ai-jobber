@@ -42,12 +42,11 @@
   .job-company { font-size: 12px; color: #5f6368; margin-top: 2px; }
   .stats-bar {
     display: flex;
-    gap: 16px;
+    align-items: baseline;
+    gap: 6px;
     padding: 8px 16px;
     background: #e8f5e9;
     border-bottom: 1px solid #c8e6c9;
-    font-size: 11px;
-    color: #2e7d32;
     flex-shrink: 0;
   }
   .scroll-area {
@@ -169,9 +168,9 @@
   <div class="job-company" id="jobCompany"></div>
 </div>
 <div class="stats-bar" id="statsBar" style="display:none">
-  <span id="statFilled">0 filled</span>
-  <span id="statClaude">0 via Claude</span>
-  <span id="statSkipped">0 skipped</span>
+  <span id="statApplied" style="font-size:18px;font-weight:700;color:#1b5e20">—</span>
+  <span style="font-size:11px;color:#2e7d32;align-self:flex-end;padding-bottom:1px">Applied (Gmail confirmed)</span>
+  <span id="statAppliedSub" style="font-size:10px;color:#80868b;margin-left:auto;align-self:flex-end"></span>
 </div>
 <div id="claudeStatusBar" style="display:none;padding:8px 16px;border-bottom:1px solid #e8eaed;flex-shrink:0;background:#fafafa">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
