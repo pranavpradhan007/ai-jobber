@@ -326,7 +326,7 @@ async function uploadFile(el) {
   const bytes = new Uint8Array(byteChars.length);
   for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
   const blob = new Blob([bytes], { type: 'application/pdf' });
-  const file = new File([blob], 'Pranav_Pradhan_Resume.pdf', { type: 'application/pdf' });
+  const file = new File([blob], 'Pranav_Pradhan_resume.pdf', { type: 'application/pdf' });
   const dt = new DataTransfer();
   dt.items.add(file);
   el.files = dt.files;

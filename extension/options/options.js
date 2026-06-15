@@ -33,13 +33,17 @@ async function checkProxy() {
   const dot = document.getElementById('proxyDot');
   const status = document.getElementById('proxyStatus');
   try {
-    const r = await fetch('http://localhost:3747/v1/messages', {
-      method: 'OPTIONS',
-      signal: AbortSignal.timeout(1200),
+    const r = await fetch('http://localhost:3747/health', {
+      method: 'GET',
+      signal: AbortSignal.timeout(2000),
     });
-    dot.className = 'dot dot-green';
-    status.textContent = 'Proxy running — Claude Code connected';
-    status.style.color = '#0f9d58';
+    if (r.ok) {
+      dot.className = 'dot dot-green';
+      status.textContent = 'Proxy running — Claude Code connected';
+      status.style.color = '#0f9d58';
+    } else {
+      throw new Error(`HTTP ${r.status}`);
+    }
   } catch(e) {
     dot.className = 'dot dot-red';
     status.textContent = 'Proxy not running — start extension/start_proxy.bat';
@@ -175,7 +179,7 @@ async function loadSettings() {
   // Resume
   const { resume_b64 } = await chrome.storage.local.get('resume_b64');
   if (resume_b64) {
-    document.getElementById('resumeFileName').textContent = 'Resume loaded ✓';
+    document.getElementById('resumeFileName').textContent = '✓ Pranav_Pradhan_resume.pdf';
     renderResumePDF(resume_b64);
   }
 }
@@ -380,8 +384,8 @@ function loadResumeFile(file) {
   const reader = new FileReader();
   reader.onload = async e => {
     const b64 = e.target.result.split(',')[1];
-    await chrome.storage.local.set({ resume_b64: b64 });
-    document.getElementById('resumeFileName').textContent = `✓ ${file.name} (${Math.round(file.size / 1024)} KB)`;
+    await chrome.storage.local.set({ resume_b64: b64, resume_filename: 'Pranav_Pradhan_resume.pdf' });
+    document.getElementById('resumeFileName').textContent = `✓ Pranav_Pradhan_resume.pdf (${Math.round(file.size / 1024)} KB)`;
     renderResumePDF(b64);
   };
   reader.readAsDataURL(file);

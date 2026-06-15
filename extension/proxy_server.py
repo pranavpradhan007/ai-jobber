@@ -72,9 +72,21 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"[proxy] {fmt % args}")
 
+    def do_GET(self):
+        if self.path == "/health":
+            body = json.dumps({"status": "ok", "cli": CLAUDE_BIN}).encode("utf-8")
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def do_OPTIONS(self):
-        self._cors()
         self.send_response(204)
+        self._cors()
         self.end_headers()
 
     def do_POST(self):
@@ -100,8 +112,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         try:
             text = call_claude_cli(system_prompt, user_prompt, max_tokens)
             resp_body = json.dumps(anthropic_response(text)).encode("utf-8")
-            self._cors()
             self.send_response(200)
+            self._cors()
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(resp_body)
@@ -111,12 +123,12 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, x-api-key, anthropic-version")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
     def _error(self, code: int, msg: str):
         body = json.dumps({"error": {"message": msg, "type": "proxy_error"}}).encode()
-        self._cors()
         self.send_response(code)
+        self._cors()
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(body)
