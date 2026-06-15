@@ -48,14 +48,22 @@ function detectFormFields() {
   }
 
   function isVisible(el) {
+    const elType = (el.type || '').toLowerCase();
+    // Radio and checkbox inputs are routinely visually-hidden behind styled labels
+    // (screen-reader accessibility pattern used by Ashby, Lever, Greenhouse, etc.)
+    // Don't apply bounding-box or opacity checks for them.
+    const isToggle = (elType === 'radio' || elType === 'checkbox');
+
     try {
       const style = window.getComputedStyle(el);
       if (style.display === 'none') return false;
       if (style.visibility === 'hidden') return false;
-      if (parseFloat(style.opacity) < 0.01) return false;
-      const rect = el.getBoundingClientRect();
-      if (rect.width <= 0 && rect.height <= 0) return false;
-      if (rect.right < -50 || rect.bottom < -50) return false;
+      if (!isToggle) {
+        if (parseFloat(style.opacity) < 0.01) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 && rect.height <= 0) return false;
+        if (rect.right < -50 || rect.bottom < -50) return false;
+      }
     } catch(e) { return false; }
 
     let p = el.parentElement;
@@ -104,7 +112,8 @@ function detectFormFields() {
     if (type === 'hidden') return;
     if (type === 'password') return;
     if (el.disabled) return;
-    if (safeAttr(el, 'tabindex') === '-1') return;
+    // Allow tabindex=-1 on radio/checkbox (Ashby hides them with tabindex=-1 + CSS)
+    if (safeAttr(el, 'tabindex') === '-1' && type !== 'radio' && type !== 'checkbox') return;
     if (!isVisible(el)) return;
 
     const label = (getLabel(el, domRoot) || '').trim().replace(/\s+/g, ' ');

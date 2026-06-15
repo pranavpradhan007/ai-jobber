@@ -51,8 +51,10 @@ const LABEL_ALIASES = {
   "address line 1":           "address_line1",
   "address 1":                "address_line1",
   "phone extension":          null,
-  "preferred name":           "first_name",
+  "legal name":               "full_name",
   "legal full name":          "full_name",
+  "preferred name":           "first_name",
+  "preferred first name":     "first_name",
   "desired salary":           "salary_expectation",
   "expected salary":          "salary_expectation",
   "salary expectation":       "salary_expectation",
@@ -74,11 +76,16 @@ const LABEL_ALIASES = {
   "highest degree":           "education_degree",
   "highest education":        "education_degree",
   "cover letter":             "cover_letter_default",
-  "additional comments":      "cover_letter_default",
   "message":                  "cover_letter_default",
   "why are you interested":   "cover_letter_default",
   "why this company":         "cover_letter_default",
   "why this role":            "cover_letter_default",
+  "where are you currently located":  "location",
+  "where are you located":            "location",
+  "current location":                 "location",
+  "your location":                    "location",
+  "city, state":                      "location",
+  "city or state":                    "location",
   "skills":                   "skills",
   "technical skills":         "skills",
   "key skills":               "skills",
@@ -116,6 +123,7 @@ const PROFILE_KEY_MAP = {
   "address_zip":     "zip_code",
   "address_country": "country",
   "address_line1":   "address",
+  "location":        "location",
 };
 
 const QUESTION_BANK = [
@@ -166,6 +174,14 @@ const QUESTION_BANK = [
   { re: /meet.{0,20}(preferred|minimum|required).{0,20}qualif|qualif.{0,20}(for this|meet)/i,    key: "_yes" },
   { re: /minimum.{0,20}qualif|basic.{0,20}qualif|required.{0,20}qualif/i,                        key: "_yes" },
   { re: /how did you (hear|find|learn).{0,20}(about|of)|source of (application|referral)|where did you hear/i, key: "_heard" },
+  // Office attendance / hybrid questions
+  { re: /work.{0,20}(from.{0,10}office|in.{0,10}office|on.?site)|office.{0,15}(days|hours|week)|days?.{0,10}(per|a).{0,5}week.{0,20}(office|in.person|on.site)/i, key: "_yes" },
+  { re: /commut|onsite|in.person.{0,20}(require|expect|able)/i,                                    key: "_yes" },
+  // Acknowledgment / legal checkboxes
+  { re: /arbitration|i acknowledge|i confirm.{0,15}(read|above)|certify.{0,20}that|i have read.{0,20}(and|above)/i, key: "_yes" },
+  { re: /agree.{0,20}(policy|above|statement)|accept.{0,20}(agreement|policy)/i,                   key: "_yes" },
+  // Additional information / motivation → Claude
+  { re: /additional.{0,20}information|motivation.{0,15}apply|additional.{0,15}context|anything.{0,20}(else|know)|is there.{0,20}anything/i, key: "_claude" },
   { re: /^phone$|phone.{0,10}number|mobile.{0,10}number|telephone/i,                                key: "phone" },
   { re: /linkedin|linkedin.{0,10}url|linkedin.{0,10}profile/i,                                      key: "linkedin_url" },
   { re: /github|github.{0,10}url|github.{0,10}profile/i,                                            key: "github_url" },
@@ -296,23 +312,50 @@ function fillSelect(el, value) {
   }
 }
 
+function _clickRadioInput(r) {
+  // Prefer clicking the associated label (works when input is visually hidden — Ashby, Lever, etc.)
+  if (r.id) {
+    const lbl = document.querySelector(`label[for="${r.id}"]`);
+    if (lbl) { lbl.click(); return; }
+  }
+  const parentLbl = r.closest('label');
+  if (parentLbl) { parentLbl.click(); return; }
+  // Fallback: directly check + fire events
+  r.checked = true;
+  r.dispatchEvent(new Event('click',  { bubbles: true }));
+  r.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function _getRadioLabel(r, domRoot) {
+  // 1. label[for=id]
+  if (r.id) {
+    const lbl = (domRoot || document).querySelector(`label[for="${r.id}"]`);
+    if (lbl) return (lbl.innerText || lbl.textContent || '').toLowerCase().trim();
+  }
+  // 2. aria-label
+  const al = r.getAttribute('aria-label');
+  if (al) return al.toLowerCase().trim();
+  // 3. parent label
+  const pl = r.closest('label');
+  if (pl) return (pl.innerText || pl.textContent || '').toLowerCase().trim();
+  // 4. value attribute
+  return (r.value || '').toLowerCase().trim();
+}
+
 function fillRadio(field, value) {
   const target = value.toLowerCase().trim();
   const radios = document.querySelectorAll(`input[type="radio"][name="${field.group_name}"]`);
   for (const r of radios) {
-    const lbl = document.querySelector(`label[for="${r.id}"]`);
-    const lblText = (lbl ? lbl.innerText : r.value).toLowerCase().trim();
+    const lblText = _getRadioLabel(r);
     if (lblText === target || lblText.includes(target) || r.value.toLowerCase() === target) {
-      r.checked = true;
-      r.dispatchEvent(new Event('change', { bubbles: true }));
-      r.dispatchEvent(new Event('click', { bubbles: true }));
+      _clickRadioInput(r);
       return;
     }
   }
-  // fallback: yes-like → first radio
-  if (isTruthy(value) && radios.length > 0) {
-    radios[0].checked = true;
-    radios[0].dispatchEvent(new Event('change', { bubbles: true }));
+  // fallback: yes-like → first radio, no-like → last radio
+  if (radios.length > 0) {
+    if (isTruthy(value))  { _clickRadioInput(radios[0]); return; }
+    if (/^no$/i.test(value.trim())) { _clickRadioInput(radios[radios.length - 1]); return; }
   }
 }
 

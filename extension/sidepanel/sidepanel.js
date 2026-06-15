@@ -3,19 +3,6 @@
 let _currentJobCtx = null;
 let _currentFillResult = null;
 
-// ─── Tab navigation ───────────────────────────────────────────────────────────
-
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    const name = tab.dataset.tab;
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tabFields').style.display = name === 'fields' ? '' : 'none';
-    document.getElementById('tabAts').style.display   = name === 'ats'    ? '' : 'none';
-    document.getElementById('tabCover').style.display = name === 'cover'  ? '' : 'none';
-  });
-});
-
 // ─── Render fill results ──────────────────────────────────────────────────────
 
 function renderFields(fillResult, jobCtx) {
@@ -90,9 +77,6 @@ function renderFields(fillResult, jobCtx) {
     row.appendChild(input);
     container.appendChild(row);
   }
-
-  // Load ATS keywords
-  loadATS(jobCtx);
 }
 
 function normalizeLabel(text) {
@@ -100,72 +84,6 @@ function normalizeLabel(text) {
     .replace(/[*:()\[\]{}]/g, '')
     .replace(/\s+/g, '_');
 }
-
-async function loadATS(jobCtx) {
-  if (!jobCtx) return;
-  const result = await chrome.runtime.sendMessage({
-    type: 'CHECK_ATS',
-    jdText: jobCtx.jd_text || '',
-  });
-
-  const container = document.getElementById('atsList');
-  container.innerHTML = '';
-  const keywords = result?.keywords || [];
-
-  if (keywords.length === 0) {
-    container.innerHTML = '<div style="color:#80868b;font-size:12px">No technical keywords detected</div>';
-    return;
-  }
-
-  const present = keywords.filter(k => k.present);
-  const missing = keywords.filter(k => !k.present);
-
-  const header = document.createElement('div');
-  header.style.cssText = 'font-size:11px;color:#5f6368;margin-bottom:8px';
-  header.textContent = `${present.length}/${keywords.length} keywords matched`;
-  container.appendChild(header);
-
-  for (const kw of [...present, ...missing]) {
-    const row = document.createElement('div');
-    row.className = 'kw-row';
-    row.innerHTML = `
-      <span class="${kw.present ? 'kw-check' : 'kw-miss'}">${kw.present ? '✓' : '✗'}</span>
-      <span style="color:${kw.present ? '#202124' : '#80868b'}">${kw.keyword}</span>
-    `;
-    container.appendChild(row);
-  }
-}
-
-// ─── Cover letter ─────────────────────────────────────────────────────────────
-
-document.getElementById('btnGenerateCL').addEventListener('click', async () => {
-  const btn = document.getElementById('btnGenerateCL');
-  btn.textContent = 'Generating…';
-  btn.disabled = true;
-
-  const result = await chrome.runtime.sendMessage({
-    type: 'GENERATE_COVER_LETTER',
-    jobCtx: _currentJobCtx,
-  });
-
-  btn.textContent = 'Generate with Claude';
-  btn.disabled = false;
-
-  if (result?.text) {
-    document.getElementById('coverLetterText').value = result.text;
-  } else {
-    document.getElementById('coverLetterText').placeholder = 'Claude unavailable. Write your cover letter here.';
-  }
-});
-
-document.getElementById('btnFillCL').addEventListener('click', async () => {
-  const text = document.getElementById('coverLetterText').value.trim();
-  if (!text) return;
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab) {
-    await chrome.tabs.sendMessage(tab.id, { type: 'FILL_COVER_LETTER', text });
-  }
-});
 
 // ─── Navigation buttons ───────────────────────────────────────────────────────
 
