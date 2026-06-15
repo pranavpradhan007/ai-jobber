@@ -40,7 +40,7 @@ def call_claude_cli(system_prompt: str, user_prompt: str, max_tokens: int = 1500
     combined = f"{system_prompt}\n\n---\n\n{user_prompt}"
     try:
         result = subprocess.run(
-            [CLAUDE_BIN, "-p", combined, "--output-format", "text"],
+            [CLAUDE_BIN, "-p", combined, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
             capture_output=True,
             text=True,
             timeout=90,
@@ -62,7 +62,7 @@ def anthropic_response(text: str) -> dict:
         "type": "message",
         "role": "assistant",
         "content": [{"type": "text", "text": text}],
-        "model": "claude-code-cli",
+        "model": "claude-haiku-4-5-20251001",
         "stop_reason": "end_turn",
         "usage": {"input_tokens": 0, "output_tokens": 0},
     }
