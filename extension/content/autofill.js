@@ -24,6 +24,7 @@ const LABEL_ALIASES = {
   "cell":                     "phone",
   "cell phone":               "phone",
   "phone number":             "phone",
+  "phone":                    "phone",
   "contact number":           "phone",
   "phone country code":       "phone_country_code",
   "country code":             "phone_country_code",
@@ -262,9 +263,9 @@ function resolveAnswer(field, profile, memory) {
     return profile[mappedKey] ?? profile[profileKey] ?? null;
   }
 
-  // Tier 2: QUESTION_BANK regex
+  // Tier 2: QUESTION_BANK regex — test both raw label AND stripped (handles "Phone *" → "phone")
   for (const { re, key } of QUESTION_BANK) {
-    if (re.test(label) || re.test(field.placeholder)) {
+    if (re.test(label) || re.test(stripped) || re.test(field.placeholder)) {
       if (key === '_claude') return '_needs_claude';
       if (key in STATIC_SYNTHETIC) {
         const synth = STATIC_SYNTHETIC[key];

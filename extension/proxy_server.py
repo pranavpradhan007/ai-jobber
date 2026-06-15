@@ -15,6 +15,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import threading
 
 PORT = int(os.environ.get("JOBBERAI_PROXY_PORT", "3747"))
@@ -36,23 +37,42 @@ CLAUDE_BIN = _find_claude()
 
 
 def call_claude_cli(system_prompt: str, user_prompt: str, max_tokens: int = 1500) -> str:
-    """Call `claude -p` with combined system+user prompt, return text response."""
+    """Pipe prompt to `claude -p` via a temp file to avoid Windows 8191-char CLI limit."""
     combined = f"{system_prompt}\n\n---\n\n{user_prompt}"
+
+    tmp_path = None
     try:
-        result = subprocess.run(
-            [CLAUDE_BIN, "-p", combined, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
-            capture_output=True,
-            text=True,
-            timeout=90,
-            encoding="utf-8",
-            errors="replace",
-        )
+        # Write prompt to temp file — avoids "command line too long" on Windows
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(combined)
+            tmp_path = f.name
+
+        with open(tmp_path, "r", encoding="utf-8") as stdin_f:
+            result = subprocess.run(
+                [CLAUDE_BIN, "-p", "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+                stdin=stdin_f,
+                capture_output=True,
+                text=True,
+                timeout=90,
+                encoding="utf-8",
+                errors="replace",
+            )
+
         if result.returncode != 0:
-            err = result.stderr.strip() or result.stdout.strip()
-            raise RuntimeError(f"claude CLI error (exit {result.returncode}): {err[:300]}")
+            err = (result.stderr.strip() or result.stdout.strip())[:400]
+            raise RuntimeError(f"claude CLI error (exit {result.returncode}): {err}")
         return result.stdout.strip()
+
     except subprocess.TimeoutExpired:
         raise RuntimeError("claude CLI timed out after 90s")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def anthropic_response(text: str) -> dict:

@@ -194,6 +194,92 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'AUTOAPPLY_START') {
+    (async () => {
+      let pageNum = 1;
+      const MAX_PAGES = 15;
+      let submitted = false;
+
+      function progress(text) {
+        showStatus(text, 'info');
+        chrome.runtime.sendMessage({ type: 'AUTOAPPLY_PROGRESS', text });
+      }
+
+      async function fillCurrentPage() {
+        const stored = await chrome.storage.local.get(['profile', 'memory']);
+        const profile = stored.profile || {};
+        const memory = stored.memory || {};
+
+        _currentJobCtx = scrapeJobContext();
+        const fillResult = await autofillPage(profile, memory, null);
+        progress(`Page ${pageNum}: ${fillResult.filled} filled from profile. Asking Claude…`);
+
+        const pendingStatus = fillResult.needsClaude?.length > 0
+          ? { ok: null, source: 'calling', fieldsCount: fillResult.needsClaude.length, stage: 'calling' }
+          : { ok: true, source: 'none_needed', fieldsCount: 0 };
+        chrome.runtime.sendMessage({ type: 'FILL_COMPLETE', fillResult, jobCtx: _currentJobCtx, claudeStatus: pendingStatus });
+
+        if (fillResult.needsClaude?.length > 0) {
+          let result;
+          try {
+            result = await chrome.runtime.sendMessage({ type: 'GET_ANSWERS', fields: fillResult.needsClaude, jobCtx: _currentJobCtx });
+          } catch(e) {
+            result = { ok: false, error: e.message };
+          }
+          if (result?.ok && result.answers) {
+            for (const f of fillResult.needsClaude) {
+              const ans = result.answers[normalizeLabel(f.label_text)] || result.answers[f.label_text];
+              if (ans) { const ok = await fillField(f, ans); if (ok) { fillResult.claude++; fillResult.filled++; fillResult.fields.push({ label: f.label_text, value: ans, source: 'claude' }); } }
+            }
+          }
+          chrome.runtime.sendMessage({ type: 'FILL_COMPLETE', fillResult, jobCtx: _currentJobCtx, claudeStatus: result || pendingStatus });
+        }
+
+        progress(`Page ${pageNum}: ${fillResult.filled} filled (${fillResult.claude} via Claude). Looking for submit/next…`);
+        return fillResult;
+      }
+
+      try {
+        for (let i = 0; i < MAX_PAGES; i++) {
+          await fillCurrentPage();
+
+          // Check for submit button first
+          const submitKeywords = ['submit', 'submit application', 'apply', 'send application', 'complete application'];
+          const allBtns = Array.from(document.querySelectorAll('button, input[type=submit]'));
+          const submitBtn = allBtns.find(btn => submitKeywords.some(k => (btn.innerText || btn.value || '').toLowerCase().trim().includes(k)));
+          if (submitBtn) {
+            await new Promise(r => setTimeout(r, 600));
+            submitBtn.click();
+            submitted = true;
+            progress(`Submitted! Application complete.`);
+            chrome.runtime.sendMessage({ type: 'LOG_APPLICATION', jobCtx: _currentJobCtx, timestamp: new Date().toISOString() });
+            chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: `Submitted after page ${pageNum}!` });
+            showStatus('Application submitted!', 'success');
+            break;
+          }
+
+          // Try next button
+          const clicked = await clickNext();
+          if (!clicked) {
+            chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: `Stopped at page ${pageNum} — no Next/Submit found.` });
+            showStatus('Auto Apply: no Next or Submit found.', 'warn');
+            break;
+          }
+          pageNum++;
+          progress(`Navigated to page ${pageNum}, waiting for form…`);
+          await new Promise(r => setTimeout(r, 2200));
+        }
+        if (!submitted && pageNum >= MAX_PAGES) {
+          chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: `Stopped after ${MAX_PAGES} pages.` });
+        }
+      } catch(err) {
+        chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: `Error: ${err.message}` });
+        showStatus('Auto Apply error: ' + err.message, 'error');
+      }
+    })();
+    return true;
+  }
+
   if (msg.type === 'NEXT_PAGE') {
     (async () => {
       const clicked = await clickNext();

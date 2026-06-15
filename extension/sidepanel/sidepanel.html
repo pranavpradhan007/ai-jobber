@@ -98,20 +98,40 @@
   }
   /* Footer actions */
   .footer {
-    padding: 12px 16px;
+    padding: 10px 16px;
     background: white;
     border-top: 1px solid #e8eaed;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     flex-shrink: 0;
   }
-  .action-btn {
-    padding: 10px 4px;
+  .btn-auto-apply {
+    width: 100%;
+    padding: 11px;
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #7b1fa2, #1a73e8);
+    color: white;
+    letter-spacing: 0.3px;
+    transition: opacity 0.15s;
+  }
+  .btn-auto-apply:hover { opacity: 0.88; }
+  .btn-auto-apply:disabled { opacity: 0.5; cursor: default; }
+  .footer-manual {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+  .action-btn {
+    padding: 8px 4px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 11px;
     font-weight: 600;
     transition: all 0.15s;
   }
@@ -121,6 +141,12 @@
   .btn-prev:hover { background: #e8eaed; }
   .btn-next:hover { background: #1557b0; }
   .btn-submit:hover { background: #0b7a45; }
+  #autoApplyProgress {
+    font-size: 10px;
+    color: #5f6368;
+    text-align: center;
+    min-height: 14px;
+  }
   .empty-state {
     text-align: center;
     color: #80868b;
@@ -163,9 +189,13 @@
   </div>
 </div>
 <div class="footer">
-  <button class="action-btn btn-prev" id="btnPrev">← Prev</button>
-  <button class="action-btn btn-next" id="btnNext">Next →</button>
-  <button class="action-btn btn-submit" id="btnSubmit">Submit ▶</button>
+  <button class="btn-auto-apply" id="btnAutoApply">⚡ Auto Apply</button>
+  <div id="autoApplyProgress"></div>
+  <div class="footer-manual">
+    <button class="action-btn btn-prev" id="btnPrev">← Prev</button>
+    <button class="action-btn btn-next" id="btnNext">Next →</button>
+    <button class="action-btn btn-submit" id="btnSubmit">Submit ▶</button>
+  </div>
 </div>
 <script src="sidepanel.js"></script>
 </body>

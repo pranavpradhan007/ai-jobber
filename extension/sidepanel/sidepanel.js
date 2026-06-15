@@ -157,6 +157,39 @@ function normalizeLabel(text) {
     .trim();
 }
 
+// ─── Auto Apply ──────────────────────────────────────────────────────────────
+
+let _autoApplyRunning = false;
+
+document.getElementById('btnAutoApply').addEventListener('click', async () => {
+  if (_autoApplyRunning) return;
+  _autoApplyRunning = true;
+  const btn = document.getElementById('btnAutoApply');
+  const prog = document.getElementById('autoApplyProgress');
+  btn.disabled = true;
+  btn.textContent = '⚡ Auto Applying…';
+  prog.textContent = 'Starting…';
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) {
+    await chrome.tabs.sendMessage(tab.id, { type: 'AUTOAPPLY_START' });
+  }
+});
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'AUTOAPPLY_PROGRESS') {
+    const prog = document.getElementById('autoApplyProgress');
+    if (prog) prog.textContent = msg.text || '';
+  }
+  if (msg.type === 'AUTOAPPLY_DONE') {
+    _autoApplyRunning = false;
+    const btn = document.getElementById('btnAutoApply');
+    const prog = document.getElementById('autoApplyProgress');
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Auto Apply'; }
+    if (prog) prog.textContent = msg.text || 'Done!';
+  }
+});
+
 // ─── Navigation buttons ───────────────────────────────────────────────────────
 
 document.getElementById('btnNext').addEventListener('click', async () => {
