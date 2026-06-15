@@ -60,6 +60,8 @@ _LABEL_ALIASES: dict[str, str] = {
     "cell phone":               "phone",
     "phone number":             "phone",
     "contact number":           "phone",
+    "phone country code":       "phone_country_code",
+    "country code":             "phone_country_code",
     "linkedin profile":         "linkedin_url",
     "linkedin profile url":     "linkedin_url",
     "linkedin url":             "linkedin_url",
@@ -290,6 +292,10 @@ def _fill_single(page, f: DetectedField, answers: dict, result: FastFillResult, 
     except Exception:
         result.fields_unmatched += 1
         return
+
+    # For number inputs, strip range strings like "3-5" → "3" (LinkedIn validates as decimal)
+    if f.field_type == "number":
+        value = re.sub(r"[^\d.].*", "", value) or value
 
     # Fill by type
     try:

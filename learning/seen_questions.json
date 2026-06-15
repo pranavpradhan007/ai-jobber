@@ -1,0 +1,95 @@
+{
+  "what is your gender?": {
+    "count": 62,
+    "answers": [
+      "Male"
+    ],
+    "question": "What is your gender?"
+  },
+  "what is your race/ethnicity?": {
+    "count": 63,
+    "answers": [
+      "Asian"
+    ],
+    "question": "What is your race/ethnicity?"
+  },
+  "are you hispanic or latino?": {
+    "count": 1,
+    "answers": [
+      "No, Not Hispanic or Latino"
+    ],
+    "question": "Are you Hispanic or Latino?"
+  },
+  "what is your veteran status?": {
+    "count": 62,
+    "answers": [
+      "I am not a protected veteran"
+    ],
+    "question": "What is your veteran status?"
+  },
+  "do you have a disability?": {
+    "count": 62,
+    "answers": [
+      "I don't have a disability",
+      "No, I don't have a disability"
+    ],
+    "question": "Do you have a disability?"
+  },
+  "do you require visa sponsorship for employment?": {
+    "count": 62,
+    "answers": [
+      "No"
+    ],
+    "question": "Do you require visa sponsorship for employment?"
+  },
+  "are you authorized to work in the united states?": {
+    "count": 62,
+    "answers": [
+      "Yes, I am authorized to work in the United States"
+    ],
+    "question": "Are you authorized to work in the United States?"
+  },
+  "what is your expected salary?": {
+    "count": 62,
+    "answers": [
+      "80000"
+    ],
+    "question": "What is your expected salary?"
+  },
+  "how many years of relevant experience do you have?": {
+    "count": 62,
+    "answers": [
+      "3-5",
+      "4"
+    ],
+    "question": "How many years of relevant experience do you have?"
+  },
+  "are you willing to relocate?": {
+    "count": 62,
+    "answers": [
+      "Open to discuss"
+    ],
+    "question": "Are you willing to relocate?"
+  },
+  "what is your preference for remote work?": {
+    "count": 62,
+    "answers": [
+      "Open to remote or hybrid"
+    ],
+    "question": "What is your preference for remote work?"
+  },
+  "what year did you graduate?": {
+    "count": 62,
+    "answers": [
+      "2026"
+    ],
+    "question": "What year did you graduate?"
+  },
+  "what is your highest level of education?": {
+    "count": 62,
+    "answers": [
+      "Master of Science in Computer Science"
+    ],
+    "question": "What is your highest level of education?"
+  }
+}

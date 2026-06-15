@@ -1,0 +1,633 @@
+2026-06-12 21:00:22,187 INFO     src.runners.overnight — overnight: 25 discovered apps to process
+2026-06-12 21:00:22,187 INFO     src.keywords.extractor — extracted 8 hot keywords from JD
+2026-06-12 21:00:22,198 INFO     src.scoring.scorer — scored job total=64.0 passed=True
+2026-06-12 21:00:22,200 INFO     src.db.state_machine — state transition app_id=226  DISCOVERED → SCORED  reason='score=64.0' actor=system
+2026-06-12 21:00:22,203 INFO     src.scoring.gate — score gate PASS app_id=226 score=64.0 tier=gated
+2026-06-12 21:00:22,207 INFO     src.storage.folders — created folder app_id=226 path=E:\job search\applications\2026-06\amazon_applied_scientist_special_proj_226
+2026-06-12 21:00:22,207 INFO     src.db.state_machine — state transition app_id=226  SCORED → TAILORING  reason='score gate passed' actor=system
+2026-06-12 21:00:22,801 INFO     src.resume.ats_agent — ATS PASS: 95.0/100 (kw=40/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=8/8
+2026-06-12 21:00:22,801 INFO     src.resume.pipeline — app_id=226 GT ATS score=95.0, effective threshold=90.0
+2026-06-12 21:00:22,801 INFO     src.resume.pipeline — === TAILORING outer_loop=1/5 app_id=226 ===
+2026-06-12 21:00:22,801 INFO     src.resume.resume_agent — resume_agent attempt=1/15 strategy=full
+2026-06-12 21:00:22,930 INFO     src.resume.bullet_reframer — reframed 13/17 bullets in E:\job search\applications\2026-06\amazon_applied_scientist_special_proj_226\resume.docx
+2026-06-12 21:00:29,495 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\amazon_applied_scientist_special_proj_226\resume.pdf
+2026-06-12 21:00:29,572 INFO     src.resume.checker — Keyword coverage: 17/8 JD keywords present
+2026-06-12 21:00:29,572 INFO     src.resume.checker — ResumeCheck: FAIL | pages=2
+  ISSUE: Resume is 2 pages — must be exactly 1 page
+2026-06-12 21:00:29,624 INFO     src.resume.resume_agent — attempt=1 rules=FAIL score=100.0/85.0 PASS
+2026-06-12 21:00:29,624 INFO     src.resume.resume_agent — resume_agent: reframing caused pages=2 — switching to inject-only for remaining attempts
+2026-06-12 21:00:29,624 INFO     src.resume.resume_agent — resume_agent attempt=2/15 strategy=inject-only
+2026-06-12 21:00:36,097 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\amazon_applied_scientist_special_proj_226\resume.pdf
+2026-06-12 21:00:36,161 INFO     src.resume.checker — Keyword coverage: 17/8 JD keywords present
+2026-06-12 21:00:36,161 INFO     src.resume.checker — ResumeCheck: PASS | pages=1
+2026-06-12 21:00:36,214 INFO     src.resume.resume_agent — attempt=2 rules=PASS score=100.0/85.0 PASS
+2026-06-12 21:00:36,220 INFO     src.resume.resume_agent — resume_agent new best: attempt=2 score=100.0
+2026-06-12 21:00:36,222 INFO     src.resume.resume_agent — resume_agent done: success=True attempts=2 best_score=100.0
+2026-06-12 21:00:36,222 INFO     src.resume.pipeline — outer=1 Resume Agent succeeded: attempt=2 score=100.0 strategy=inject-only kw=[]
+2026-06-12 21:00:36,398 INFO     src.resume.ats_agent — ATS PASS: 95.0/100 (kw=40/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=8/8
+2026-06-12 21:00:36,419 INFO     src.resume.pipeline — outer=1 ATS PASSED: 95.0/100 — accepting resume (attempt=2 score=100.0)
+2026-06-12 21:00:36,430 INFO     src.resume.diff — wrote resume_diff.md to E:/job search/applications/2026-06/amazon_applied_scientist_special_proj_226\resume_diff.md
+2026-06-12 21:00:36,435 INFO     src.db.state_machine — state transition app_id=226  TAILORING → RESUME_VERIFIED  reason='verifier passed' actor=system
+2026-06-12 21:00:36,435 INFO     src.resume.pipeline — tailoring complete app_id=226 used_gt=False ats=95 kw=[]
+2026-06-12 21:00:36,435 INFO     src.db.state_machine — state transition app_id=226  RESUME_VERIFIED → PACKAGING  reason='tailoring complete' actor=system
+2026-06-12 21:00:36,435 INFO     src.db.state_machine — state transition app_id=226  PACKAGING → READY_TO_SUBMIT  reason='packaging complete' actor=system
+2026-06-12 21:00:36,471 INFO     src.llm.claude_code_bridge — Queued LLM task rephrase_70b51668_20260613_010036 (rephrase)
+2026-06-12 21:00:41,559 WARNING  src.llm.claude_code_bridge — LLM task rephrase_70b51668_20260613_010036 timed out after 5 seconds
+2026-06-12 21:00:41,559 WARNING  src.browser.screener_engine — app_id=226 screener LLM timed out — using safe defaults
+2026-06-12 21:00:41,559 INFO     src.browser.screener_engine — app_id=226 screener precompute: 47 answers llm_called=False timed_out=True
+2026-06-12 21:00:41,559 WARNING  src.runners.overnight — app_id=226 screener LLM timed out — using safe defaults
+2026-06-12 21:00:47,148 INFO     src.browser.auto_submit — _release_profile_lock: no agent Chrome processes found
+2026-06-12 21:00:47,164 INFO     src.browser.auto_submit — Removed lock file: Default/LOCK
+2026-06-12 21:00:47,182 INFO     src.browser.auto_submit — Reset Chrome exit_type to Normal in Preferences
+2026-06-12 21:00:49,215 INFO     src.browser.auto_submit — Launching Chrome via CDP: C:\Program Files\Google\Chrome\Application\chrome.exe
+2026-06-12 21:00:49,236 INFO     src.browser.auto_submit — Waiting for Chrome CDP port 9222…
+2026-06-12 21:00:52,780 INFO     src.browser.auto_submit — Chrome CDP ready — connecting
+2026-06-12 21:00:53,800 INFO     src.browser.auto_submit — app_id=226 detected LinkedIn job URL — using Easy Apply handler
+2026-06-12 21:01:03,364 INFO     src.browser.linkedin_apply — app_id=226 Easy Apply not found on direct URL, trying sidebar URL
+2026-06-12 21:01:17,892 ERROR    src.browser.auto_submit — auto_submit failed app_id=226: LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/4428192360/
+2026-06-12 21:01:18,053 ERROR    src.runners.overnight — portal submit failed app_id=226 error=LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/4428192360/
+2026-06-12 21:01:18,056 INFO     src.db.state_machine — state transition app_id=226  READY_TO_SUBMIT → SKIPPED  reason='permanent: LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/442' actor=system
+2026-06-12 21:01:18,056 INFO     src.runners.overnight — app_id=226 permanently skipped: LinkedIn Easy Apply: modal did not open after click — job may use external apply
+2026-06-12 21:01:18,060 INFO     src.keywords.extractor — extracted 5 hot keywords from JD
+2026-06-12 21:01:18,064 INFO     src.scoring.scorer — scored job total=60.4 passed=True
+2026-06-12 21:01:18,066 INFO     src.db.state_machine — state transition app_id=227  DISCOVERED → SCORED  reason='score=60.4' actor=system
+2026-06-12 21:01:18,077 INFO     src.scoring.gate — score gate PASS app_id=227 score=60.4 tier=gated
+2026-06-12 21:01:18,082 INFO     src.storage.folders — created folder app_id=227 path=E:\job search\applications\2026-06\bank_of_america_data_scientist_ii_227
+2026-06-12 21:01:18,088 INFO     src.db.state_machine — state transition app_id=227  SCORED → TAILORING  reason='score gate passed' actor=system
+2026-06-12 21:01:18,257 INFO     src.resume.ats_agent — ATS PASS: 79.0/100 (kw=24/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=3/5
+2026-06-12 21:01:18,262 INFO     src.resume.pipeline — app_id=227 GT ATS score=79.0, effective threshold=75.0
+2026-06-12 21:01:18,262 INFO     src.resume.pipeline — === TAILORING outer_loop=1/5 app_id=227 ===
+2026-06-12 21:01:18,262 INFO     src.resume.resume_agent — resume_agent attempt=1/15 strategy=full
+2026-06-12 21:01:18,389 INFO     src.resume.bullet_reframer — reframed 13/17 bullets in E:\job search\applications\2026-06\bank_of_america_data_scientist_ii_227\resume.docx
+2026-06-12 21:01:24,946 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\bank_of_america_data_scientist_ii_227\resume.pdf
+2026-06-12 21:01:25,025 INFO     src.resume.checker — Keyword coverage: 9/5 JD keywords present
+2026-06-12 21:01:25,025 INFO     src.resume.checker — ResumeCheck: FAIL | pages=2
+  ISSUE: Resume is 2 pages — must be exactly 1 page
+2026-06-12 21:01:25,067 INFO     src.resume.resume_agent — attempt=1 rules=FAIL score=100.0/85.0 PASS
+2026-06-12 21:01:25,067 INFO     src.resume.resume_agent — resume_agent: reframing caused pages=2 — switching to inject-only for remaining attempts
+2026-06-12 21:01:25,067 INFO     src.resume.resume_agent — resume_agent attempt=2/15 strategy=inject-only
+2026-06-12 21:01:31,817 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\bank_of_america_data_scientist_ii_227\resume.pdf
+2026-06-12 21:01:31,890 INFO     src.resume.checker — Keyword coverage: 7/5 JD keywords present
+2026-06-12 21:01:31,890 INFO     src.resume.checker — ResumeCheck: PASS | pages=1
+2026-06-12 21:01:31,955 INFO     src.resume.resume_agent — attempt=2 rules=PASS score=100.0/85.0 PASS
+2026-06-12 21:01:31,964 INFO     src.resume.resume_agent — resume_agent new best: attempt=2 score=100.0
+2026-06-12 21:01:31,964 INFO     src.resume.resume_agent — resume_agent done: success=True attempts=2 best_score=100.0
+2026-06-12 21:01:31,964 INFO     src.resume.pipeline — outer=1 Resume Agent succeeded: attempt=2 score=100.0 strategy=inject-only kw=[]
+2026-06-12 21:01:32,147 INFO     src.resume.ats_agent — ATS PASS: 79.0/100 (kw=24/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=3/5
+2026-06-12 21:01:32,164 INFO     src.resume.pipeline — outer=1 ATS PASSED: 79.0/100 — accepting resume (attempt=2 score=100.0)
+2026-06-12 21:01:32,164 INFO     src.resume.diff — wrote resume_diff.md to E:/job search/applications/2026-06/bank_of_america_data_scientist_ii_227\resume_diff.md
+2026-06-12 21:01:32,172 INFO     src.db.state_machine — state transition app_id=227  TAILORING → RESUME_VERIFIED  reason='verifier passed' actor=system
+2026-06-12 21:01:32,172 INFO     src.resume.pipeline — tailoring complete app_id=227 used_gt=False ats=79 kw=[]
+2026-06-12 21:01:32,172 INFO     src.db.state_machine — state transition app_id=227  RESUME_VERIFIED → PACKAGING  reason='tailoring complete' actor=system
+2026-06-12 21:01:32,172 INFO     src.db.state_machine — state transition app_id=227  PACKAGING → READY_TO_SUBMIT  reason='packaging complete' actor=system
+2026-06-12 21:01:32,172 INFO     src.llm.claude_code_bridge — Queued LLM task rephrase_8f0e1aa6_20260613_010132 (rephrase)
+2026-06-12 21:01:37,256 WARNING  src.llm.claude_code_bridge — LLM task rephrase_8f0e1aa6_20260613_010132 timed out after 5 seconds
+2026-06-12 21:01:37,256 WARNING  src.browser.screener_engine — app_id=227 screener LLM timed out — using safe defaults
+2026-06-12 21:01:37,256 INFO     src.browser.screener_engine — app_id=227 screener precompute: 47 answers llm_called=False timed_out=True
+2026-06-12 21:01:37,256 WARNING  src.runners.overnight — app_id=227 screener LLM timed out — using safe defaults
+2026-06-12 21:01:40,367 INFO     src.browser.auto_submit — Reusing existing Chrome CDP session on port 9222
+2026-06-12 21:01:40,849 INFO     src.browser.auto_submit — app_id=227 detected LinkedIn job URL — using Easy Apply handler
+2026-06-12 21:01:51,232 INFO     src.browser.linkedin_apply — app_id=227 Easy Apply not found on direct URL, trying sidebar URL
+2026-06-12 21:02:05,425 ERROR    src.browser.auto_submit — auto_submit failed app_id=227: LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/4428164843/
+2026-06-12 21:02:05,552 ERROR    src.runners.overnight — portal submit failed app_id=227 error=LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/4428164843/
+2026-06-12 21:02:05,564 INFO     src.db.state_machine — state transition app_id=227  READY_TO_SUBMIT → SKIPPED  reason='permanent: LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/442' actor=system
+2026-06-12 21:02:05,564 INFO     src.runners.overnight — app_id=227 permanently skipped: LinkedIn Easy Apply: modal did not open after click — job may use external apply
+2026-06-12 21:02:05,569 INFO     src.keywords.extractor — extracted 3 hot keywords from JD
+2026-06-12 21:02:05,572 INFO     src.scoring.scorer — scored job total=55.8 passed=False
+2026-06-12 21:02:05,577 INFO     src.db.state_machine — state transition app_id=228  DISCOVERED → SCORED  reason='score=55.8' actor=system
+2026-06-12 21:02:05,581 INFO     src.scoring.gate — score gate FAIL app_id=228 score=55.8 — skip downstream work
+2026-06-12 21:02:05,594 INFO     src.db.state_machine — state transition app_id=228  SCORED → SKIPPED  reason='score=55.8 below threshold' actor=system
+2026-06-12 21:02:05,600 INFO     src.keywords.extractor — extracted 3 hot keywords from JD
+2026-06-12 21:02:05,604 INFO     src.scoring.scorer — scored job total=54.8 passed=False
+2026-06-12 21:02:05,606 INFO     src.db.state_machine — state transition app_id=229  DISCOVERED → SCORED  reason='score=54.8' actor=system
+2026-06-12 21:02:05,608 INFO     src.scoring.gate — score gate FAIL app_id=229 score=54.8 — skip downstream work
+2026-06-12 21:02:05,610 INFO     src.db.state_machine — state transition app_id=229  SCORED → SKIPPED  reason='score=54.8 below threshold' actor=system
+2026-06-12 21:02:05,614 INFO     src.keywords.extractor — extracted 2 hot keywords from JD
+2026-06-12 21:02:05,618 INFO     src.scoring.scorer — scored job total=52.0 passed=False
+2026-06-12 21:02:05,621 INFO     src.db.state_machine — state transition app_id=230  DISCOVERED → SCORED  reason='score=52.0' actor=system
+2026-06-12 21:02:05,624 INFO     src.scoring.gate — score gate FAIL app_id=230 score=52.0 — skip downstream work
+2026-06-12 21:02:05,629 INFO     src.db.state_machine — state transition app_id=230  SCORED → SKIPPED  reason='score=52.0 below threshold' actor=system
+2026-06-12 21:02:05,633 INFO     src.keywords.extractor — extracted 4 hot keywords from JD
+2026-06-12 21:02:05,637 INFO     src.scoring.scorer — scored job total=53.2 passed=False
+2026-06-12 21:02:05,639 INFO     src.db.state_machine — state transition app_id=231  DISCOVERED → SCORED  reason='score=53.2' actor=system
+2026-06-12 21:02:05,641 INFO     src.scoring.gate — score gate FAIL app_id=231 score=53.2 — skip downstream work
+2026-06-12 21:02:05,643 INFO     src.db.state_machine — state transition app_id=231  SCORED → SKIPPED  reason='score=53.2 below threshold' actor=system
+2026-06-12 21:02:05,646 INFO     src.keywords.extractor — extracted 4 hot keywords from JD
+2026-06-12 21:02:05,650 INFO     src.scoring.scorer — scored job total=54.1 passed=False
+2026-06-12 21:02:05,652 INFO     src.db.state_machine — state transition app_id=232  DISCOVERED → SCORED  reason='score=54.1' actor=system
+2026-06-12 21:02:05,652 INFO     src.scoring.gate — score gate FAIL app_id=232 score=54.1 — skip downstream work
+2026-06-12 21:02:05,652 INFO     src.db.state_machine — state transition app_id=232  SCORED → SKIPPED  reason='score=54.1 below threshold' actor=system
+2026-06-12 21:02:05,664 INFO     src.keywords.extractor — extracted 3 hot keywords from JD
+2026-06-12 21:02:05,668 INFO     src.scoring.scorer — scored job total=63.4 passed=True
+2026-06-12 21:02:05,670 INFO     src.db.state_machine — state transition app_id=233  DISCOVERED → SCORED  reason='score=63.4' actor=system
+2026-06-12 21:02:05,672 INFO     src.scoring.gate — score gate PASS app_id=233 score=63.4 tier=gated
+2026-06-12 21:02:05,678 INFO     src.storage.folders — created folder app_id=233 path=E:\job search\applications\2026-06\sersense_inc_research_engineer_microfluidic_233
+2026-06-12 21:02:05,682 INFO     src.db.state_machine — state transition app_id=233  SCORED → TAILORING  reason='score gate passed' actor=system
+2026-06-12 21:02:05,864 INFO     src.resume.ats_agent — ATS PASS: 95.0/100 (kw=40/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=3/3
+2026-06-12 21:02:05,866 INFO     src.resume.pipeline — app_id=233 GT ATS score=95.0, effective threshold=90.0
+2026-06-12 21:02:05,868 INFO     src.resume.pipeline — === TAILORING outer_loop=1/5 app_id=233 ===
+2026-06-12 21:02:05,868 INFO     src.resume.resume_agent — resume_agent attempt=1/15 strategy=full
+2026-06-12 21:02:06,006 INFO     src.resume.bullet_reframer — reframed 13/17 bullets in E:\job search\applications\2026-06\sersense_inc_research_engineer_microfluidic_233\resume.docx
+2026-06-12 21:02:14,567 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\sersense_inc_research_engineer_microfluidic_233\resume.pdf
+2026-06-12 21:02:14,641 INFO     src.resume.checker — Keyword coverage: 7/3 JD keywords present
+2026-06-12 21:02:14,641 INFO     src.resume.checker — ResumeCheck: FAIL | pages=2
+  ISSUE: Resume is 2 pages — must be exactly 1 page
+2026-06-12 21:02:14,703 INFO     src.resume.resume_agent — attempt=1 rules=FAIL score=100.0/85.0 PASS
+2026-06-12 21:02:14,704 INFO     src.resume.resume_agent — resume_agent: reframing caused pages=2 — switching to inject-only for remaining attempts
+2026-06-12 21:02:14,704 INFO     src.resume.resume_agent — resume_agent attempt=2/15 strategy=inject-only
+2026-06-12 21:02:21,794 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\sersense_inc_research_engineer_microfluidic_233\resume.pdf
+2026-06-12 21:02:21,843 INFO     src.resume.checker — Keyword coverage: 7/3 JD keywords present
+2026-06-12 21:02:21,843 INFO     src.resume.checker — ResumeCheck: PASS | pages=1
+2026-06-12 21:02:21,900 INFO     src.resume.resume_agent — attempt=2 rules=PASS score=100.0/85.0 PASS
+2026-06-12 21:02:21,909 INFO     src.resume.resume_agent — resume_agent new best: attempt=2 score=100.0
+2026-06-12 21:02:21,909 INFO     src.resume.resume_agent — resume_agent done: success=True attempts=2 best_score=100.0
+2026-06-12 21:02:21,909 INFO     src.resume.pipeline — outer=1 Resume Agent succeeded: attempt=2 score=100.0 strategy=inject-only kw=[]
+2026-06-12 21:02:22,131 INFO     src.resume.ats_agent — ATS PASS: 95.0/100 (kw=40/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=3/3
+2026-06-12 21:02:22,131 INFO     src.resume.pipeline — outer=1 ATS PASSED: 95.0/100 — accepting resume (attempt=2 score=100.0)
+2026-06-12 21:02:22,147 INFO     src.resume.diff — wrote resume_diff.md to E:/job search/applications/2026-06/sersense_inc_research_engineer_microfluidic_233\resume_diff.md
+2026-06-12 21:02:22,147 INFO     src.db.state_machine — state transition app_id=233  TAILORING → RESUME_VERIFIED  reason='verifier passed' actor=system
+2026-06-12 21:02:22,147 INFO     src.resume.pipeline — tailoring complete app_id=233 used_gt=False ats=95 kw=[]
+2026-06-12 21:02:22,147 INFO     src.db.state_machine — state transition app_id=233  RESUME_VERIFIED → PACKAGING  reason='tailoring complete' actor=system
+2026-06-12 21:02:22,147 INFO     src.db.state_machine — state transition app_id=233  PACKAGING → READY_TO_SUBMIT  reason='packaging complete' actor=system
+2026-06-12 21:02:22,157 INFO     src.llm.claude_code_bridge — Queued LLM task rephrase_21d902cb_20260613_010222 (rephrase)
+2026-06-12 21:02:27,214 WARNING  src.llm.claude_code_bridge — LLM task rephrase_21d902cb_20260613_010222 timed out after 5 seconds
+2026-06-12 21:02:27,214 WARNING  src.browser.screener_engine — app_id=233 screener LLM timed out — using safe defaults
+2026-06-12 21:02:27,218 INFO     src.browser.screener_engine — app_id=233 screener precompute: 47 answers llm_called=False timed_out=True
+2026-06-12 21:02:27,218 WARNING  src.runners.overnight — app_id=233 screener LLM timed out — using safe defaults
+2026-06-12 21:02:30,168 INFO     src.browser.auto_submit — Reusing existing Chrome CDP session on port 9222
+2026-06-12 21:02:30,453 INFO     src.browser.auto_submit — app_id=233 detected LinkedIn job URL — using Easy Apply handler
+2026-06-12 21:02:38,642 INFO     src.browser.linkedin_apply — app_id=233 Easy Apply not found on direct URL, trying sidebar URL
+2026-06-12 21:02:56,786 INFO     src.browser.linkedin_apply — Dismissed 'Save this application?' dialog via Escape
+2026-06-12 21:03:01,926 INFO     src.browser.linkedin_apply — linkedin: resume uploaded from D:\Pranav\Resume\New folder\Pranav ML-AI Resume.pdf
+2026-06-12 21:03:07,944 INFO     src.browser.linkedin_apply — Dismissed 'Save this application?' dialog via Escape
+2026-06-12 21:03:16,930 INFO     src.browser.linkedin_apply — Dismissed 'Save this application?' dialog via Escape
+2026-06-12 21:03:25,347 INFO     src.browser.linkedin_apply — Dismissed 'Save this application?' dialog via Escape
+2026-06-12 21:04:32,997 INFO     src.browser.linkedin_apply — Dismissed 'Save this application?' dialog via Escape
+2026-06-12 21:04:33,208 ERROR    src.browser.auto_submit — auto_submit failed app_id=233: LinkedIn Easy Apply: stuck — save dialog dismissed 5x (unfilled required fields)
+2026-06-12 21:04:33,323 ERROR    src.runners.overnight — portal submit failed app_id=233 error=LinkedIn Easy Apply: stuck — save dialog dismissed 5x (unfilled required fields)
+2026-06-12 21:04:33,331 INFO     src.db.state_machine — state transition app_id=233  READY_TO_SUBMIT → SKIPPED  reason='permanent: LinkedIn Easy Apply: stuck — save dialog dismissed 5x (unfilled required fields)' actor=system
+2026-06-12 21:04:33,333 INFO     src.runners.overnight — app_id=233 permanently skipped: LinkedIn Easy Apply: stuck — save dialog dismissed 5x (unfilled required fields)
+2026-06-12 21:04:33,341 INFO     src.keywords.extractor — extracted 3 hot keywords from JD
+2026-06-12 21:04:33,347 INFO     src.scoring.scorer — scored job total=52.0 passed=False
+2026-06-12 21:04:33,351 INFO     src.db.state_machine — state transition app_id=234  DISCOVERED → SCORED  reason='score=52.0' actor=system
+2026-06-12 21:04:33,356 INFO     src.scoring.gate — score gate FAIL app_id=234 score=52.0 — skip downstream work
+2026-06-12 21:04:33,363 INFO     src.db.state_machine — state transition app_id=234  SCORED → SKIPPED  reason='score=52.0 below threshold' actor=system
+2026-06-12 21:04:33,363 INFO     src.keywords.extractor — extracted 5 hot keywords from JD
+2026-06-12 21:04:33,372 INFO     src.scoring.scorer — scored job total=54.8 passed=False
+2026-06-12 21:04:33,372 INFO     src.db.state_machine — state transition app_id=235  DISCOVERED → SCORED  reason='score=54.8' actor=system
+2026-06-12 21:04:33,380 INFO     src.scoring.gate — score gate FAIL app_id=235 score=54.8 — skip downstream work
+2026-06-12 21:04:33,388 INFO     src.db.state_machine — state transition app_id=235  SCORED → SKIPPED  reason='score=54.8 below threshold' actor=system
+2026-06-12 21:04:33,388 INFO     src.keywords.extractor — extracted 11 hot keywords from JD
+2026-06-12 21:04:33,396 INFO     src.scoring.scorer — scored job total=54.8 passed=False
+2026-06-12 21:04:33,403 INFO     src.db.state_machine — state transition app_id=236  DISCOVERED → SCORED  reason='score=54.8' actor=system
+2026-06-12 21:04:33,403 INFO     src.scoring.gate — score gate FAIL app_id=236 score=54.8 — skip downstream work
+2026-06-12 21:04:33,416 INFO     src.db.state_machine — state transition app_id=236  SCORED → SKIPPED  reason='score=54.8 below threshold' actor=system
+2026-06-12 21:04:33,419 INFO     src.keywords.extractor — extracted 3 hot keywords from JD
+2026-06-12 21:04:33,419 INFO     src.scoring.scorer — scored job total=53.2 passed=False
+2026-06-12 21:04:33,419 INFO     src.db.state_machine — state transition app_id=237  DISCOVERED → SCORED  reason='score=53.2' actor=system
+2026-06-12 21:04:33,419 INFO     src.scoring.gate — score gate FAIL app_id=237 score=53.2 — skip downstream work
+2026-06-12 21:04:33,435 INFO     src.db.state_machine — state transition app_id=237  SCORED → SKIPPED  reason='score=53.2 below threshold' actor=system
+2026-06-12 21:04:33,441 INFO     src.keywords.extractor — extracted 8 hot keywords from JD
+2026-06-12 21:04:33,445 INFO     src.scoring.scorer — scored job total=64.3 passed=True
+2026-06-12 21:04:33,451 INFO     src.db.state_machine — state transition app_id=238  DISCOVERED → SCORED  reason='score=64.3' actor=system
+2026-06-12 21:04:33,451 INFO     src.scoring.gate — score gate PASS app_id=238 score=64.3 tier=gated
+2026-06-12 21:04:33,451 INFO     src.storage.folders — created folder app_id=238 path=E:\job search\applications\2026-06\netflix_ai_engineer_6_ai_foundation_to_238
+2026-06-12 21:04:33,480 INFO     src.db.state_machine — state transition app_id=238  SCORED → TAILORING  reason='score gate passed' actor=system
+2026-06-12 21:04:33,687 INFO     src.resume.ats_agent — ATS PASS: 80.0/100 (kw=25/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=5/8
+2026-06-12 21:04:33,687 INFO     src.resume.pipeline — app_id=238 GT ATS score=80.0, effective threshold=75.0
+2026-06-12 21:04:33,689 INFO     src.resume.pipeline — === TAILORING outer_loop=1/5 app_id=238 ===
+2026-06-12 21:04:33,689 INFO     src.resume.resume_agent — resume_agent attempt=1/15 strategy=full
+2026-06-12 21:04:33,830 INFO     src.resume.bullet_reframer — reframed 13/17 bullets in E:\job search\applications\2026-06\netflix_ai_engineer_6_ai_foundation_to_238\resume.docx
+2026-06-12 21:04:33,908 INFO     src.resume.pipeline — skills line growth budget exhausted (0/25 chars used); stopping injection
+2026-06-12 21:04:40,590 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\netflix_ai_engineer_6_ai_foundation_to_238\resume.pdf
+2026-06-12 21:04:40,685 INFO     src.resume.checker — Keyword coverage: 11/8 JD keywords present
+2026-06-12 21:04:40,685 INFO     src.resume.checker — ResumeCheck: FAIL | pages=2
+  ISSUE: Resume is 2 pages — must be exactly 1 page
+2026-06-12 21:04:40,741 INFO     src.resume.resume_agent — attempt=1 rules=FAIL score=100.0/85.0 PASS
+2026-06-12 21:04:40,741 INFO     src.resume.resume_agent — resume_agent: reframing caused pages=2 — switching to inject-only for remaining attempts
+2026-06-12 21:04:40,741 INFO     src.resume.resume_agent — resume_agent attempt=2/15 strategy=inject-only
+2026-06-12 21:04:47,623 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\netflix_ai_engineer_6_ai_foundation_to_238\resume.pdf
+2026-06-12 21:04:47,680 INFO     src.resume.checker — Keyword coverage: 11/8 JD keywords present
+2026-06-12 21:04:47,680 INFO     src.resume.checker — ResumeCheck: PASS | pages=1
+2026-06-12 21:04:47,723 INFO     src.resume.resume_agent — attempt=2 rules=PASS score=100.0/85.0 PASS
+2026-06-12 21:04:47,723 INFO     src.resume.resume_agent — resume_agent new best: attempt=2 score=100.0
+2026-06-12 21:04:47,723 INFO     src.resume.resume_agent — resume_agent done: success=True attempts=2 best_score=100.0
+2026-06-12 21:04:47,723 INFO     src.resume.pipeline — outer=1 Resume Agent succeeded: attempt=2 score=100.0 strategy=inject-only kw=[]
+2026-06-12 21:04:47,926 INFO     src.resume.ats_agent — ATS PASS: 80.0/100 (kw=25/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=5/8
+2026-06-12 21:04:47,934 INFO     src.resume.pipeline — outer=1 ATS PASSED: 80.0/100 — accepting resume (attempt=2 score=100.0)
+2026-06-12 21:04:47,937 INFO     src.resume.diff — wrote resume_diff.md to E:/job search/applications/2026-06/netflix_ai_engineer_6_ai_foundation_to_238\resume_diff.md
+2026-06-12 21:04:47,948 INFO     src.db.state_machine — state transition app_id=238  TAILORING → RESUME_VERIFIED  reason='verifier passed' actor=system
+2026-06-12 21:04:47,948 INFO     src.resume.pipeline — tailoring complete app_id=238 used_gt=False ats=80 kw=[]
+2026-06-12 21:04:47,951 INFO     src.db.state_machine — state transition app_id=238  RESUME_VERIFIED → PACKAGING  reason='tailoring complete' actor=system
+2026-06-12 21:04:47,955 INFO     src.db.state_machine — state transition app_id=238  PACKAGING → READY_TO_SUBMIT  reason='packaging complete' actor=system
+2026-06-12 21:04:47,963 INFO     src.llm.claude_code_bridge — Queued LLM task rephrase_478be501_20260613_010447 (rephrase)
+2026-06-12 21:04:53,032 WARNING  src.llm.claude_code_bridge — LLM task rephrase_478be501_20260613_010447 timed out after 5 seconds
+2026-06-12 21:04:53,032 WARNING  src.browser.screener_engine — app_id=238 screener LLM timed out — using safe defaults
+2026-06-12 21:04:53,034 INFO     src.browser.screener_engine — app_id=238 screener precompute: 47 answers llm_called=False timed_out=True
+2026-06-12 21:04:53,034 WARNING  src.runners.overnight — app_id=238 screener LLM timed out — using safe defaults
+2026-06-12 21:04:57,961 INFO     src.browser.auto_submit — _release_profile_lock: no agent Chrome processes found
+2026-06-12 21:04:57,977 INFO     src.browser.auto_submit — Removed lock file: Default/LOCK
+2026-06-12 21:05:00,003 INFO     src.browser.auto_submit — Launching Chrome via CDP: C:\Program Files\Google\Chrome\Application\chrome.exe
+2026-06-12 21:05:00,027 INFO     src.browser.auto_submit — Waiting for Chrome CDP port 9222…
+2026-06-12 21:05:03,547 INFO     src.browser.auto_submit — Chrome CDP ready — connecting
+2026-06-12 21:05:04,652 INFO     src.browser.auto_submit — app_id=238 detected LinkedIn job URL — using Easy Apply handler
+2026-06-12 21:05:13,284 INFO     src.browser.linkedin_apply — app_id=238 Easy Apply not found on direct URL, trying sidebar URL
+2026-06-12 21:05:25,876 ERROR    src.browser.auto_submit — auto_submit failed app_id=238: LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/4413385589/
+2026-06-12 21:05:26,063 ERROR    src.runners.overnight — portal submit failed app_id=238 error=LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/4413385589/
+2026-06-12 21:05:26,067 INFO     src.db.state_machine — state transition app_id=238  READY_TO_SUBMIT → SKIPPED  reason='permanent: LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/441' actor=system
+2026-06-12 21:05:26,069 INFO     src.runners.overnight — app_id=238 permanently skipped: LinkedIn Easy Apply: modal did not open after click — job may use external apply
+2026-06-12 21:05:26,073 INFO     src.keywords.extractor — extracted 3 hot keywords from JD
+2026-06-12 21:05:26,079 INFO     src.scoring.scorer — scored job total=52.4 passed=False
+2026-06-12 21:05:26,081 INFO     src.db.state_machine — state transition app_id=239  DISCOVERED → SCORED  reason='score=52.4' actor=system
+2026-06-12 21:05:26,087 INFO     src.scoring.gate — score gate FAIL app_id=239 score=52.4 — skip downstream work
+2026-06-12 21:05:26,099 INFO     src.db.state_machine — state transition app_id=239  SCORED → SKIPPED  reason='score=52.4 below threshold' actor=system
+2026-06-12 21:05:26,103 INFO     src.keywords.extractor — extracted 1 hot keywords from JD
+2026-06-12 21:05:26,103 INFO     src.scoring.scorer — scored job total=51.9 passed=False
+2026-06-12 21:05:26,111 INFO     src.db.state_machine — state transition app_id=240  DISCOVERED → SCORED  reason='score=51.9' actor=system
+2026-06-12 21:05:26,117 INFO     src.scoring.gate — score gate FAIL app_id=240 score=51.9 — skip downstream work
+2026-06-12 21:05:26,119 INFO     src.db.state_machine — state transition app_id=240  SCORED → SKIPPED  reason='score=51.9 below threshold' actor=system
+2026-06-12 21:05:26,128 INFO     src.keywords.extractor — extracted 1 hot keywords from JD
+2026-06-12 21:05:26,132 INFO     src.scoring.scorer — scored job total=52.0 passed=False
+2026-06-12 21:05:26,134 INFO     src.db.state_machine — state transition app_id=241  DISCOVERED → SCORED  reason='score=52.0' actor=system
+2026-06-12 21:05:26,134 INFO     src.scoring.gate — score gate FAIL app_id=241 score=52.0 — skip downstream work
+2026-06-12 21:05:26,147 INFO     src.db.state_machine — state transition app_id=241  SCORED → SKIPPED  reason='score=52.0 below threshold' actor=system
+2026-06-12 21:05:26,153 INFO     src.keywords.extractor — extracted 7 hot keywords from JD
+2026-06-12 21:05:26,157 INFO     src.scoring.scorer — scored job total=56.9 passed=False
+2026-06-12 21:05:26,162 INFO     src.db.state_machine — state transition app_id=242  DISCOVERED → SCORED  reason='score=56.9' actor=system
+2026-06-12 21:05:26,167 INFO     src.scoring.gate — score gate FAIL app_id=242 score=56.9 — skip downstream work
+2026-06-12 21:05:26,178 INFO     src.db.state_machine — state transition app_id=242  SCORED → SKIPPED  reason='score=56.9 below threshold' actor=system
+2026-06-12 21:05:26,182 INFO     src.keywords.extractor — extracted 4 hot keywords from JD
+2026-06-12 21:05:26,190 INFO     src.scoring.scorer — scored job total=53.5 passed=False
+2026-06-12 21:05:26,198 INFO     src.db.state_machine — state transition app_id=243  DISCOVERED → SCORED  reason='score=53.5' actor=system
+2026-06-12 21:05:26,206 INFO     src.scoring.gate — score gate FAIL app_id=243 score=53.5 — skip downstream work
+2026-06-12 21:05:26,220 INFO     src.db.state_machine — state transition app_id=243  SCORED → SKIPPED  reason='score=53.5 below threshold' actor=system
+2026-06-12 21:05:26,222 INFO     src.keywords.extractor — extracted 3 hot keywords from JD
+2026-06-12 21:05:26,230 INFO     src.scoring.scorer — scored job total=52.0 passed=False
+2026-06-12 21:05:26,233 INFO     src.db.state_machine — state transition app_id=244  DISCOVERED → SCORED  reason='score=52.0' actor=system
+2026-06-12 21:05:26,239 INFO     src.scoring.gate — score gate FAIL app_id=244 score=52.0 — skip downstream work
+2026-06-12 21:05:26,247 INFO     src.db.state_machine — state transition app_id=244  SCORED → SKIPPED  reason='score=52.0 below threshold' actor=system
+2026-06-12 21:05:26,255 INFO     src.keywords.extractor — extracted 2 hot keywords from JD
+2026-06-12 21:05:26,255 INFO     src.scoring.scorer — scored job total=52.9 passed=False
+2026-06-12 21:05:26,266 INFO     src.db.state_machine — state transition app_id=245  DISCOVERED → SCORED  reason='score=53.0' actor=system
+2026-06-12 21:05:26,267 INFO     src.scoring.gate — score gate FAIL app_id=245 score=53.0 — skip downstream work
+2026-06-12 21:05:26,271 INFO     src.db.state_machine — state transition app_id=245  SCORED → SKIPPED  reason='score=53.0 below threshold' actor=system
+2026-06-12 21:05:26,279 INFO     src.keywords.extractor — extracted 5 hot keywords from JD
+2026-06-12 21:05:26,282 INFO     src.scoring.scorer — scored job total=56.3 passed=False
+2026-06-12 21:05:26,282 INFO     src.db.state_machine — state transition app_id=246  DISCOVERED → SCORED  reason='score=56.3' actor=system
+2026-06-12 21:05:26,282 INFO     src.scoring.gate — score gate FAIL app_id=246 score=56.3 — skip downstream work
+2026-06-12 21:05:26,295 INFO     src.db.state_machine — state transition app_id=246  SCORED → SKIPPED  reason='score=56.3 below threshold' actor=system
+2026-06-12 21:05:26,295 INFO     src.keywords.extractor — extracted 2 hot keywords from JD
+2026-06-12 21:05:26,301 INFO     src.scoring.scorer — scored job total=52.0 passed=False
+2026-06-12 21:05:26,305 INFO     src.db.state_machine — state transition app_id=247  DISCOVERED → SCORED  reason='score=52.0' actor=system
+2026-06-12 21:05:26,307 INFO     src.scoring.gate — score gate FAIL app_id=247 score=52.0 — skip downstream work
+2026-06-12 21:05:26,310 INFO     src.db.state_machine — state transition app_id=247  SCORED → SKIPPED  reason='score=52.0 below threshold' actor=system
+2026-06-12 21:05:26,310 INFO     src.keywords.extractor — extracted 1 hot keywords from JD
+2026-06-12 21:05:26,318 INFO     src.scoring.scorer — scored job total=51.9 passed=False
+2026-06-12 21:05:26,318 INFO     src.db.state_machine — state transition app_id=248  DISCOVERED → SCORED  reason='score=51.9' actor=system
+2026-06-12 21:05:26,326 INFO     src.scoring.gate — score gate FAIL app_id=248 score=51.9 — skip downstream work
+2026-06-12 21:05:26,326 INFO     src.db.state_machine — state transition app_id=248  SCORED → SKIPPED  reason='score=51.9 below threshold' actor=system
+2026-06-12 21:05:26,326 INFO     src.keywords.extractor — extracted 1 hot keywords from JD
+2026-06-12 21:05:26,337 INFO     src.scoring.scorer — scored job total=62.2 passed=True
+2026-06-12 21:05:26,337 INFO     src.db.state_machine — state transition app_id=249  DISCOVERED → SCORED  reason='score=62.2' actor=system
+2026-06-12 21:05:26,342 INFO     src.scoring.gate — score gate PASS app_id=249 score=62.2 tier=gated
+2026-06-12 21:05:26,342 INFO     src.storage.folders — created folder app_id=249 path=E:\job search\applications\2026-06\bananaz_mechanical_ai_engineer_249
+2026-06-12 21:05:26,358 INFO     src.db.state_machine — state transition app_id=249  SCORED → TAILORING  reason='score gate passed' actor=system
+2026-06-12 21:05:26,501 INFO     src.resume.ats_agent — ATS PASS: 95.0/100 (kw=40/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=1/1
+2026-06-12 21:05:26,507 INFO     src.resume.pipeline — app_id=249 GT ATS score=95.0, effective threshold=90.0
+2026-06-12 21:05:26,507 INFO     src.resume.pipeline — === TAILORING outer_loop=1/5 app_id=249 ===
+2026-06-12 21:05:26,507 INFO     src.resume.resume_agent — resume_agent attempt=1/15 strategy=full
+2026-06-12 21:05:26,613 INFO     src.resume.bullet_reframer — reframed 13/17 bullets in E:\job search\applications\2026-06\bananaz_mechanical_ai_engineer_249\resume.docx
+2026-06-12 21:05:34,405 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\bananaz_mechanical_ai_engineer_249\resume.pdf
+2026-06-12 21:05:34,515 INFO     src.resume.checker — Keyword coverage: 3/1 JD keywords present
+2026-06-12 21:05:34,515 INFO     src.resume.checker — ResumeCheck: FAIL | pages=2
+  ISSUE: Resume is 2 pages — must be exactly 1 page
+2026-06-12 21:05:34,597 INFO     src.resume.resume_agent — attempt=1 rules=FAIL score=100.0/85.0 PASS
+2026-06-12 21:05:34,597 INFO     src.resume.resume_agent — resume_agent: reframing caused pages=2 — switching to inject-only for remaining attempts
+2026-06-12 21:05:34,597 INFO     src.resume.resume_agent — resume_agent attempt=2/15 strategy=inject-only
+2026-06-12 21:05:41,279 INFO     src.resume.renderer — rendered PDF to E:\job search\applications\2026-06\bananaz_mechanical_ai_engineer_249\resume.pdf
+2026-06-12 21:05:41,326 INFO     src.resume.checker — Keyword coverage: 3/1 JD keywords present
+2026-06-12 21:05:41,328 INFO     src.resume.checker — ResumeCheck: PASS | pages=1
+2026-06-12 21:05:41,375 INFO     src.resume.resume_agent — attempt=2 rules=PASS score=100.0/85.0 PASS
+2026-06-12 21:05:41,383 INFO     src.resume.resume_agent — resume_agent new best: attempt=2 score=100.0
+2026-06-12 21:05:41,383 INFO     src.resume.resume_agent — resume_agent done: success=True attempts=2 best_score=100.0
+2026-06-12 21:05:41,383 INFO     src.resume.pipeline — outer=1 Resume Agent succeeded: attempt=2 score=100.0 strategy=inject-only kw=[]
+2026-06-12 21:05:41,588 INFO     src.resume.ats_agent — ATS PASS: 95.0/100 (kw=40/40 skills=20/20 bullets=15/20 parse=20/20) kw_hits=1/1
+2026-06-12 21:05:41,593 INFO     src.resume.pipeline — outer=1 ATS PASSED: 95.0/100 — accepting resume (attempt=2 score=100.0)
+2026-06-12 21:05:41,593 INFO     src.resume.diff — wrote resume_diff.md to E:/job search/applications/2026-06/bananaz_mechanical_ai_engineer_249\resume_diff.md
+2026-06-12 21:05:41,603 INFO     src.db.state_machine — state transition app_id=249  TAILORING → RESUME_VERIFIED  reason='verifier passed' actor=system
+2026-06-12 21:05:41,603 INFO     src.resume.pipeline — tailoring complete app_id=249 used_gt=False ats=95 kw=[]
+2026-06-12 21:05:41,603 INFO     src.db.state_machine — state transition app_id=249  RESUME_VERIFIED → PACKAGING  reason='tailoring complete' actor=system
+2026-06-12 21:05:41,603 INFO     src.db.state_machine — state transition app_id=249  PACKAGING → READY_TO_SUBMIT  reason='packaging complete' actor=system
+2026-06-12 21:05:41,619 INFO     src.llm.claude_code_bridge — Queued LLM task rephrase_75851b7f_20260613_010541 (rephrase)
+2026-06-12 21:05:46,721 WARNING  src.llm.claude_code_bridge — LLM task rephrase_75851b7f_20260613_010541 timed out after 5 seconds
+2026-06-12 21:05:46,721 WARNING  src.browser.screener_engine — app_id=249 screener LLM timed out — using safe defaults
+2026-06-12 21:05:46,732 INFO     src.browser.screener_engine — app_id=249 screener precompute: 47 answers llm_called=False timed_out=True
+2026-06-12 21:05:46,732 WARNING  src.runners.overnight — app_id=249 screener LLM timed out — using safe defaults
+2026-06-12 21:05:49,970 INFO     src.browser.auto_submit — Reusing existing Chrome CDP session on port 9222
+2026-06-12 21:05:50,631 INFO     src.browser.auto_submit — app_id=249 detected LinkedIn job URL — using Easy Apply handler
+2026-06-12 21:06:00,300 INFO     src.browser.linkedin_apply — app_id=249 Easy Apply not found on direct URL, trying sidebar URL
+2026-06-12 21:06:15,272 INFO     src.browser.linkedin_apply — linkedin: resume uploaded from D:\Pranav\Resume\New folder\Pranav ML-AI Resume.pdf
+2026-06-12 21:06:23,076 INFO     src.browser.linkedin_apply — app_id=249 linkedin easy apply submitted
+2026-06-12 21:06:23,560 INFO     src.db.state_machine — state transition app_id=249  READY_TO_SUBMIT → SUBMITTING  reason='browser auto-submit' actor=system
+2026-06-12 21:06:23,573 INFO     src.db.state_machine — state transition app_id=249  SUBMITTING → SUBMITTED  reason='submit receipt received' actor=system
+2026-06-12 21:06:23,573 INFO     src.browser.submit — submitted app_id=249 receipt=LINKEDIN:submitted_confirmed
+2026-06-12 21:06:23,580 INFO     src.db.state_machine — state transition app_id=249  SUBMITTED → MONITORING  reason='submitted after user approval via browser' actor=system
+2026-06-12 21:06:23,580 INFO     src.runners.overnight — portal submitted app_id=249 receipt=LINKEDIN:submitted_confirmed screenshot=E:\job search\applications\2026-06\bananaz_mechanical_ai_engineer_249\li_confirmation.png
+2026-06-12 21:06:23,597 INFO     src.learning.notes — wrote learning note for app_id=249
+2026-06-12 21:06:23,601 INFO     src.learning.defaults — candidate default proposed for question: 'What is your gender?'
+2026-06-12 21:06:23,649 INFO     src.learning.defaults — candidate default proposed for question: 'What is your veteran status?'
+2026-06-12 21:06:23,672 INFO     src.learning.defaults — candidate default proposed for question: 'Do you have a disability?'
+2026-06-12 21:06:23,700 INFO     src.learning.defaults — candidate default proposed for question: 'Do you require visa sponsorship for employment?'
+2026-06-12 21:06:23,714 INFO     src.learning.defaults — candidate default proposed for question: 'Are you authorized to work in the United States?'
+2026-06-12 21:06:23,755 INFO     src.learning.defaults — candidate default proposed for question: 'What is your expected salary?'
+2026-06-12 21:06:23,784 INFO     src.learning.defaults — candidate default proposed for question: 'How many years of relevant experience do you have?'
+2026-06-12 21:06:23,815 INFO     src.learning.defaults — candidate default proposed for question: 'Are you willing to relocate?'
+2026-06-12 21:06:23,853 INFO     src.learning.defaults — candidate default proposed for question: 'What is your preference for remote work?'
+2026-06-12 21:06:23,890 INFO     src.learning.defaults — candidate default proposed for question: 'What year did you graduate?'
+2026-06-12 21:06:23,928 INFO     src.learning.defaults — candidate default proposed for question: 'What is your highest level of education?'
+2026-06-12 21:06:23,934 INFO     src.keywords.extractor — extracted 2 hot keywords from JD
+2026-06-12 21:06:23,934 INFO     src.scoring.scorer — scored job total=52.0 passed=False
+2026-06-12 21:06:23,934 INFO     src.db.state_machine — state transition app_id=250  DISCOVERED → SCORED  reason='score=52.0' actor=system
+2026-06-12 21:06:23,950 INFO     src.scoring.gate — score gate FAIL app_id=250 score=52.0 — skip downstream work
+2026-06-12 21:06:23,954 INFO     src.db.state_machine — state transition app_id=250  SCORED → SKIPPED  reason='score=52.0 below threshold' actor=system
+2026-06-12 21:06:23,954 INFO     src.runners.overnight — overnight: 1 approved gated apps to submit
+2026-06-12 21:06:23,987 INFO     src.llm.claude_code_bridge — Queued LLM task rephrase_7738dee9_20260613_010623 (rephrase)
+2026-06-12 21:06:29,105 WARNING  src.llm.claude_code_bridge — LLM task rephrase_7738dee9_20260613_010623 timed out after 5 seconds
+2026-06-12 21:06:29,107 WARNING  src.browser.screener_engine — app_id=175 screener LLM timed out — using safe defaults
+2026-06-12 21:06:29,117 INFO     src.browser.screener_engine — app_id=175 screener precompute: 47 answers llm_called=False timed_out=True
+2026-06-12 21:06:29,117 WARNING  src.runners.overnight — app_id=175 screener LLM timed out — using safe defaults
+2026-06-12 21:06:34,745 INFO     src.browser.auto_submit — _release_profile_lock: no agent Chrome processes found
+2026-06-12 21:06:34,765 INFO     src.browser.auto_submit — Removed lock file: Default/LOCK
+2026-06-12 21:06:36,810 INFO     src.browser.auto_submit — Launching Chrome via CDP: C:\Program Files\Google\Chrome\Application\chrome.exe
+2026-06-12 21:06:36,825 INFO     src.browser.auto_submit — Waiting for Chrome CDP port 9222…
+2026-06-12 21:06:40,349 INFO     src.browser.auto_submit — Chrome CDP ready — connecting
+2026-06-12 21:06:41,615 INFO     src.browser.auto_submit — app_id=175 detected LinkedIn job URL — using Easy Apply handler
+2026-06-12 21:06:51,026 INFO     src.browser.linkedin_apply — app_id=175 Easy Apply not found on direct URL, trying sidebar URL
+2026-06-12 21:07:02,437 ERROR    src.browser.auto_submit — auto_submit failed app_id=175: LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/4428166264/
+2026-06-12 21:07:02,593 ERROR    src.runners.overnight — portal submit failed app_id=175 error=LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/4428166264/
+2026-06-12 21:07:02,611 INFO     src.db.state_machine — state transition app_id=175  READY_TO_SUBMIT → SKIPPED  reason='permanent: LinkedIn Easy Apply: modal did not open after click — job may use external apply: https://www.linkedin.com/jobs/view/442' actor=system
+2026-06-12 21:07:02,614 INFO     src.runners.overnight — app_id=175 permanently skipped: LinkedIn Easy Apply: modal did not open after click — job may use external apply
+2026-06-12 21:07:02,614 INFO     src.runners.overnight — overnight complete: scored=25 skipped=25 tailored=5 submitted=1 gated=0 failed=0
+
+=== OVERNIGHT RESULTS ===
+  scored    25
+  skipped   25
+  tailored  5
+  submitted 1
+  gated     0
+  failed    0
+
+=== APPLICATION STATES ===
+  APP-1: Wayve                          | SKIPPED                             | score=70.15 | tier=gated
+  APP-2: Amazon.com (Fauna Robotics)    | WAITING_FOR_USER_APPROVAL           | score=67.55 | tier=gated
+  APP-3: Deloitte (SFL Scientific)      | WAITING_FOR_USER_APPROVAL           | score=61.6 | tier=gated
+  APP-4: ThesisGrid Capital             | MONITORING                          | score=67.4 | tier=gated
+  APP-5: DataAnnotation                 | SKIPPED                             | score=47.4 | tier=gated
+  APP-6: Indeed                         | SKIPPED                             | score=51.9 | tier=gated
+  APP-7: The Hershey Company            | SKIPPED                             | score=46.5 | tier=gated
+  APP-8: David Joseph & Company         | SKIPPED                             | score=58.6 | tier=gated
+  APP-9: RepoBird                       | SKIPPED                             | score=61.15 | tier=gated
+  APP-10: Northramp                      | SKIPPED                             | score=55.75 | tier=gated
+  APP-11: SNO                            | SKIPPED                             | score=51.9 | tier=gated
+  APP-12: Flexential                     | SKIPPED                             | score=47.4 | tier=gated
+  APP-13: BV Teck                        | SKIPPED                             | score=62.05 | tier=gated
+  APP-14: Roboflow                       | SKIPPED                             | score=52.8 | tier=gated
+  APP-15: Mitek Systems                  | SKIPPED                             | score=51.4 | tier=gated
+  APP-16: Chief Rebel                    | SKIPPED                             | score=50.5 | tier=gated
+  APP-17: Softswiss                      | SKIPPED                             | score=42.65 | tier=gated
+  APP-18: Valon Tech                     | SKIPPED                             | score=50.5 | tier=gated
+  APP-19: Vanta                          | SKIPPED                             | score=50.5 | tier=gated
+  APP-20: Derq                           | SKIPPED                             | score=53.7 | tier=gated
+  APP-21: Liquid AI                      | SKIPPED                             | score=51.9 | tier=gated
+  APP-22: Phaidra                        | SKIPPED                             | score=56.55 | tier=gated
+  APP-23: YO IT Consulting               | SKIPPED                             | score=54.75 | tier=gated
+  APP-24: Trunk Tools, Inc.              | SKIPPED                             | score=61.15 | tier=gated
+  APP-25: Radformation                   | SKIPPED                             | score=62.2 | tier=gated
+  APP-26: StyleSeat                      | SKIPPED                             | score=55.65 | tier=gated
+  APP-27: Junction                       | SKIPPED                             | score=57.8 | tier=gated
+  APP-28: Smartsheet                     | SKIPPED                             | score=61.15 | tier=gated
+  APP-29: DoiT                           | SKIPPED                             | score=52.8 | tier=gated
+  APP-30: Smartsheet                     | SKIPPED                             | score=61.15 | tier=gated
+  APP-31: WorkWave                       | SKIPPED                             | score=52.8 | tier=gated
+  APP-32: Insider One                    | SKIPPED                             | score=51.9 | tier=gated
+  APP-33: Nomi.ai                        | SKIPPED                             | score=64.35 | tier=gated
+  APP-34: Pennylane                      | SKIPPED                             | score=52.8 | tier=gated
+  APP-35: Meedan                         | SKIPPED                             | score=56.85 | tier=gated
+  APP-36: YO IT Consulting               | SKIPPED                             | score=54.75 | tier=gated
+  APP-37: Geotab                         | SKIPPED                             | score=51.9 | tier=gated
+  APP-38: Reflection AI                  | SKIPPED                             | score=61.15 | tier=gated
+  APP-39: Weekday                        | SKIPPED                             | score=52.95 | tier=gated
+  APP-40: Invisible Agency               | SKIPPED                             | score=51.9 | tier=gated
+  APP-41: Phenomenex                     | MONITORING                          | score=73.7 | tier=gated
+  APP-42: CapsLock                       | MONITORING                          | score=73.7 | tier=gated
+  APP-43: Obin AI                        | MONITORING                          | score=74.25 | tier=gated
+  APP-44: Smart Bricks                   | MONITORING                          | score=73.0 | tier=gated
+  APP-45: Robinhood                      | MONITORING                          | score=82.0 | tier=gated
+  APP-46: Parafin                        | MONITORING                          | score=70.2 | tier=gated
+  APP-47: Sundayy                        | SKIPPED                             | score=73.7 | tier=gated
+  APP-48: UL Solutions                   | SKIPPED                             | score=73.7 | tier=gated
+  APP-49: New York Life                  | MONITORING                          | score=73.2 | tier=gated
+  APP-50: OpenAI                         | SKIPPED                             | score=78.0 | tier=gated
+  APP-51: Intel                          | SKIPPED                             | score=56.45 | tier=None
+  APP-52: Macquarie Group                | SKIPPED                             | score=75.0 | tier=gated
+  APP-53: Deloitte                       | SKIPPED                             | score=48.75 | tier=gated
+  APP-54: Indeed                         | SKIPPED                             | score=53.7 | tier=gated
+  APP-56: Intuvia Technologies           | WAITING_FOR_USER_APPROVAL           | score=75.0 | tier=None
+  APP-57: Leidos                         | SKIPPED                             | score=57.6 | tier=gated
+  APP-58: Mount Sigma                    | SKIPPED                             | score=61.15 | tier=gated
+  APP-59: SSF - Service de Soutien de la | SKIPPED                             | score=52.65 | tier=gated
+  APP-60: GuidePoint Security            | SKIPPED                             | score=66.1 | tier=gated
+  APP-61: TENEX.AI                       | SKIPPED                             | score=65.65 | tier=gated
+  APP-62: Jobs via Dice                  | SKIPPED                             | score=67.9 | tier=gated
+  APP-63: Grow Therapy                   | SKIPPED                             | score=44.8 | tier=gated
+  APP-64: Zoox                           | SKIPPED                             | score=63.4 | tier=gated
+  APP-65: Jobs via Dice                  | SKIPPED                             | score=64.45 | tier=gated
+  APP-66: JPS Tech Solutions             | SKIPPED                             | score=67.75 | tier=gated
+  APP-67: Target                         | SKIPPED                             | score=65.2 | tier=gated
+  APP-68: JPMorganChase                  | SKIPPED                             | score=52.65 | tier=gated
+  APP-69: TalentAlly                     | SKIPPED                             | score=58.65 | tier=gated
+  APP-70: Elevance Health                | SKIPPED                             | score=57.9 | tier=gated
+  APP-71: Jobot                          | SKIPPED                             | score=58.55 | tier=gated
+  APP-72: CyberCoders                    | SKIPPED                             | score=66.4 | tier=gated
+  APP-73: BlackLine                      | SKIPPED                             | score=57.75 | tier=gated
+  APP-74: Whatnot                        | SKIPPED                             | score=54.3 | tier=gated
+  APP-75: Maven                          | SKIPPED                             | score=60.8 | tier=gated
+  APP-76: Capital One                    | SKIPPED                             | score=68.2 | tier=gated
+  APP-77: T-Mobile                       | SKIPPED                             | score=61.35 | tier=gated
+  APP-78: American Arbitration Associati | SKIPPED                             | score=61.05 | tier=gated
+  APP-79: LexisNexis                     | SKIPPED                             | score=65.95 | tier=gated
+  APP-80: Cognizant                      | SKIPPED                             | score=52.95 | tier=gated
+  APP-81: Pinterest                      | SKIPPED                             | score=68.2 | tier=gated
+  APP-82: Cotera                         | SKIPPED                             | score=53.15 | tier=gated
+  APP-83: Salesforce                     | SKIPPED                             | score=65.5 | tier=gated
+  APP-84: Audible                        | SKIPPED                             | score=65.5 | tier=gated
+  APP-85: Jobright.ai                    | SKIPPED                             | score=64.65 | tier=gated
+  APP-86: Vanguard                       | SKIPPED                             | score=58.8 | tier=gated
+  APP-87: TalentAlly                     | SKIPPED                             | score=57.0 | tier=gated
+  APP-88: gpac                           | SKIPPED                             | score=51.9 | tier=gated
+  APP-89: Toast                          | SKIPPED                             | score=66.85 | tier=gated
+  APP-90: eNGINE                         | SKIPPED                             | score=58.8 | tier=gated
+  APP-91: Jack & Jill                    | SKIPPED                             | score=64.65 | tier=gated
+  APP-92: General Dynamics Mission Syste | SKIPPED                             | score=58.5 | tier=gated
+  APP-93: Warrant                        | WAITING_FOR_USER_APPROVAL           | score=45.0 | tier=None
+  APP-94: hackajob                       | SKIPPED                             | score=57.75 | tier=gated
+  APP-95: JPMorganChase                  | SKIPPED                             | score=59.85 | tier=gated
+  APP-96: CyberCoders                    | SKIPPED                             | score=66.4 | tier=gated
+  APP-97: Netflix                        | SKIPPED                             | score=56.25 | tier=gated
+  APP-98: ChatGPT Jobs                   | SKIPPED                             | score=65.65 | tier=gated
+  APP-99: Jobright.ai                    | SKIPPED                             | score=62.55 | tier=gated
+  APP-100: Waymo                          | SKIPPED                             | score=57.9 | tier=gated
+  APP-101: TalentAlly                     | SKIPPED                             | score=53.25 | tier=gated
+  APP-102: Sumo Logic                     | SKIPPED                             | score=n/a | tier=None
+  APP-103: Instacart                      | SKIPPED                             | score=54.9 | tier=gated
+  APP-104: Jobs via Dice                  | SKIPPED                             | score=61.05 | tier=gated
+  APP-105: Cherry Bekaert Recruiting & St | SKIPPED                             | score=62.25 | tier=gated
+  APP-106: TD                             | SKIPPED                             | score=69.55 | tier=gated
+  APP-107: Polaris Inc.                   | SKIPPED                             | score=52.05 | tier=gated
+  APP-108: FORVIA HELLA                   | SKIPPED                             | score=52.95 | tier=gated
+  APP-109: DroneDeploy                    | SKIPPED                             | score=58.5 | tier=gated
+  APP-110: Sift                           | SKIPPED                             | score=64.05 | tier=gated
+  APP-111: Jack & Jill                    | SKIPPED                             | score=65.55 | tier=gated
+  APP-112: Bausch + Lomb                  | SKIPPED                             | score=65.65 | tier=gated
+  APP-113: Brose Group                    | SKIPPED                             | score=53.25 | tier=gated
+  APP-114: Abbott                         | SKIPPED                             | score=52.35 | tier=gated
+  APP-115: Komline                        | SKIPPED                             | score=52.95 | tier=gated
+  APP-116: Hyundai Motor Company          | SKIPPED                             | score=52.05 | tier=gated
+  APP-117: Habasit                        | SKIPPED                             | score=52.95 | tier=gated
+  APP-118: True Anomaly                   | SKIPPED                             | score=53.25 | tier=gated
+  APP-119: CyberCoders                    | SKIPPED                             | score=53.85 | tier=gated
+  APP-120: Camber                         | SKIPPED                             | score=56.75 | tier=gated
+  APP-121: Lincoln Center for the Perform | SKIPPED                             | score=52.05 | tier=gated
+  APP-122: GE Vernova                     | SKIPPED                             | score=52.35 | tier=gated
+  APP-123: Zoox                           | SKIPPED                             | score=67.15 | tier=gated
+  APP-124: Penumbra, Inc.                 | SKIPPED                             | score=53.85 | tier=gated
+  APP-125: SSF - Service de Soutien de la | SKIPPED                             | score=70.0 | tier=None
+  APP-126: S3 Capital                     | SUBMITTED                           | score=70.0 | tier=None
+  APP-127: Saragossa                      | SUBMITTED                           | score=70.0 | tier=None
+  APP-128: Jobright.ai                    | SUBMITTED                           | score=70.0 | tier=None
+  APP-129: Vi                             | SUBMITTED                           | score=70.0 | tier=None
+  APP-130: Robots & Pencils               | SKIPPED                             | score=70.0 | tier=None
+  APP-131: Goliath Partners               | SUBMITTED                           | score=70.0 | tier=None
+  APP-132: Cherry Bekaert Recruiting & St | SUBMITTED                           | score=70.0 | tier=None
+  APP-133: Jobright.ai                    | SUBMITTED                           | score=70.0 | tier=None
+  APP-134: AKAnomics Inc                  | SUBMITTED                           | score=70.0 | tier=None
+  APP-135: Empathy Talent                 | SKIPPED                             | score=70.0 | tier=None
+  APP-136: NeuroHire                      | SKIPPED                             | score=55.15 | tier=gated
+  APP-137: Acronotics                     | SKIPPED                             | score=61.7 | tier=gated
+  APP-138: Arizent                        | SKIPPED                             | score=60.95 | tier=gated
+  APP-139: Maigrate                       | SKIPPED                             | score=61.9 | tier=gated
+  APP-140: Horizon Media                  | SKIPPED                             | score=57.6 | tier=gated
+  APP-141: Tempus                         | SKIPPED                             | score=53.95 | tier=gated
+  APP-142: Densight AI                    | SKIPPED                             | score=62.8 | tier=gated
+  APP-143: Pelica Health                  | SKIPPED                             | score=62.05 | tier=gated
+  APP-144: Deloitte                       | SKIPPED                             | score=50.0 | tier=gated
+  APP-145: American Express               | MONITORING                          | score=63.55 | tier=gated
+  APP-146: Niha Technologies Inc.         | SKIPPED                             | score=66.55 | tier=gated
+  APP-147: Flexday                        | WAITING_FOR_CAPTCHA                 | score=63.1 | tier=gated
+  APP-148: Canvass Labs                   | WAITING_FOR_CAPTCHA                 | score=67.75 | tier=gated
+  APP-149: LaunchPad Lab                  | SKIPPED                             | score=49.65 | tier=gated
+  APP-150: GenuineXs LLC                  | SKIPPED                             | score=57.6 | tier=gated
+  APP-151: AssetWorks                     | WAITING_FOR_CAPTCHA                 | score=60.85 | tier=gated
+  APP-152: GeoDelphi                      | SKIPPED                             | score=58.3 | tier=gated
+  APP-153: confenn                        | WAITING_FOR_CAPTCHA                 | score=62.4 | tier=gated
+  APP-154: FEI Systems                    | SKIPPED                             | score=58.5 | tier=gated
+  APP-155: NeuroHire                      | SKIPPED                             | score=57.55 | tier=gated
+  APP-156: Tata Consultancy Services      | WAITING_FOR_CAPTCHA                 | score=64.6 | tier=gated
+  APP-157: Alteryx                        | WAITING_FOR_CAPTCHA                 | score=60.35 | tier=gated
+  APP-158: Clevanoo LLC                   | WAITING_FOR_CAPTCHA                 | score=61.45 | tier=gated
+  APP-159: TEKsystems                     | SKIPPED                             | score=54.75 | tier=gated
+  APP-160: APCON, Inc.                    | SKIPPED                             | score=53.55 | tier=gated
+  APP-161: SRSandco Automotive Partners   | SKIPPED                             | score=55.2 | tier=gated
+  APP-162: Talent Groups                  | SKIPPED                             | score=51.0 | tier=gated
+  APP-163: The BitByBit Company           | SKIPPED                             | score=51.0 | tier=gated
+  APP-164: Broadview Federal Credit Union | SKIPPED                             | score=56.1 | tier=gated
+  APP-165: Notable                        | SKIPPED                             | score=59.9 | tier=gated
+  APP-166: The Hartford                   | SKIPPED                             | score=66.55 | tier=gated
+  APP-167: FetchJobs.co                   | SKIPPED                             | score=64.9 | tier=gated
+  APP-168: Lockheed Martin                | SKIPPED                             | score=57.0 | tier=gated
+  APP-169: Marathon Health                | SKIPPED                             | score=56.4 | tier=gated
+  APP-170: Cast & Crew                    | SKIPPED                             | score=56.4 | tier=gated
+  APP-171: Sundayy                        | SKIPPED                             | score=67.15 | tier=gated
+  APP-172: General Motors                 | SKIPPED                             | score=50.1 | tier=gated
+  APP-173: Workiva                        | SKIPPED                             | score=61.6 | tier=gated
+  APP-174: Rula                           | SKIPPED                             | score=53.4 | tier=gated
+  APP-175: Kargo                          | SKIPPED                             | score=65.35 | tier=gated
+  APP-176: Serotonin                      | SKIPPED                             | score=54.6 | tier=gated
+  APP-177: Coinbase                       | SKIPPED                             | score=64.3 | tier=gated
+  APP-178: Dynatrace                      | SKIPPED                             | score=62.1 | tier=gated
+  APP-179: Peterson Cat                   | SKIPPED                             | score=57.15 | tier=gated
+  APP-180: Recruiting from Scratch        | SKIPPED                             | score=68.1 | tier=gated
+  APP-181: SS8 Networks                   | SKIPPED                             | score=65.95 | tier=gated
+  APP-182: Coupang                        | SKIPPED                             | score=57.3 | tier=gated
+  APP-183: Call Finder Consultancy        | SKIPPED                             | score=57.35 | tier=gated
+  APP-184: Dematic                        | SKIPPED                             | score=56.55 | tier=gated
+  APP-185: Deloitte                       | SKIPPED                             | score=52.65 | tier=gated
+  APP-186: Runway                         | SKIPPED                             | score=59.25 | tier=gated
+  APP-187: ChatGPT Jobs                   | SKIPPED                             | score=63.4 | tier=gated
+  APP-188: Imprint                        | SKIPPED                             | score=50.4 | tier=gated
+  APP-189: Amentum                        | SKIPPED                             | score=55.95 | tier=gated
+  APP-190: Thryv                          | SKIPPED                             | score=59.95 | tier=gated
+  APP-191: Vertus Solutions & Services    | SKIPPED                             | score=59.55 | tier=gated
+  APP-192: Omada Health                   | SKIPPED                             | score=55.2 | tier=gated
+  APP-193: OP Recruiting-as-a-Service (OP | SKIPPED                             | score=60.55 | tier=gated
+  APP-194: Nitrogen                       | SKIPPED                             | score=52.1 | tier=gated
+  APP-195: NVIDIA                         | SKIPPED                             | score=53.55 | tier=gated
+  APP-196: AAA Auto Club Enterprises      | SKIPPED                             | score=57.65 | tier=gated
+  APP-197: BizLink Group                  | SKIPPED                             | score=52.35 | tier=gated
+  APP-198: CrowdStrike                    | SKIPPED                             | score=61.05 | tier=gated
+  APP-199: Toast                          | SKIPPED                             | score=63.35 | tier=gated
+  APP-200: Tata Consultancy Services      | SKIPPED                             | score=52.95 | tier=gated
+  APP-201: Southern Methodist University  | SKIPPED                             | score=52.95 | tier=gated
+  APP-202: Capstone IT                    | SKIPPED                             | score=52.35 | tier=gated
+  APP-203: Velera                         | SKIPPED                             | score=62.85 | tier=gated
+  APP-204: Calendly                       | SKIPPED                             | score=64.9 | tier=gated
+  APP-205: Jobright.ai                    | SKIPPED                             | score=65.1 | tier=gated
+  APP-206: MCI                            | SKIPPED                             | score=57.6 | tier=gated
+  APP-207: Lucas James Talent Partners    | SKIPPED                             | score=59.45 | tier=gated
+  APP-208: Playbook                       | SKIPPED                             | score=52.05 | tier=gated
+  APP-209: Slalom                         | SKIPPED                             | score=55.5 | tier=gated
+  APP-210: Figma                          | SKIPPED                             | score=57.3 | tier=gated
+  APP-211: Zapier                         | SKIPPED                             | score=52.05 | tier=gated
+  APP-212: Anthropic                      | SKIPPED                             | score=50.25 | tier=gated
+  APP-213: Visa                           | SKIPPED                             | score=62.0 | tier=gated
+  APP-214: brightwheel                    | SKIPPED                             | score=53.25 | tier=gated
+  APP-215: University of Minnesota        | SKIPPED                             | score=52.95 | tier=gated
+  APP-216: Deloitte                       | SKIPPED                             | score=57.05 | tier=gated
+  APP-217: ZipRecruiter                   | SKIPPED                             | score=58.2 | tier=gated
+  APP-218: Varsity Tutors, a Nerdy Compan | SKIPPED                             | score=52.35 | tier=gated
+  APP-219: ESO                            | SKIPPED                             | score=57.3 | tier=gated
+  APP-220: FetchJobs.co                   | SKIPPED                             | score=57.6 | tier=gated
+  APP-221: MCI                            | SKIPPED                             | score=54.15 | tier=gated
+  APP-222: Fetch                          | SKIPPED                             | score=57.0 | tier=gated
+  APP-223: Google                         | SKIPPED                             | score=50.55 | tier=gated
+  APP-224: Amazon Science                 | SKIPPED                             | score=65.2 | tier=gated
+  APP-225: NVIDIA                         | SKIPPED                             | score=62.75 | tier=gated
+  APP-226: Amazon                         | SKIPPED                             | score=64.0 | tier=gated
+  APP-227: Bank of America                | SKIPPED                             | score=60.35 | tier=gated
+  APP-228: Asana                          | SKIPPED                             | score=55.8 | tier=gated
+  APP-229: Intel                          | SKIPPED                             | score=54.75 | tier=gated
+  APP-230: Module X Solutions LLC         | SKIPPED                             | score=52.05 | tier=gated
+  APP-231: Agilent Technologies           | SKIPPED                             | score=53.25 | tier=gated
+  APP-232: JLL                            | SKIPPED                             | score=54.15 | tier=gated
+  APP-233: Sersense, Inc.                 | SKIPPED                             | score=63.4 | tier=gated
+  APP-234: Ford Motor Company             | SKIPPED                             | score=52.05 | tier=gated
+  APP-235: Scrunch                        | SKIPPED                             | score=54.8 | tier=gated
+  APP-236: Employ                         | SKIPPED                             | score=54.75 | tier=gated
+  APP-237: Medtronic                      | SKIPPED                             | score=53.25 | tier=gated
+  APP-238: Netflix                        | SKIPPED                             | score=64.3 | tier=gated
+  APP-239: ENTRUST Solutions Group        | SKIPPED                             | score=52.35 | tier=gated
+  APP-240: DataAnnotation                 | SKIPPED                             | score=51.9 | tier=gated
+  APP-241: EthosEnergy                    | SKIPPED                             | score=52.05 | tier=gated
+  APP-242: Thesis Care                    | SKIPPED                             | score=56.9 | tier=gated
+  APP-243: GMP Engineering Inc.           | SKIPPED                             | score=53.55 | tier=gated
+  APP-244: ABB                            | SKIPPED                             | score=52.05 | tier=gated
+  APP-245: Silfex, Inc. - A Division of L | SKIPPED                             | score=52.95 | tier=gated
+  APP-246: OpenAI                         | SKIPPED                             | score=56.3 | tier=gated
+  APP-247: Surround Sound Media           | SKIPPED                             | score=52.05 | tier=gated
+  APP-248: Sekai                          | SKIPPED                             | score=51.9 | tier=gated
+  APP-249: bananaz                        | MONITORING                          | score=62.2 | tier=gated
+  APP-250: IntelliPro                     | SKIPPED                             | score=52.05 | tier=gated
+
+=== SENDING DIGEST ===
+2026-06-12 21:07:02,807 INFO     src.gmail.digest — No actionable WAITING_FOR_USER_APPROVAL apps — skipping digest
+  No gated applications — digest skipped

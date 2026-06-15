@@ -228,7 +228,6 @@ def _run_discovery(
 ) -> int:
     """Queue all discovery sources and import any cached results."""
     from src.discovery.indeed import discover_searches_for_profile, rotate_searches, DEFAULT_SEARCHES
-    from src.discovery.linkedin_email import queue_linkedin_email_fetch, import_from_cached_alerts
     from src.discovery.feeds import queue_feed_fetches, import_cached_feeds
     import json
     from pathlib import Path
@@ -236,12 +235,7 @@ def _run_discovery(
     logger.info("DISCOVER: sweeping all sources…")
     imported = 0
 
-    # 1. Import cached results from previous sweep
-    li = import_from_cached_alerts(conn)
-    if li.get("added"):
-        logger.info("  LinkedIn alerts:  +%d jobs", li["added"])
-        imported += li["added"]
-
+    # 1. Import cached feed results from previous sweep
     feeds = import_cached_feeds(conn)
     if feeds.get("added"):
         for src, n in feeds.get("sources", {}).items():
@@ -275,10 +269,6 @@ def _run_discovery(
     )
     logger.info("  Indeed:           queued %d searches (cycle %d/%d)",
                 len(batch), cycle, len(DEFAULT_SEARCHES) // 48 + 1)
-
-    # LinkedIn email alerts
-    queue_linkedin_email_fetch(gmail_client)
-    logger.info("  LinkedIn alerts:  queued email fetch")
 
     # External feeds (HN, RemoteOK, WWR)
     feed_ids = queue_feed_fetches()

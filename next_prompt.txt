@@ -1,0 +1,4 @@
+also if you hit your daily limits, the loop should not terminate, it should send me a email which says the limits have reached
+then you should continue after limits reset and i dont have to tell you everytime that limits are reset now continue. same for the
+weekly limits. humans should not be in this loop. humans are in the loop to only tell you to start the workflow/loop once i
+until your limits resets

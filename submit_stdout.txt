@@ -1,0 +1,24 @@
+Submitting READY_TO_SUBMIT apps via overnight Phase 2...
+2026-06-12 16:44:22,856 INFO     src.runners.overnight -- overnight: 0 discovered apps to process
+2026-06-12 16:44:22,856 INFO     src.runners.overnight -- overnight: 7 approved gated apps to submit
+2026-06-12 16:44:22,872 INFO     src.browser.screener_engine -- app_id=147 screener answers loaded from cache (47 entries)
+2026-06-12 16:44:27,256 INFO     src.browser.auto_submit -- _release_profile_lock: no agent Chrome processes found
+2026-06-12 16:44:27,278 INFO     src.browser.auto_submit -- Removed lock file: Default/LOCK
+2026-06-12 16:44:27,300 INFO     src.browser.auto_submit -- Reset Chrome exit_type to Normal in Preferences
+2026-06-12 16:44:29,306 INFO     src.browser.auto_submit -- Launching Chrome via CDP: C:\Program Files\Google\Chrome\Application\chrome.exe
+2026-06-12 16:44:29,306 INFO     src.browser.auto_submit -- Waiting for Chrome CDP port 9222…
+2026-06-12 16:44:32,816 INFO     src.browser.auto_submit -- Chrome CDP ready — connecting
+2026-06-12 16:44:33,550 INFO     src.browser.auto_submit -- Warming Indeed session: visiting homepage
+2026-06-12 16:44:36,096 INFO     src.browser.auto_submit -- Cloudflare on Indeed homepage during warmup — attempting auto-solve
+2026-06-12 16:44:52,332 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 15s elapsed (solve it in the Chrome window)
+2026-06-12 16:45:07,517 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 30s elapsed (solve it in the Chrome window)
+2026-06-12 16:45:22,706 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 45s elapsed (solve it in the Chrome window)
+2026-06-12 16:45:37,912 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 60s elapsed (solve it in the Chrome window)
+2026-06-12 16:45:53,081 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 75s elapsed (solve it in the Chrome window)
+2026-06-12 16:46:08,266 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 90s elapsed (solve it in the Chrome window)
+2026-06-12 16:46:23,463 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 105s elapsed (solve it in the Chrome window)
+2026-06-12 16:46:38,592 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 120s elapsed (solve it in the Chrome window)
+2026-06-12 16:46:53,759 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 135s elapsed (solve it in the Chrome window)
+2026-06-12 16:47:08,975 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 150s elapsed (solve it in the Chrome window)
+2026-06-12 16:47:24,176 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 165s elapsed (solve it in the Chrome window)
+2026-06-12 16:47:39,372 INFO     src.browser.auto_submit -- Waiting for Cloudflare challenge to clear... 180s elapsed (solve it in the Chrome window)

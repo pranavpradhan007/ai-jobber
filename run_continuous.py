@@ -88,31 +88,17 @@ def _ensure_chrome() -> bool:
 
 
 def run_discovery() -> int:
-    """Discover LinkedIn Easy Apply jobs and import to DB. Returns count added."""
+    """Discover jobs via Indeed and external feeds. Returns count added."""
     from src.db.connection import get_connection
-    from src.discovery.linkedin_browser import discover_jobs, LINKEDIN_ROLES, LINKEDIN_LOCATIONS
-    from src.discovery.indeed import import_jobs
+    from src.discovery.feeds import import_cached_feeds
 
     logger.info("=== DISCOVERY PASS starting ===")
-    job_dicts = discover_jobs(
-        role_queries=LINKEDIN_ROLES,
-        locations=LINKEDIN_LOCATIONS,
-        max_per_search=20,
-        headless=False,
-        cdp_port=CDP_PORT,
-    )
-    easy_apply_count = sum(1 for j in job_dicts if j.get("easy_apply") or j.get("apply_method") == "linkedin_easy_apply")
-    logger.info("Discovery: %d total / %d Easy Apply", len(job_dicts), easy_apply_count)
-
-    if not job_dicts:
-        return 0
-
     conn = get_connection("job_agent.db")
-    result = import_jobs(conn, job_dicts, source="linkedin_browser")
+    feeds = import_cached_feeds(conn)
     conn.commit()
     conn.close()
-    added = result.get("added", 0) if isinstance(result, dict) else result
-    logger.info("Discovery: imported %d new jobs", added)
+    added = feeds.get("added", 0) if isinstance(feeds, dict) else 0
+    logger.info("Discovery: imported %d new jobs from feeds", added)
     return added
 
 
@@ -182,7 +168,7 @@ def main() -> None:
                 total_submitted += apply_stats.get("submitted", 0)
                 if apply_stats.get("rate_limited", 0) > 0:
                     logger.info(
-                        "LinkedIn Easy Apply rate-limited — continuing with external-apply jobs"
+                        "rate-limited — will retry next pass"
                     )
 
             # Ensure Chrome is up before discovery (apply may have left it in odd state)
@@ -201,13 +187,12 @@ def main() -> None:
                     total_submitted += apply_stats2.get("submitted", 0)
                     if apply_stats2.get("rate_limited", 0) > 0:
                         logger.info(
-                            "LinkedIn Easy Apply rate-limited — continuing with external-apply jobs"
+                            "rate-limited — will retry next pass"
                         )
 
             logger.info("Pass %d complete. Total submitted this session: %d", pass_num, total_submitted)
 
-            # Brief pause before next pass (avoid hammering LinkedIn)
-            logger.info("Sleeping 60s before next discovery pass...")
+            logger.info("Sleeping 60s before next pass...")
             time.sleep(60)
 
         except KeyboardInterrupt:

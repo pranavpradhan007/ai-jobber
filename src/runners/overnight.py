@@ -114,7 +114,7 @@ def run_overnight(
     # RemoteOK is excluded — bot detection too strong, no reliable apply URL
     cur = conn.execute(
         """
-        SELECT a.id, j.url, COALESCE(j.easy_apply, 0) AS easy_apply
+        SELECT a.id, j.url
         FROM applications a JOIN jobs j ON a.job_id=j.id
         WHERE a.state IN ('WAITING_FOR_USER_APPROVAL', 'READY_TO_SUBMIT') AND a.approved_by_user=1
         AND LOWER(j.platform) NOT IN ('remoteok', 'hackernews', 'custom')
@@ -123,16 +123,10 @@ def run_overnight(
         """,
         (max_jobs,),
     )
-    approved_rows = [(row["id"], row["easy_apply"]) for row in cur.fetchall()]
+    approved_rows = [row["id"] for row in cur.fetchall()]
     logger.info("overnight: %d approved gated apps to submit", len(approved_rows))
 
-    for app_id, is_easy_apply in approved_rows:
-        # When EA rate limit is active, skip LinkedIn EA-only jobs immediately.
-        # External-apply jobs (Greenhouse, Ashby, Workday, etc.) continue unblocked.
-        if stats.rate_limited > 0 and is_easy_apply:
-            logger.debug("app_id=%d EA-only job, rate-limited — skipping for retry tomorrow", app_id)
-            stats.rate_limited += 1
-            continue
+    for app_id in approved_rows:
         try:
             _submit_approved(conn, app_id, stats, gmail_client=gmail_client, dry_run=dry_run)
         except Exception as exc:
@@ -334,22 +328,9 @@ def _submit_approved(
         else:
             err = result.error or ""
             logger.error("portal submit failed app_id=%d error=%s", app_id, err)
-            # LinkedIn daily rate limit — leave in READY_TO_SUBMIT for retry next pass
-            _RATE_LIMIT_SIGNALS = (
-                "daily rate limit reached", "limit daily submission",
-                "apply tomorrow", "prevent bots",
-            )
-            if any(p in err.lower() for p in _RATE_LIMIT_SIGNALS):
-                logger.warning(
-                    "app_id=%d LinkedIn daily rate limit hit — keeping READY_TO_SUBMIT for retry",
-                    app_id,
-                )
-                stats.rate_limited += 1
-                return  # leave state unchanged; will retry on next pass
             # Permanent failures → SKIPPED so they are never retried
             _PERMANENT_ERRORS = (
                 "job is closed", "no longer accepting", "modal did not open",
-                "no easy apply", "no external apply", "easy apply button not found",
                 "stuck", "unfilled required fields",
                 "no continue/submit button", "form may have a required field",
                 "unsupported portal",
