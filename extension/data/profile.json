@@ -21,18 +21,18 @@
   "current_title": "AI Research Engineer Intern",
   "years_experience": "4",
 
-  "skills": "Python, PyTorch, JAX, TensorFlow, scikit-learn, NumPy, pandas, Matplotlib, Seaborn, PySpark, SQL, NoSQL, MongoDB, PostgreSQL, AWS (EC2, S3, Lambda, SageMaker), Docker, Git, GitHub, Jupyter, KNIME, ChemProp, Graph Neural Networks, MCTS, Reinforcement Learning, Self-Play, LLMs, Transformers, BERT, GPT, Clinical NLP, Adversarial Attacks, Time-Series Analysis, Predictive Maintenance, Data Engineering, ETL Pipelines, ML Inference Pipelines, REST APIs, FastAPI, Flask, Linux, Bash, C++, Java, HTML, CSS, JavaScript, React, Node.js, HuggingFace Transformers, Weights & Biases, MLflow, Streamlit, Plotly, OpenCV, Scipy, statsmodels, XGBoost, LightGBM, Random Forest, Neural Networks, Deep Learning, Computer Vision, Natural Language Processing, Retrieval Augmented Generation, Vector Databases, Pinecone, FAISS, LangChain, Prompt Engineering, CUDA, GPU Computing, Distributed Training, Data Visualization, A/B Testing, Statistical Analysis, Regression, Classification, Clustering, Dimensionality Reduction, PCA, t-SNE, Agile, Scrum, Jira, Confluence",
+  "skills": "Python, PyTorch, JAX, TensorFlow, Keras, scikit-learn, NumPy, pandas, Matplotlib, Seaborn, Plotly, Dash, PySpark, SQL, MySQL, PostgreSQL, RDBMS, NoSQL, MongoDB, Qdrant, Pinecone, FAISS, Vector Databases, AWS (EC2, S3, Lambda, SageMaker), Microsoft Azure, Azure AKS, Azure Synapse, Google Cloud Platform, Docker, Kubernetes, Git, GitHub, Jupyter, KNIME, Delta Lake, Apache Kafka, MLflow, Weights & Biases, Seldon Core, ChemProp, Graph Neural Networks, MCTS, Reinforcement Learning, Self-Play, LLMs, Transformers, BERT, GPT, Clinical NLP, Adversarial Attacks, Time-Series Analysis, Predictive Maintenance, Data Engineering, ETL Pipelines, ML Inference Pipelines, REST APIs, FastAPI, Flask, Django, Linux, Bash, PowerShell, C++, C, Java, Kotlin, JavaScript, TypeScript, React, Node.js, Express.js, GraphQL, HTML, CSS, jQuery, PHP, R, MATLAB, HuggingFace Transformers, LangChain, LlamaIndex, Autogen, RAG, Prompt Engineering, CUDA, GPU Computing, Distributed Training, Data Visualization, A/B Testing, Statistical Analysis, Regression, Classification, Clustering, Dimensionality Reduction, PCA, t-SNE, VQGAN, Diffusion Models, CNN, OpenCV, Computer Vision, Natural Language Processing, NLTK, SpaCy, NetworkX, Streamlit, Hadoop, Tableau, Power BI, Postman, Selenium, JIRA, Confluence, Agile, Scrum, XGBoost, LightGBM, Random Forest, Neural Networks, Deep Learning, Predictive Modeling, Data Normalization, Model Evaluation, Pipeline Engineering, Real-Time Data Processing, Data Structures & Algorithms, Software Testing, Machine Learning, Data Science, Data Analysis, DevOps, Web Development, TCP/IP, Blockchain, Solidity, Unity, Latex, Excel",
 
-  "skills_short": "Python, PyTorch, JAX, TensorFlow, PySpark, SQL, AWS, Docker, Git, LLMs, Transformers, scikit-learn, NumPy, pandas, Graph Neural Networks, MCTS, Reinforcement Learning, FastAPI, React, HuggingFace, LangChain, RAG, CUDA, Deep Learning, NLP, Computer Vision",
+  "skills_short": "Python, PyTorch, JAX, TensorFlow, PySpark, SQL, AWS, Docker, Kubernetes, Git, LLMs, Transformers, scikit-learn, NumPy, pandas, Graph Neural Networks, MCTS, Reinforcement Learning, FastAPI, React, HuggingFace, LangChain, RAG, CUDA, Deep Learning, NLP, Computer Vision, MLflow, Delta Lake, Apache Kafka, Qdrant, LlamaIndex, Autogen",
 
   "skills_by_category": {
-    "languages": "Python, SQL, C++, Java, JavaScript, Bash",
-    "ml_frameworks": "PyTorch, JAX, TensorFlow, scikit-learn, HuggingFace Transformers, XGBoost, LightGBM",
-    "llm_ai": "LLMs, GPT, BERT, Transformers, LangChain, RAG, Prompt Engineering, Adversarial Attacks, Clinical NLP, MCTS, Reinforcement Learning, Self-Play, Graph Neural Networks, ChemProp",
-    "data_engineering": "PySpark, pandas, NumPy, ETL Pipelines, KNIME, SQL, NoSQL, MongoDB, PostgreSQL, Pinecone, FAISS, Vector Databases",
-    "cloud_devops": "AWS (EC2 S3 Lambda SageMaker), Docker, Git, GitHub, Linux, Jupyter, MLflow, Weights & Biases",
-    "web": "FastAPI, Flask, React, Node.js, REST APIs, Streamlit",
-    "other": "OpenCV, Computer Vision, Time-Series Analysis, Statistical Analysis, Data Visualization, Matplotlib, Seaborn, Plotly, Scipy, CUDA, GPU Computing, Distributed Training, Agile, Scrum"
+    "languages": "Python, SQL, C++, C, Java, Kotlin, JavaScript, TypeScript, R, MATLAB, Bash, PowerShell, PHP, Latex",
+    "ml_frameworks": "PyTorch, JAX, TensorFlow, Keras, scikit-learn, HuggingFace Transformers, XGBoost, LightGBM, VQGAN, CNN",
+    "llm_ai": "LLMs, GPT, BERT, Transformers, LangChain, LlamaIndex, Autogen, RAG, Prompt Engineering, Adversarial Attacks, Clinical NLP, MCTS, Reinforcement Learning, Self-Play, Graph Neural Networks, ChemProp, Diffusion Models, NLTK, SpaCy",
+    "data_engineering": "PySpark, pandas, NumPy, ETL Pipelines, KNIME, SQL, MySQL, NoSQL, MongoDB, PostgreSQL, Qdrant, Pinecone, FAISS, Vector Databases, Delta Lake, Apache Kafka, Hadoop, Data Normalization",
+    "cloud_devops": "AWS (EC2 S3 Lambda SageMaker), Microsoft Azure, Azure AKS, Azure Synapse, Google Cloud Platform, Docker, Kubernetes, Seldon Core, Git, GitHub, Linux, Jupyter, MLflow, Weights & Biases, Postman, Selenium, DevOps",
+    "web": "FastAPI, Flask, Django, React, Node.js, Express.js, GraphQL, REST APIs, Streamlit, HTML, CSS, jQuery, Web Development",
+    "other": "OpenCV, Computer Vision, Time-Series Analysis, Statistical Analysis, Data Visualization, Matplotlib, Seaborn, Plotly, Dash, Tableau, Power BI, NetworkX, Scipy, CUDA, GPU Computing, Distributed Training, Agile, Scrum, JIRA, Confluence, Blockchain, Solidity, Unity, TCP/IP, Software Testing, Machine Learning, Data Science, Data Analysis, Predictive Modeling, Model Evaluation, Pipeline Engineering, Real-Time Data Processing, Data Structures & Algorithms, Excel"
   },
 
   "education_degree": "Master of Science in Computer Science",
@@ -80,21 +80,21 @@
       "end_month": "",
       "end_year": "",
       "current": true,
-      "description": "Built an AI agent for the Catan board game using MCTS and self-play, achieving 100% win rate against alpha-beta pruning baseline. Developed and deployed ML inference pipelines on AWS EC2/S3/Lambda."
+      "description": "Researched imitation learning approaches (GCN & GAT architectures) for Catan decision-making, contributing to an IL + MCTS + PUCT agent with 90%+ win rate against alpha-beta pruning baseline. Developed high-performance Catan simulation engine in Python/C++ for scalable self-play and data generation. Built AWS-based ML infrastructure with EC2, spot instances, S3, and scheduling pipelines for large-scale training."
     },
     {
-      "title": "ML Research Assistant",
+      "title": "AI Research Assistant (Clinical NLP)",
       "company": "New York University",
       "location": "New York, NY",
       "start_month": "09",
-      "start_year": "2024",
+      "start_year": "2025",
       "end_month": "",
       "end_year": "",
       "current": true,
-      "description": "Research in scientific ML under Prof. Sara Shamekh. Developed JAX-based neural network parameterizations for atmospheric single-column models. Reduced RMSE by ~15% and MAPE by 10%; achieved 2.5x throughput increase and 60% simulation time reduction."
+      "description": "Evaluated 5 clinical LLMs for 48-hour mortality/discharge prediction from radiology impressions in MIMIC-IV and INSPECT. Benchmarked prompting, frozen-LLM embeddings + logistic regression, and fine-tuned linear head, improving AUROC/AUPRC from 0.50/0.20 to 0.80/0.30. Applied 10 adversarial attack methods, observing ~15% average performance drop."
     },
     {
-      "title": "AI Research Assistant",
+      "title": "ML Research Assistant (Scientific ML)",
       "company": "New York University",
       "location": "New York, NY",
       "start_month": "01",
@@ -102,29 +102,95 @@
       "end_month": "",
       "end_year": "",
       "current": true,
-      "description": "Clinical LLM robustness research under Prof. Kimberly Carballo. Evaluated 5 clinical LLMs on MIMIC-IV using 10 adversarial attack methods. Improved AUROC/AUPRC from 0.50/0.20 to 0.80/0.30."
+      "description": "Built grid-agnostic JAX ML model for turbulent flux predictions within Single Column Atmospheric Model (SCAM), using 1D convolutional encoder with multi-head attention to reduce RMSE by ~15%. Applied closed-loop forecasting to Kuramoto-Sivashinsky PDE using scheduled sampling, jump training, and spectral losses for stable long-horizon rollouts."
+    },
+    {
+      "title": "Data Scientist (NLP/LLM Research)",
+      "company": "New York University",
+      "location": "New York, NY",
+      "start_month": "02",
+      "start_year": "2025",
+      "end_month": "05",
+      "end_year": "2025",
+      "current": false,
+      "description": "Analyzed interdependent community coordination in NYC crises using real-time corpus from Citizen & Telegram. Built streaming ETL (Kafka → Delta Lake) to ingest, PII-scrub, and normalize 100k+ posts. Evaluated 3 LLMs for incident classification and theme clustering (F1 0.78, NMI 0.62); shipped Plotly dashboard adopted by 5 researchers, raising actionable insights 30%."
+    },
+    {
+      "title": "Data Analyst (Quantitative Finance)",
+      "company": "New York University",
+      "location": "New York, NY",
+      "start_month": "09",
+      "start_year": "2024",
+      "end_month": "12",
+      "end_year": "2024",
+      "current": false,
+      "description": "Diagnosed and predicted Market Retail Order Imbalance across stocks, testing if retail stocks exhibit predictable trajectories. Applied per-window normalization for time-series prediction using pooled regression models (ElasticNet & OLS) achieving 74% out-of-sample correlation."
+    },
+    {
+      "title": "Gen AI Intern",
+      "company": "New York University",
+      "location": "New York, NY",
+      "start_month": "09",
+      "start_year": "2024",
+      "end_month": "05",
+      "end_year": "2025",
+      "current": false,
+      "description": "Architected a VQGAN-diffusion pipeline for procedural Minecraft world generation with mixed precision and gradient accumulation; ETL step converting worlds into spatial embeddings cut compute time 30%, improved fidelity 25%, increased structural diversity 20%. Designed CNN-based validation layer checking adjacency and structural rules, improving placement accuracy from 68% to 85%."
     },
     {
       "title": "Data Analyst Intern",
       "company": "International Flavors & Fragrances",
-      "location": "New York, NY",
-      "start_month": "06",
-      "start_year": "2023",
+      "location": "Union Beach, NJ",
+      "start_month": "05",
+      "start_year": "2025",
       "end_month": "08",
-      "end_year": "2023",
+      "end_year": "2025",
       "current": false,
-      "description": "Consolidated 12 chemical datasets (~90K records to ~15K unique entries) using PySpark and KNIME. Improved predictive performance by ~15% and increased chemical registration throughput by 82% using ChemProp and graph neural networks."
+      "description": "Consolidated 12 chemical datasets (~90K records to ~15K unique entries) using PySpark and KNIME. Investigated ChemProp vs. DeepChem; applied graph-based molecular featurization with GCN embeddings. Improved predictive performance by ~15% and increased chemical registration throughput by 82% through ML-driven pipeline enhancements."
+    },
+    {
+      "title": "Project Intern",
+      "company": "Accident and Orthopaedic Hospital",
+      "location": "Pune, India",
+      "start_month": "07",
+      "start_year": "2023",
+      "end_month": "04",
+      "end_year": "2024",
+      "current": false,
+      "description": "Built XRayGen, a platform for broken-bone X-rays using VGG16-based CNN with custom attention for classification and LoRA-fine-tuned 4-bit-quantized Mistral-7b with LangChain for structured reports. Achieved 74.4% classification accuracy, 89.4% report accuracy, reduced manual review time by 98%. Shipped Django-based app with evaluation dashboards accelerating issue detection by 30%."
     },
     {
       "title": "Data Science Intern",
       "company": "3D Engineering Automation LLP",
       "location": "Pune, India",
-      "start_month": "06",
-      "start_year": "2022",
+      "start_month": "04",
+      "start_year": "2023",
       "end_month": "08",
-      "end_year": "2022",
+      "end_year": "2023",
       "current": false,
-      "description": "Built predictive maintenance ML pipeline processing 30 GB of sensor data. Achieved 93% diagnostic accuracy and 87% failure-prediction precision with sub-second anomaly-detection latency using PyTorch and time-series models."
+      "description": "Developed ML system for vehicle predictive maintenance, processing 30 GB of sensor data with PySpark + MLflow; ensemble models achieved 93% diagnostic accuracy. Productionized real-time failure prediction on Azure AKS using Kafka, Seldon Core, Delta Lake, and Synapse. Improved model reliability through A/B retraining, achieving 87% failure-prediction precision with sub-second anomaly-detection latency."
+    },
+    {
+      "title": "Web Development Intern",
+      "company": "Escents India",
+      "location": "Pune, India",
+      "start_month": "02",
+      "start_year": "2023",
+      "end_month": "05",
+      "end_year": "2023",
+      "current": false,
+      "description": "Led full-stack enhancements of e-commerce platform; responsive UI drove 87% surge in mobile traffic and cut bounce rates from 58% to 30%. Built inventory-management and sales-tracking features streamlining order processing. Collaborated with designers to ensure scalability supporting the startup's rapid growth."
+    },
+    {
+      "title": "Web Development Intern",
+      "company": "Team Prokarters MITWPU",
+      "location": "Pune, India",
+      "start_month": "01",
+      "start_year": "2023",
+      "end_month": "02",
+      "end_year": "2023",
+      "current": false,
+      "description": "Revamped MERN-stack team-management portal, enhancing onboarding UX and driving 59% increase in new member sign-ups. Built interactive features and streamlined workflows to boost engagement. Led code reviews and patched critical vulnerabilities, improving platform stability and security."
     }
   ],
 
@@ -134,7 +200,7 @@
       "degree": "Master of Science",
       "field": "Computer Science",
       "location": "Brooklyn, NY",
-      "start_month": "09",
+      "start_month": "08",
       "start_year": "2024",
       "end_month": "05",
       "end_year": "2026",
