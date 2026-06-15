@@ -288,6 +288,14 @@ async function learnFromAnswers(answers, fields) {
   await chrome.storage.local.set({ memory });
 }
 
+// ─── Progress broadcast ───────────────────────────────────────────────────────
+
+function broadcastProgress(data) {
+  // Fire-and-forget to all extension pages (sidepanel, popup).
+  // Ignore errors — sidepanel may not be open yet.
+  chrome.runtime.sendMessage({ type: 'CLAUDE_PROGRESS', ...data }).catch(() => {});
+}
+
 // ─── Three-agent pipeline ──────────────────────────────────────────────────────
 
 // Returns { ok, answers, error, stage, fieldsCount, reviewedBy }
@@ -295,7 +303,9 @@ async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
   const claudeFields = fields.filter(f => !STATIC_PROFILE_KEYS.has(normalizeLabel(f.label_text)));
   if (claudeFields.length === 0) return { ok: true, answers: {}, fieldsCount: 0, stage: 'skipped', reviewedBy: 'none' };
 
-  // Agent 1 — Drafter (shorter prompt → faster Haiku response)
+  // Agent 1 — Drafter
+  broadcastProgress({ stage: 'drafter_start', fieldsCount: claudeFields.length, fields: claudeFields.map(f => f.label_text) });
+
   let draftRaw;
   try {
     const { system: draftSys, user: draftUser } = buildDraftPrompt(claudeFields, jobCtx, profile);
@@ -305,13 +315,18 @@ async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
       ? 'Rate limited by Claude API (resets in ~1 h)'
       : `Drafter failed: ${err.message}`;
     if (err.status === 429) await setRateLimited();
+    broadcastProgress({ stage: 'error', error: msg });
     return { ok: false, answers: {}, error: msg, stage: 'drafter', fieldsCount: claudeFields.length, reviewedBy: 'none' };
   }
 
   const draftAnswers = parseBatchResponse(draftRaw, claudeFields);
   if (!draftAnswers || Object.keys(draftAnswers).length === 0) {
-    return { ok: false, answers: {}, error: `Drafter returned no parseable JSON. Raw: ${draftRaw.slice(0, 200)}`, stage: 'drafter_parse', fieldsCount: claudeFields.length, reviewedBy: 'none' };
+    const errMsg = `Drafter returned no parseable JSON. Raw: ${draftRaw.slice(0, 200)}`;
+    broadcastProgress({ stage: 'error', error: errMsg });
+    return { ok: false, answers: {}, error: errMsg, stage: 'drafter_parse', fieldsCount: claudeFields.length, reviewedBy: 'none' };
   }
+
+  broadcastProgress({ stage: 'drafter_done', answersCount: Object.keys(draftAnswers).length, preview: draftAnswers });
 
   // Agent 2 — Reviewer
   let finalAnswers = draftAnswers;
@@ -319,6 +334,7 @@ async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
   const rateLimited = await isRateLimited();
 
   if (!rateLimited) {
+    broadcastProgress({ stage: 'reviewer_start' });
     try {
       const { system: revSys, user: revUser } = buildReviewPrompt(draftAnswers, claudeFields, jobCtx, profile);
       const reviewRaw = await callClaude(apiKey, revSys, revUser, 800);
@@ -335,9 +351,11 @@ async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
       finalAnswers = autoReview(draftAnswers, claudeFields, profile);
       reviewedBy = `auto (reviewer error: ${err.message})`;
     }
+    broadcastProgress({ stage: 'reviewer_done', reviewedBy, answersCount: Object.keys(finalAnswers).length });
   } else {
     finalAnswers = autoReview(draftAnswers, claudeFields, profile);
     reviewedBy = 'auto (rate limited)';
+    broadcastProgress({ stage: 'reviewer_done', reviewedBy, answersCount: Object.keys(finalAnswers).length });
   }
 
   await learnFromAnswers(finalAnswers, claudeFields);

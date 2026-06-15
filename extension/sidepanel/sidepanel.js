@@ -2,22 +2,108 @@
 
 let _currentJobCtx = null;
 let _currentFillResult = null;
+let _activityLog = [];
 
-// ─── Render fill results ──────────────────────────────────────────────────────
+// ─── Activity log ─────────────────────────────────────────────────────────────
+
+function ts() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+}
+
+function logActivity(icon, text, color) {
+  _activityLog.push({ ts: ts(), icon, text, color: color || '#5f6368' });
+  renderActivityLog();
+}
+
+function renderActivityLog() {
+  const el = document.getElementById('claudeActivityLog');
+  if (!el) return;
+  el.innerHTML = _activityLog.map(e =>
+    `<div style="color:${e.color}"><span style="opacity:0.5">${e.ts}</span> ${e.icon} ${e.text}</div>`
+  ).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+// ─── Claude progress (real-time from service worker) ─────────────────────────
+
+function updateClaudeProgress(msg) {
+  const bar  = document.getElementById('claudeStatusBar');
+  const dot  = document.getElementById('claudeStatusDot');
+  const text = document.getElementById('claudeStatusText');
+  if (!bar) return;
+
+  bar.style.display = '';
+
+  const pulse = () => { dot.style.animation = 'pulse 1s infinite'; };
+  const still = () => { dot.style.animation = ''; };
+
+  switch (msg.stage) {
+    case 'drafter_start': {
+      dot.style.background = '#fbbc04'; pulse();
+      text.textContent = `Claude: drafting (${msg.fieldsCount} fields)`;
+      text.style.color = '#e65100';
+      const fieldNames = (msg.fields || []).slice(0, 6).map(l => l.replace(/[^\w\s]/g,'').trim()).join(', ');
+      logActivity('✏️', `Drafter started — ${msg.fieldsCount} fields: ${fieldNames}${msg.fieldsCount > 6 ? '…' : ''}`, '#e65100');
+      break;
+    }
+    case 'drafter_done': {
+      dot.style.background = '#fbbc04'; pulse();
+      text.textContent = `Claude: reviewing (${msg.answersCount} answers)`;
+      text.style.color = '#e65100';
+      logActivity('✓', `Drafter done — ${msg.answersCount} answers generated`, '#1a73e8');
+      // Show preview of first 3 answers
+      if (msg.preview) {
+        const entries = Object.entries(msg.preview).slice(0, 3);
+        for (const [k, v] of entries) {
+          const preview = String(v).slice(0, 60) + (String(v).length > 60 ? '…' : '');
+          logActivity('  ›', `${k}: "${preview}"`, '#80868b');
+        }
+        if (Object.keys(msg.preview).length > 3) {
+          logActivity('  ›', `…and ${Object.keys(msg.preview).length - 3} more`, '#80868b');
+        }
+      }
+      break;
+    }
+    case 'reviewer_start': {
+      dot.style.background = '#fbbc04'; pulse();
+      text.textContent = 'Claude: reviewing quality…';
+      text.style.color = '#e65100';
+      logActivity('🔍', 'Reviewer checking for hallucinations & quality…', '#7b1fa2');
+      break;
+    }
+    case 'reviewer_done': {
+      dot.style.background = '#34a853'; still();
+      text.textContent = `Claude: ${msg.answersCount} answers ready`;
+      text.style.color = '#1b5e20';
+      logActivity('✓', `Reviewer done — ${msg.reviewedBy} · ${msg.answersCount} final answers`, '#0f9d58');
+      break;
+    }
+    case 'error': {
+      dot.style.background = '#ea4335'; still();
+      text.textContent = 'Claude: error';
+      text.style.color = '#c62828';
+      logActivity('✗', msg.error || 'Unknown error', '#ea4335');
+      break;
+    }
+  }
+}
+
+// ─── Final status render (after fill complete) ────────────────────────────────
 
 function renderClaudeStatus(claudeStatus) {
-  const bar   = document.getElementById('claudeStatusBar');
-  const dot   = document.getElementById('claudeStatusDot');
-  const text  = document.getElementById('claudeStatusText');
-  const detail = document.getElementById('claudeStatusDetail');
+  const bar  = document.getElementById('claudeStatusBar');
+  const dot  = document.getElementById('claudeStatusDot');
+  const text = document.getElementById('claudeStatusText');
+  if (!bar) return;
 
-  bar.style.display = 'flex';
+  bar.style.display = '';
+  dot.style.animation = '';
 
   if (!claudeStatus) {
     dot.style.background = '#bdbdbd';
     text.textContent = 'Claude: not called';
     text.style.color = '#80868b';
-    detail.textContent = '';
     return;
   }
 
@@ -26,7 +112,7 @@ function renderClaudeStatus(claudeStatus) {
     dot.style.animation = 'pulse 1s infinite';
     text.textContent = `Claude: calling… (${claudeStatus.fieldsCount} fields)`;
     text.style.color = '#e65100';
-    detail.textContent = 'Waiting for Haiku response via proxy…';
+    if (!_activityLog.length) logActivity('⟳', `Waiting for Haiku via proxy…`, '#e65100');
     return;
   }
 
@@ -36,40 +122,37 @@ function renderClaudeStatus(claudeStatus) {
     dot.style.background = '#34a853';
     text.textContent = 'Claude: not needed';
     text.style.color = '#2e7d32';
-    detail.textContent = 'All fields filled from profile/memory.';
+    logActivity('✓', 'All fields filled from profile/memory — no Claude needed', '#2e7d32');
     return;
   }
-
   if (source === 'rate_limited') {
     dot.style.background = '#fbbc04';
     text.textContent = 'Claude: rate limited';
     text.style.color = '#e65100';
-    detail.textContent = error || '';
+    logActivity('⚠', error || 'Rate limited', '#e65100');
     return;
   }
-
   if (source === 'proxy_down') {
     dot.style.background = '#ea4335';
     text.textContent = 'Claude: proxy not running';
     text.style.color = '#c62828';
-    detail.textContent = error || 'Start start_proxy.bat and try again.';
+    logActivity('✗', error || 'Start start_proxy.bat', '#ea4335');
     return;
   }
-
   if (!ok) {
     dot.style.background = '#ea4335';
     text.textContent = `Claude: error at "${claudeStatus.stage || 'unknown'}"`;
     text.style.color = '#c62828';
-    detail.textContent = error || 'Unknown error';
+    logActivity('✗', error || 'Unknown error', '#ea4335');
     return;
   }
 
   // Success
   dot.style.background = '#34a853';
-  const answered = claudeStatus.answers ? Object.keys(claudeStatus.answers).length : 0;
+  const answered = claudeStatus.answers ? Object.keys(claudeStatus.answers).length : (fieldsCount || 0);
   text.textContent = `Claude: filled ${answered} field${answered !== 1 ? 's' : ''}`;
   text.style.color = '#1b5e20';
-  detail.textContent = `${fieldsCount} sent · reviewed by ${reviewedBy} · via ${source}`;
+  logActivity('✓', `Done — ${fieldsCount} sent · reviewed by ${reviewedBy}`, '#1b5e20');
 }
 
 function renderFields(fillResult, jobCtx, claudeStatus) {
@@ -176,20 +259,6 @@ document.getElementById('btnAutoApply').addEventListener('click', async () => {
   }
 });
 
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === 'AUTOAPPLY_PROGRESS') {
-    const prog = document.getElementById('autoApplyProgress');
-    if (prog) prog.textContent = msg.text || '';
-  }
-  if (msg.type === 'AUTOAPPLY_DONE') {
-    _autoApplyRunning = false;
-    const btn = document.getElementById('btnAutoApply');
-    const prog = document.getElementById('autoApplyProgress');
-    if (btn) { btn.disabled = false; btn.textContent = '⚡ Auto Apply'; }
-    if (prog) prog.textContent = msg.text || 'Done!';
-  }
-});
-
 // ─── Navigation buttons ───────────────────────────────────────────────────────
 
 document.getElementById('btnNext').addEventListener('click', async () => {
@@ -217,7 +286,25 @@ document.getElementById('btnSubmit').addEventListener('click', async () => {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'FILL_COMPLETE') {
+    // Reset log only on first phase (profile fill) — keep log across phase 2
+    if (msg.claudeStatus?.stage === 'calling' || msg.claudeStatus?.source === 'none_needed') {
+      _activityLog = [];
+    }
     renderFields(msg.fillResult, msg.jobCtx, msg.claudeStatus);
+  }
+  if (msg.type === 'CLAUDE_PROGRESS') {
+    updateClaudeProgress(msg);
+  }
+  if (msg.type === 'AUTOAPPLY_PROGRESS') {
+    const prog = document.getElementById('autoApplyProgress');
+    if (prog) prog.textContent = msg.text || '';
+  }
+  if (msg.type === 'AUTOAPPLY_DONE') {
+    _autoApplyRunning = false;
+    const btn = document.getElementById('btnAutoApply');
+    const prog = document.getElementById('autoApplyProgress');
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Auto Apply'; }
+    if (prog) prog.textContent = msg.text || 'Done!';
   }
 });
 
