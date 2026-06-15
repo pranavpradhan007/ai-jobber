@@ -74,30 +74,47 @@ function normalizeLabel(text) {
 
 // ─── Prompt builders ──────────────────────────────────────────────────────────
 
-function buildDraftPrompt(fields, jobCtx, profile) {
-  const workHighlights = (profile.work_history || []).slice(0, 3)
-    .map(w => `- ${w.title} @ ${w.company}: ${(w.description || '').slice(0, 120)}`).join('\n');
+function buildResumeBlock(profile) {
+  const lines = [];
+  lines.push(`${profile.full_name || ''} | ${profile.email || ''} | ${profile.phone || ''} | ${profile.location || ''}`);
+  lines.push(`${profile.current_title || ''} at ${profile.current_company || ''}`);
+  lines.push(`${profile.education_degree || ''}, ${profile.education_school || ''} (${profile.graduation_year || ''})`);
+  lines.push(`Skills: ${(profile.skills_short || profile.skills || '').slice(0, 500)}`);
+  const wh = (profile.work_history || []).slice(0, 6)
+    .map(w => `  ${w.title} @ ${w.company} (${w.start_date || ''}–${w.end_date || 'present'}): ${(w.description || '').slice(0, 200)}`);
+  if (wh.length) lines.push('Experience:\n' + wh.join('\n'));
+  return lines.join('\n');
+}
 
-  const skillsLine = (profile.skills_short || profile.skills || '').slice(0, 300);
+function buildDraftPrompt(fields, jobCtx, profile) {
+  const resumeBlock = buildResumeBlock(profile);
 
   const fieldsList = fields.map(f => {
     const opts = f.radio_options?.length ? ` (options: ${f.radio_options.join(' | ')})` :
-                 f.select_options?.length ? ` (options: ${f.select_options.slice(0, 6).join(' | ')})` : '';
+                 f.select_options?.length ? ` (options: ${f.select_options.slice(0, 8).join(' | ')})` : '';
     return `"${normalizeLabel(f.label_text)}": "..."  // ${f.label_text}${opts}`;
   }).join('\n');
 
+  const jdSection = jobCtx.jd_text
+    ? `\nJob description:\n${jobCtx.jd_text.slice(0, 2000)}`
+    : '';
+
   return {
-    system: `Fill a job application. Return ONLY valid JSON {key:answer}. No markdown, no explanation. Never invent facts.`,
-    user: `Job: ${jobCtx.company} — ${jobCtx.title}
-Candidate: ${profile.full_name || 'Pranav Tushar Pradhan'} | ${profile.current_title || 'AI Research Engineer Intern'} | ${profile.education_degree} from ${profile.education_school}
-Skills: ${skillsLine}
-Experience:
-${workHighlights}
-JD: ${(jobCtx.jd_text || '').slice(0, 800)}
+    system: `You are filling a job application. Return ONLY valid JSON {"field_key":"answer"}. No markdown fences, no explanation. Never invent facts not in the resume.`,
+    user: `Position: ${jobCtx.company} — ${jobCtx.title}
 
-Rules: specific+factual, under 100 words for open-ended, first person, no AI buzzwords (passionate/leverage/delve/synergy), no em dashes.
+Resume:
+${resumeBlock}
+${jdSection}
 
-Fields:
+Rules:
+1. Use exact values from the resume for contact/location fields
+2. Open-ended answers: under 100 words, first person, specific projects/tools
+3. No AI buzzwords (passionate, leverage, delve, synergy, thrilled, utilize, robust, cutting-edge)
+4. No em dashes. Sound like a real engineer, not a polished template
+5. Yes/No: answer from resume facts only
+
+Fields to fill:
 ${fieldsList}
 
 JSON:`
@@ -296,12 +313,12 @@ async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
     return { ok: false, answers: {}, error: `Drafter returned no parseable JSON. Raw: ${draftRaw.slice(0, 200)}`, stage: 'drafter_parse', fieldsCount: claudeFields.length, reviewedBy: 'none' };
   }
 
-  // Agent 2 — Reviewer: only run for small batches (≤6 fields) to stay within timeout
+  // Agent 2 — Reviewer
   let finalAnswers = draftAnswers;
   let reviewedBy = 'auto';
   const rateLimited = await isRateLimited();
 
-  if (!rateLimited && claudeFields.length <= 6) {
+  if (!rateLimited) {
     try {
       const { system: revSys, user: revUser } = buildReviewPrompt(draftAnswers, claudeFields, jobCtx, profile);
       const reviewRaw = await callClaude(apiKey, revSys, revUser, 800);
@@ -320,7 +337,7 @@ async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
     }
   } else {
     finalAnswers = autoReview(draftAnswers, claudeFields, profile);
-    reviewedBy = claudeFields.length > 6 ? 'auto (large batch)' : 'auto (rate limited)';
+    reviewedBy = 'auto (rate limited)';
   }
 
   await learnFromAnswers(finalAnswers, claudeFields);

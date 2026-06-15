@@ -456,6 +456,42 @@ async function _fillText(el, value) {
   el.dispatchEvent(new Event('blur', { bubbles: true }));
 }
 
+async function fillAutocomplete(el, value) {
+  // For Google Places / typeahead inputs — type the value to trigger suggestions,
+  // then accept the first suggestion via click or keyboard.
+  el.focus();
+  // Type just the first meaningful part (city name before comma)
+  const typeValue = value.split(',')[0].trim();
+  await _fillText(el, typeValue);
+
+  // Wait for autocomplete dropdown to populate
+  await sleep(1400);
+
+  // Try clicking the first suggestion in any known dropdown pattern
+  const dropdownSel = [
+    '.pac-item', '[role="option"]', '[role="listbox"] [role="option"]',
+    '.suggestions li', '.autocomplete-suggestion', '[data-testid*="suggestion"]',
+    '[class*="suggestion"]', '[class*="autocomplete"] li',
+  ].join(', ');
+  const first = document.querySelector(dropdownSel);
+  if (first) {
+    first.click();
+    await sleep(300);
+    return;
+  }
+
+  // Fallback: ArrowDown to highlight first suggestion, Enter to select
+  el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
+  await sleep(300);
+  el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter',     keyCode: 13, which: 13, bubbles: true }));
+  await sleep(200);
+
+  // Last resort: if still empty, just set the raw value (at least something is there)
+  if (!el.value || el.value.length < 2) {
+    await _fillText(el, value);
+  }
+}
+
 async function fillField(field, value) {
   let el = document.querySelector(field.selector);
   if (!el) {
@@ -478,7 +514,21 @@ async function fillField(field, value) {
     case 'number':
     case 'search':
     case 'textarea': {
-      await _fillText(el, value);
+      // Detect Places / typeahead autocomplete widgets — they require typing + selecting from dropdown
+      const isAutocomplete =
+        el.getAttribute('autocomplete') === 'off' ||
+        el.getAttribute('role') === 'combobox' ||
+        el.getAttribute('aria-autocomplete') === 'list' ||
+        el.getAttribute('aria-autocomplete') === 'both' ||
+        el.getAttribute('aria-haspopup') === 'listbox' ||
+        el.className.toLowerCase().includes('location') ||
+        (el.placeholder || '').toLowerCase().includes('city') ||
+        (el.name || '').toLowerCase().includes('location');
+      if (isAutocomplete) {
+        await fillAutocomplete(el, value);
+      } else {
+        await _fillText(el, value);
+      }
       break;
     }
     case 'select':
