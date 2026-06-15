@@ -527,6 +527,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
 
     case 'FILL_COMPLETE':
+      // Learn from ALL filled fields where label is non-standard (RAG memory growth)
+      chrome.storage.local.get(['memory']).then(({ memory = {} }) => {
+        const today = new Date().toISOString().slice(0, 10);
+        for (const f of (msg.fillResult?.fields || [])) {
+          if (!f.label || !f.value) continue;
+          const key = normalizeLabel(f.label);
+          if (!key || STATIC_PROFILE_KEYS.has(key)) continue;
+          if (!memory[key]) {
+            memory[key] = { answer: f.value, label: f.label, source: f.source || 'profile', seen: 1, last_seen: today };
+          } else {
+            memory[key].seen++;
+            memory[key].last_seen = today;
+            if (f.source === 'claude' || f.source === 'user_edit') memory[key].answer = f.value;
+          }
+        }
+        chrome.storage.local.set({ memory });
+      });
       chrome.storage.local.set({ lastFillResult: msg.fillResult, lastJobCtx: msg.jobCtx, lastClaudeStatus: msg.claudeStatus || null });
       chrome.sidePanel.open({ tabId: sender.tab?.id }).catch(() => {});
       sendResponse({ ok: true });

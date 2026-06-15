@@ -284,9 +284,11 @@ function resolveAnswer(field, profile, memory) {
     }
   }
 
-  // Tier 3: memory lookup
+  // Tier 3: memory lookup — exact then fuzzy token overlap
   const memKey = normalizeLabel(label);
   if (memory[memKey]) return memory[memKey].answer;
+  const fuzzyHit = fuzzyMemoryLookup(label, memory);
+  if (fuzzyHit) return fuzzyHit.answer;
 
   // Tier 4: field-type fallback
   if (field.field_type === 'email') return profile.email || null;
@@ -407,6 +409,48 @@ async function uploadFile(el) {
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+async function _fillText(el, value) {
+  el.focus();
+  // React native setter trick — signals React that value changed
+  const proto = el instanceof HTMLTextAreaElement
+    ? window.HTMLTextAreaElement.prototype
+    : window.HTMLInputElement.prototype;
+  const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+  if (desc?.set) {
+    desc.set.call(el, '');
+    desc.set.call(el, value);
+  } else {
+    el.value = value;
+  }
+  el.dispatchEvent(new InputEvent('input',  { bubbles: true, composed: true, data: value }));
+  el.dispatchEvent(new Event('change',       { bubbles: true }));
+
+  // If React didn't accept the value (controlled component with custom handler),
+  // fall back to execCommand — selects all then inserts text as if typed
+  if (el.value !== value) {
+    el.select?.();
+    try {
+      document.execCommand('selectAll', false, null);
+      document.execCommand('insertText', false, value);
+    } catch(e) {}
+    // Still didn't stick? Fire key events one char at a time (last resort)
+    if (el.value !== value) {
+      if (desc?.set) desc.set.call(el, '');
+      else el.value = '';
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+      for (const char of value) {
+        el.dispatchEvent(new KeyboardEvent('keydown',  { key: char, bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+        if (desc?.set) desc.set.call(el, el.value + char);
+        else el.value += char;
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: char }));
+        el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
+      }
+    }
+  }
+  el.dispatchEvent(new Event('blur', { bubbles: true }));
+}
+
 async function fillField(field, value) {
   let el = document.querySelector(field.selector);
   if (!el) {
@@ -429,20 +473,7 @@ async function fillField(field, value) {
     case 'number':
     case 'search':
     case 'textarea': {
-      el.focus();
-      el.value = '';
-      // React-friendly: use nativeInputValueSetter
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value'
-      ) || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
-      if (nativeInputValueSetter && nativeInputValueSetter.set) {
-        nativeInputValueSetter.set.call(el, value);
-      } else {
-        el.value = value;
-      }
-      el.dispatchEvent(new InputEvent('input',  { bubbles: true, composed: true }));
-      el.dispatchEvent(new Event('change',       { bubbles: true }));
-      el.dispatchEvent(new Event('blur',         { bubbles: true }));
+      await _fillText(el, value);
       break;
     }
     case 'select':
@@ -509,6 +540,10 @@ async function autofillPage(profile, memory, claudeAnswers) {
     }
   }
 
+  // Direct portal fill — catches fields form_detector missed + React-cleared values
+  const directCount = await directPortalFill(profile);
+  if (directCount > 0) results.filled += directCount;
+
   results.needsClaude = needsClaude;
   return results;
 }
@@ -522,4 +557,67 @@ function buildFallbackAnswers(fields, profile, memory) {
     }
   }
   return answers;
+}
+
+// ─── Direct portal fill ───────────────────────────────────────────────────────
+// Fallback for fields that form_detector may have missed or that React cleared.
+// Runs after the main fill loop. Tries well-known input[name] / input[type] selectors.
+
+const DIRECT_FILL_MAP = [
+  // Full name variants
+  { selectors: ['input[name="name"]', 'input[name="full_name"]', 'input[name="fullName"]', 'input[autocomplete="name"]'], key: 'full_name' },
+  // First / last
+  { selectors: ['input[name="first_name"]', 'input[name="firstName"]', 'input[autocomplete="given-name"]'], key: 'first_name' },
+  { selectors: ['input[name="last_name"]', 'input[name="lastName"]', 'input[autocomplete="family-name"]'], key: 'last_name' },
+  // Email
+  { selectors: ['input[type="email"]', 'input[name="email"]', 'input[autocomplete="email"]'], key: 'email' },
+  // Phone
+  { selectors: ['input[type="tel"]', 'input[name="phone"]', 'input[name="phoneNumber"]', 'input[name="phone_number"]'], key: 'phone' },
+  // Company
+  { selectors: ['input[name="org"]', 'input[name="company"]', 'input[name="current_company"]', 'input[name="currentCompany"]'], key: 'current_company' },
+  // LinkedIn / GitHub
+  { selectors: ['input[name="linkedin"]', 'input[name="linkedin_url"]', 'input[name="linkedinUrl"]'], key: 'linkedin_url' },
+  { selectors: ['input[name="github"]', 'input[name="github_url"]', 'input[name="githubUrl"]'], key: 'github_url' },
+  // Portfolio
+  { selectors: ['input[name="portfolio"]', 'input[name="portfolio_url"]', 'input[name="website"]'], key: 'portfolio_url' },
+];
+
+async function directPortalFill(profile) {
+  let count = 0;
+  for (const { selectors, key } of DIRECT_FILL_MAP) {
+    const value = profile[key];
+    if (!value) continue;
+    for (const sel of selectors) {
+      let el;
+      try { el = document.querySelector(sel); } catch(e) { continue; }
+      if (!el) continue;
+      const t = (el.type || '').toLowerCase();
+      if (t === 'hidden' || t === 'password') continue;
+      if (el.value && el.value.length > 2) continue; // already filled
+      await _fillText(el, value);
+      count++;
+      break;
+    }
+  }
+  return count;
+}
+
+// ─── Fuzzy memory lookup ──────────────────────────────────────────────────────
+// When exact normalizeLabel(label) doesn't hit memory, try token overlap.
+// Finds the best memory key where ≥80% of label tokens appear in the key or vice-versa.
+
+function fuzzyMemoryLookup(label, memory) {
+  const tokens = normalizeLabel(label).split('_').filter(Boolean);
+  if (tokens.length === 0) return null;
+  let bestScore = 0, bestEntry = null;
+  for (const [key, entry] of Object.entries(memory)) {
+    const keyTokens = key.split('_').filter(Boolean);
+    const overlap = tokens.filter(t => keyTokens.includes(t)).length;
+    const score = overlap / Math.max(tokens.length, keyTokens.length);
+    if (score >= 0.8 && score > bestScore) {
+      bestScore = score;
+      bestEntry = entry;
+    }
+  }
+  return bestEntry;
 }
