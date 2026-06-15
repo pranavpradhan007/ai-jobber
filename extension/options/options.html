@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JobberAI Settings</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f8f9fa;
+    color: #202124;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px 16px 100px; }
+  .header {
+    background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%);
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: -24px -16px 24px;
+  }
+  .header h1 { font-size: 20px; font-weight: 700; }
+  .nav {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #e8eaed;
+    overflow-x: auto;
+  }
+  .nav-tab {
+    padding: 9px 20px;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    color: #5f6368;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .nav-tab.active { color: #1a73e8; border-bottom-color: #1a73e8; }
+  .nav-tab:hover { background: #f1f3f4; }
+  .card {
+    background: white;
+    border: 1px solid #e8eaed;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #202124;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #f1f3f4;
+    padding-bottom: 12px;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .form-group { margin-bottom: 2px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #80868b;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  input[type=text], input[type=password], input[type=email],
+  input[type=number], input[type=url], textarea, select {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+    background: white;
+    color: #202124;
+  }
+  input:focus, textarea:focus, select:focus { border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,0.15); }
+  textarea { resize: vertical; min-height: 80px; }
+  .section-divider {
+    font-size: 11px;
+    font-weight: 700;
+    color: #80868b;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin: 20px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e8eaed;
+  }
+  .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-primary { background: #1a73e8; color: white; }
+  .btn-primary:hover { background: #1557b0; }
+  .btn-danger { background: #ea4335; color: white; }
+  .btn-danger:hover { background: #c62828; }
+  .btn-secondary { background: #f1f3f4; color: #202124; }
+  .btn-secondary:hover { background: #e8eaed; }
+  .save-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 13px 32px;
+    background: #1a73e8;
+    color: white;
+    border: none;
+    border-radius: 24px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(26,115,232,0.45);
+    z-index: 100;
+  }
+  .save-btn:hover { background: #1557b0; transform: translateY(-1px); }
+  .toast {
+    position: fixed;
+    bottom: 80px;
+    right: 24px;
+    background: #202124;
+    color: white;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: none;
+    z-index: 101;
+  }
+  /* Claude Code status card */
+  .status-card {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .status-icon { font-size: 28px; }
+  .status-text h3 { font-size: 14px; font-weight: 700; color: #1b5e20; }
+  .status-text p { font-size: 12px; color: #388e3c; margin-top: 2px; }
+  .status-dot-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-green { background: #34a853; }
+  .dot-orange { background: #fbbc04; }
+  .dot-red { background: #ea4335; }
+  /* Work history cards */
+  .work-entry {
+    background: #f8f9fa;
+    border: 1px solid #e8eaed;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .work-entry-header {
+    font-size: 12px;
+    font-weight: 700;
+    color: #5f6368;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  /* File upload */
+  .file-upload {
+    border: 2px dashed #dadce0;
+    border-radius: 8px;
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .file-upload:hover { border-color: #1a73e8; background: #e8f0fe; }
+  .file-name { font-size: 12px; color: #1a73e8; margin-top: 8px; font-weight: 600; }
+  /* App tracker */
+  .app-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .app-table th {
+    text-align: left; padding: 8px 12px;
+    border-bottom: 2px solid #e8eaed;
+    color: #5f6368; font-weight: 600;
+    font-size: 11px; text-transform: uppercase;
+  }
+  .app-table td { padding: 10px 12px; border-bottom: 1px solid #f1f3f4; }
+  .app-table tr:hover td { background: #f8f9fa; }
+  .status-chip {
+    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; background: #e8f5e9; color: #2e7d32;
+  }
+  /* Memory */
+  .memory-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid #f1f3f4;
+  }
+  .memory-key { font-size: 11px; color: #80868b; width: 180px; flex-shrink: 0; font-family: monospace; }
+  .memory-val { flex: 1; font-size: 13px; }
+  .memory-meta { font-size: 10px; color: #b0bec5; margin-top: 2px; }
+  .hint { font-size: 11px; color: #80868b; margin-top: 5px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <span style="font-size:26px">🤖</span>
+    <h1>JobberAI Settings</h1>
+  </div>
+
+  <div class="nav">
+    <div class="nav-tab active" data-page="claude">Claude Code</div>
+    <div class="nav-tab" data-page="profile">Profile</div>
+    <div class="nav-tab" data-page="work">Work History</div>
+    <div class="nav-tab" data-page="edu">Education</div>
+    <div class="nav-tab" data-page="resume">Resume</div>
+    <div class="nav-tab" data-page="memory">Memory</div>
+    <div class="nav-tab" data-page="tracker">Applications</div>
+  </div>
+
+  <!-- ── Claude Code tab ── -->
+  <div id="pageClaude">
+    <div class="status-card">
+      <div class="status-icon">🤖</div>
+      <div class="status-text">
+        <h3>Powered by Claude Code CLI</h3>
+        <p>The extension calls your local proxy, which uses the Claude Code CLI you already have running. No API key or console credits needed.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">⚡ Proxy Status</div>
+      <div class="status-dot-row">
+        <div class="dot" id="proxyDot"></div>
+        <span id="proxyStatus" style="font-size:13px">Checking...</span>
+      </div>
+      <p class="hint" style="margin-top:10px">Keep <code>extension/start_proxy.bat</code> running in a terminal while using the extension.</p>
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary" id="btnTestProxy" style="font-size:12px">Test Connection</button>
+        <button class="btn btn-secondary" id="btnClearRateLimit" style="font-size:12px">Clear Rate Limit</button>
+        <button class="btn btn-secondary" id="btnReloadProfile" style="font-size:12px">↺ Reload Profile Defaults</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🔒 Rate Limit</div>
+      <div class="status-dot-row">
+        <div class="dot" id="rateDot"></div>
+        <span id="rateLimitStatus" style="font-size:13px">Checking...</span>
+      </div>
+      <p class="hint" style="margin-top:8px">If Claude Code is rate-limited, the extension falls back to profile + memory-based filling automatically.</p>
+    </div>
+  </div>
+
+  <!-- ── Profile tab ── -->
+  <div id="pageProfile" style="display:none">
+    <div class="card">
+      <div class="card-title">👤 Personal Information</div>
+      <div class="grid-3">
+        <div class="form-group"><label>First Name</label><input type="text" id="pFirstName"></div>
+        <div class="form-group"><label>Last Name</label><input type="text" id="pLastName"></div>
+        <div class="form-group"><label>Preferred Name</label><input type="text" id="pPreferredName" placeholder="If different from first name"></div>
+        <div class="form-group"><label>Email</label><input type="email" id="pEmail"></div>
+        <div class="form-group"><label>Phone</label><input type="text" id="pPhone" placeholder="+1 (929) 754-5592"></div>
+        <div class="form-group"><label>Phone Country Code</label><input type="text" id="pPhoneCode" placeholder="United States (+1)"></div>
+      </div>
+
+      <div class="section-divider">Address</div>
+      <div class="grid-2">
+        <div class="form-group full"><label>Street Address</label><input type="text" id="pAddress" placeholder="6801 Ridge Boulevard, Apt 2"></div>
+        <div class="form-group"><label>City</label><input type="text" id="pCity"></div>
+        <div class="form-group"><label>State / Province</label><input type="text" id="pState"></div>
+        <div class="form-group"><label>Zip / Postal Code</label><input type="text" id="pZip"></div>
+        <div class="form-group"><label>Country</label><input type="text" id="pCountry"></div>
+      </div>
+
+      <div class="section-divider">Online Presence</div>
+      <div class="grid-2">
+        <div class="form-group"><label>LinkedIn URL</label><input type="url" id="pLinkedin"></div>
+        <div class="form-group"><label>GitHub URL</label><input type="url" id="pGithub"></div>
+        <div class="form-group"><label>Portfolio / Website</label><input type="url" id="pPortfolio" placeholder="https://..."></div>
+        <div class="form-group"><label>Other Profile URL</label><input type="url" id="pOtherUrl" placeholder="Kaggle, HuggingFace, etc."></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">💼 Professional</div>
+      <div class="grid-3">
+        <div class="form-group"><label>Current / Most Recent Title</label><input type="text" id="pTitle"></div>
+        <div class="form-group"><label>Years of Experience</label><input type="number" id="pYears" min="0" max="40"></div>
+        <div class="form-group"><label>Salary Expectation (USD/yr)</label><input type="text" id="pSalary" placeholder="80000"></div>
+        <div class="form-group"><label>Salary Display</label><input type="text" id="pSalaryDisplay" placeholder="$80,000"></div>
+        <div class="form-group"><label>Notice Period</label><input type="text" id="pNoticePeriod" placeholder="2 weeks"></div>
+        <div class="form-group"><label>Earliest Start Date</label><input type="text" id="pStartDate" placeholder="2 weeks"></div>
+      </div>
+      <div class="grid-2" style="margin-top:12px">
+        <div class="form-group">
+          <label>Remote Preference</label>
+          <select id="pRemote">
+            <option value="Open to remote or hybrid">Open to remote or hybrid</option>
+            <option value="Remote only">Remote only</option>
+            <option value="Hybrid preferred">Hybrid preferred</option>
+            <option value="On-site preferred">On-site preferred</option>
+            <option value="Open to all">Open to all</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Willing to Relocate</label>
+          <select id="pRelocate">
+            <option value="Open to discuss">Open to discuss</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Yes, within US">Yes, within US</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-divider">Skills & Technologies</div>
+      <div class="grid-2">
+        <div class="form-group full">
+          <label>Primary Skills / Tech Stack (comma-separated)</label>
+          <textarea id="pSkills" rows="3" placeholder="Python, PyTorch, JAX, AWS, SQL, Docker, LLMs, React..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Summary / Professional Bio (1–2 sentences)</label>
+          <textarea id="pBio" rows="2" placeholder="AI Research Engineer with 4 years experience in ML systems, scientific computing, and data engineering..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🛂 Work Authorization</div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Work Authorization Status</label>
+          <select id="pWorkAuth">
+            <option value="I am authorized to work in the United States and do not require visa sponsorship at this time.">Authorized, no sponsorship</option>
+            <option value="I am authorized to work in the United States on an F-1 OPT visa.">F-1 OPT authorized</option>
+            <option value="I require H-1B visa sponsorship to work in the United States.">Requires H-1B sponsorship</option>
+            <option value="I am a US Citizen.">US Citizen</option>
+            <option value="I am a US Permanent Resident (Green Card).">US PR / Green Card</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Visa / Immigration Status</label>
+          <input type="text" id="pVisaStatus" placeholder="F-1 Student Visa (OPT eligible)">
+        </div>
+        <div class="form-group">
+          <label>Requires Sponsorship?</label>
+          <select id="pSponsorship">
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+            <option value="Yes, for H-1B transfer">Yes — H-1B transfer</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>US Citizen or Permanent Resident?</label>
+          <select id="pUsCitizen">
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🎯 EEO / Diversity (Optional — leave blank to skip)</div>
+      <p class="hint" style="margin-bottom:12px">These fields are optional on most applications. Leave blank to let Claude choose "Prefer not to disclose".</p>
+      <div class="grid-3">
+        <div class="form-group">
+          <label>Gender</label>
+          <select id="pGender">
+            <option value="">— leave blank —</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Non-binary">Non-binary</option>
+            <option value="Prefer not to disclose">Prefer not to disclose</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Race / Ethnicity</label>
+          <select id="pEthnicity">
+            <option value="">— leave blank —</option>
+            <option value="Asian">Asian</option>
+            <option value="Black or African American">Black or African American</option>
+            <option value="Hispanic or Latino">Hispanic or Latino</option>
+            <option value="White">White</option>
+            <option value="Two or More Races">Two or More Races</option>
+            <option value="Prefer not to disclose">Prefer not to disclose</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Veteran Status</label>
+          <select id="pVeteran">
+            <option value="">— leave blank —</option>
+            <option value="I am not a protected veteran">Not a protected veteran</option>
+            <option value="I am a protected veteran">Protected veteran</option>
+            <option value="Prefer not to disclose">Prefer not to disclose</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Disability Status</label>
+          <select id="pDisability">
+            <option value="">— leave blank —</option>
+            <option value="No, I do not have a disability">No disability</option>
+            <option value="Yes, I have a disability">Yes, I have a disability</option>
+            <option value="Prefer not to disclose">Prefer not to disclose</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📝 Cover Letter & Statements</div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Default Cover Letter (used when no Claude answer available)</label>
+        <textarea id="pCoverLetter" rows="5"></textarea>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Why do you want to work in AI/ML? (frequently asked)</label>
+        <textarea id="pWhyAI" rows="3" placeholder="I'm drawn to AI/ML because..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Greatest Strength (fallback when Claude unavailable)</label>
+        <textarea id="pStrength" rows="2" placeholder="My ability to translate research into production ML systems..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Work History tab ── -->
+  <div id="pageWork" style="display:none">
+    <div class="card">
+      <div class="card-title">💼 Work History</div>
+      <p class="hint" style="margin-bottom:16px">Used by Claude to write specific, grounded answers about your experience. Fill at least your top 3 roles.</p>
+      <div id="workEntries"></div>
+      <button class="btn btn-secondary" id="btnAddWork" style="margin-top:8px;font-size:12px">+ Add Another Role</button>
+    </div>
+  </div>
+
+  <!-- ── Education tab ── -->
+  <div id="pageEdu" style="display:none">
+    <div class="card">
+      <div class="card-title">🎓 Education</div>
+      <div class="section-divider">Primary / Most Recent Degree</div>
+      <div class="grid-2">
+        <div class="form-group"><label>School / University</label><input type="text" id="eSchool1"></div>
+        <div class="form-group"><label>Degree</label><input type="text" id="eDegree1" placeholder="Master of Science"></div>
+        <div class="form-group"><label>Field of Study / Major</label><input type="text" id="eField1" placeholder="Computer Science"></div>
+        <div class="form-group"><label>GPA</label><input type="text" id="eGpa1" placeholder="3.667"></div>
+        <div class="form-group"><label>Start Year</label><input type="text" id="eStart1" placeholder="2024"></div>
+        <div class="form-group"><label>End Year (or Expected)</label><input type="text" id="eEnd1" placeholder="2026"></div>
+        <div class="form-group"><label>Location</label><input type="text" id="eLoc1" placeholder="Brooklyn, NY"></div>
+        <div class="form-group"><label>Graduation Year</label><input type="text" id="eGradYear"></div>
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label>Notable Coursework / Projects</label>
+        <textarea id="eCoursework1" rows="2" placeholder="Deep Learning, NLP, Computer Vision, Distributed Systems..."></textarea>
+      </div>
+
+      <div class="section-divider">Undergraduate Degree</div>
+      <div class="grid-2">
+        <div class="form-group"><label>School / University</label><input type="text" id="eSchool2"></div>
+        <div class="form-group"><label>Degree</label><input type="text" id="eDegree2" placeholder="Bachelor of Engineering"></div>
+        <div class="form-group"><label>Field of Study / Major</label><input type="text" id="eField2" placeholder="Computer Engineering"></div>
+        <div class="form-group"><label>GPA</label><input type="text" id="eGpa2" placeholder="9.01/10"></div>
+        <div class="form-group"><label>Start Year</label><input type="text" id="eStart2" placeholder="2020"></div>
+        <div class="form-group"><label>End Year</label><input type="text" id="eEnd2" placeholder="2024"></div>
+        <div class="form-group"><label>Location</label><input type="text" id="eLoc2" placeholder="Pune, India"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Resume tab ── -->
+  <div id="pageResume" style="display:none">
+    <div class="card">
+      <div class="card-title">📄 Resume PDF</div>
+      <div class="file-upload" id="resumeDropZone">
+        <div style="font-size:36px;margin-bottom:8px">📎</div>
+        <div style="font-size:14px;color:#5f6368">Click or drag to upload your resume (PDF only)</div>
+        <div class="file-name" id="resumeFileName"></div>
+        <input type="file" id="resumeFile" accept=".pdf" style="display:none">
+      </div>
+      <p class="hint" style="margin-top:10px">Stored locally as base64 in the extension. Used to fill file-upload fields on application forms.</p>
+    </div>
+  </div>
+
+  <!-- ── Memory tab ── -->
+  <div id="pageMemory" style="display:none">
+    <div class="card">
+      <div class="card-title">🧠 Learned Answers</div>
+      <p class="hint" style="margin-bottom:12px">Answers Claude learned from your past applications. These fill automatically on future applications without calling Claude.</p>
+      <div id="memoryList"></div>
+      <div style="margin-top:14px">
+        <button class="btn btn-danger" id="btnClearMemory" style="font-size:12px;padding:8px 16px">Clear All Learned Answers</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Applications tracker tab ── -->
+  <div id="pageTracker" style="display:none">
+    <div class="card">
+      <div class="card-title">📋 Applications Submitted</div>
+      <div id="trackerContent"></div>
+    </div>
+  </div>
+
+</div>
+<button class="save-btn" id="btnSave">💾 Save All</button>
+<div class="toast" id="toast">✓ Saved</div>
+<script src="options.js"></script>
+</body>
+</html>

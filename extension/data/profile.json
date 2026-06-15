@@ -1,0 +1,157 @@
+{
+  "_comment": "Default application answers for browser prefill. Edit values as needed. Sensitive fields use screener-level only.",
+
+  "first_name": "Pranav",
+  "last_name": "Pradhan",
+  "full_name": "Pranav Tushar Pradhan",
+  "email": "pranavpradhan00721@gmail.com",
+  "phone": "+1 (929) 754-5592",
+  "phone_country_code": "United States (+1)",
+  "location": "New York, NY",
+  "address": "6801 Ridge Boulevard, Apt 2",
+  "city": "Brooklyn",
+  "state": "New York",
+  "state_abbr": "NY",
+  "zip_code": "11220",
+  "country": "United States",
+  "linkedin_url": "https://www.linkedin.com/in/pranav-pradhan-150072236",
+  "github_url": "https://github.com/pranavpradhan007",
+  "portfolio_url": "",
+
+  "current_title": "AI Research Engineer Intern",
+  "years_experience": "4",
+
+  "skills": "Python, PyTorch, JAX, TensorFlow, scikit-learn, NumPy, pandas, Matplotlib, Seaborn, PySpark, SQL, NoSQL, MongoDB, PostgreSQL, AWS (EC2, S3, Lambda, SageMaker), Docker, Git, GitHub, Jupyter, KNIME, ChemProp, Graph Neural Networks, MCTS, Reinforcement Learning, Self-Play, LLMs, Transformers, BERT, GPT, Clinical NLP, Adversarial Attacks, Time-Series Analysis, Predictive Maintenance, Data Engineering, ETL Pipelines, ML Inference Pipelines, REST APIs, FastAPI, Flask, Linux, Bash, C++, Java, HTML, CSS, JavaScript, React, Node.js, HuggingFace Transformers, Weights & Biases, MLflow, Streamlit, Plotly, OpenCV, Scipy, statsmodels, XGBoost, LightGBM, Random Forest, Neural Networks, Deep Learning, Computer Vision, Natural Language Processing, Retrieval Augmented Generation, Vector Databases, Pinecone, FAISS, LangChain, Prompt Engineering, CUDA, GPU Computing, Distributed Training, Data Visualization, A/B Testing, Statistical Analysis, Regression, Classification, Clustering, Dimensionality Reduction, PCA, t-SNE, Agile, Scrum, Jira, Confluence",
+
+  "skills_short": "Python, PyTorch, JAX, TensorFlow, PySpark, SQL, AWS, Docker, Git, LLMs, Transformers, scikit-learn, NumPy, pandas, Graph Neural Networks, MCTS, Reinforcement Learning, FastAPI, React, HuggingFace, LangChain, RAG, CUDA, Deep Learning, NLP, Computer Vision",
+
+  "skills_by_category": {
+    "languages": "Python, SQL, C++, Java, JavaScript, Bash",
+    "ml_frameworks": "PyTorch, JAX, TensorFlow, scikit-learn, HuggingFace Transformers, XGBoost, LightGBM",
+    "llm_ai": "LLMs, GPT, BERT, Transformers, LangChain, RAG, Prompt Engineering, Adversarial Attacks, Clinical NLP, MCTS, Reinforcement Learning, Self-Play, Graph Neural Networks, ChemProp",
+    "data_engineering": "PySpark, pandas, NumPy, ETL Pipelines, KNIME, SQL, NoSQL, MongoDB, PostgreSQL, Pinecone, FAISS, Vector Databases",
+    "cloud_devops": "AWS (EC2 S3 Lambda SageMaker), Docker, Git, GitHub, Linux, Jupyter, MLflow, Weights & Biases",
+    "web": "FastAPI, Flask, React, Node.js, REST APIs, Streamlit",
+    "other": "OpenCV, Computer Vision, Time-Series Analysis, Statistical Analysis, Data Visualization, Matplotlib, Seaborn, Plotly, Scipy, CUDA, GPU Computing, Distributed Training, Agile, Scrum"
+  },
+
+  "education_degree": "Master of Science in Computer Science",
+  "education_school": "New York University, Tandon School of Engineering",
+  "education_gpa": "3.667",
+  "graduation_year": "2026",
+
+  "work_authorization": "I am authorized to work in the United States and do not require visa sponsorship at this time.",
+  "requires_sponsorship": "No",
+  "us_citizen_or_pr": "No",
+  "visa_status": "F-1 Student Visa (OPT eligible)",
+
+  "gender": "Male",
+  "pronouns": "He/Him",
+  "eeo_gender": "Male",
+  "eeo_ethnicity": "Asian",
+  "eeo_veteran": "I am not a protected veteran",
+  "eeo_disability": "No, I do not have a disability",
+  "has_driver_license": "Yes",
+  "felony": "No",
+  "has_relatives_at_company": "No",
+  "previously_worked_here": "No",
+  "has_non_compete": "No",
+  "has_security_clearance": "No",
+  "referral_source": "Company career website",
+
+  "salary_expectation": "80000",
+  "salary_display": "$80,000",
+  "willing_to_relocate": "Open to discuss",
+  "remote_preference": "Open to remote or hybrid",
+
+  "cover_letter_default": "My background spans ML research, data engineering, and AI systems including scientific ML, medical AI, game AI, and production data pipelines. I have worked with PyTorch, JAX, PySpark, and AWS to build and deploy models that solved real problems. I would like to discuss how my experience can contribute to this role.",
+
+  "linkedin_headline": "AI Research Engineer Intern @ Hexbandit.io | Research Assistant @ NYU | Former Data Analyst Intern @ IFF | MS CS NYU 2026",
+
+  "_private_note": "Phone and email are screener-only. Do not include in public-facing text unless the application form requires it.",
+
+  "work_history": [
+    {
+      "title": "AI Research Engineer Intern",
+      "company": "Hexbandit.io",
+      "location": "New York, NY",
+      "start_month": "01",
+      "start_year": "2026",
+      "end_month": "",
+      "end_year": "",
+      "current": true,
+      "description": "Built an AI agent for the Catan board game using MCTS and self-play, achieving 100% win rate against alpha-beta pruning baseline. Developed and deployed ML inference pipelines on AWS EC2/S3/Lambda."
+    },
+    {
+      "title": "ML Research Assistant",
+      "company": "New York University",
+      "location": "New York, NY",
+      "start_month": "09",
+      "start_year": "2024",
+      "end_month": "",
+      "end_year": "",
+      "current": true,
+      "description": "Research in scientific ML under Prof. Sara Shamekh. Developed JAX-based neural network parameterizations for atmospheric single-column models. Reduced RMSE by ~15% and MAPE by 10%; achieved 2.5x throughput increase and 60% simulation time reduction."
+    },
+    {
+      "title": "AI Research Assistant",
+      "company": "New York University",
+      "location": "New York, NY",
+      "start_month": "01",
+      "start_year": "2025",
+      "end_month": "",
+      "end_year": "",
+      "current": true,
+      "description": "Clinical LLM robustness research under Prof. Kimberly Carballo. Evaluated 5 clinical LLMs on MIMIC-IV using 10 adversarial attack methods. Improved AUROC/AUPRC from 0.50/0.20 to 0.80/0.30."
+    },
+    {
+      "title": "Data Analyst Intern",
+      "company": "International Flavors & Fragrances",
+      "location": "New York, NY",
+      "start_month": "06",
+      "start_year": "2023",
+      "end_month": "08",
+      "end_year": "2023",
+      "current": false,
+      "description": "Consolidated 12 chemical datasets (~90K records to ~15K unique entries) using PySpark and KNIME. Improved predictive performance by ~15% and increased chemical registration throughput by 82% using ChemProp and graph neural networks."
+    },
+    {
+      "title": "Data Science Intern",
+      "company": "3D Engineering Automation LLP",
+      "location": "Pune, India",
+      "start_month": "06",
+      "start_year": "2022",
+      "end_month": "08",
+      "end_year": "2022",
+      "current": false,
+      "description": "Built predictive maintenance ML pipeline processing 30 GB of sensor data. Achieved 93% diagnostic accuracy and 87% failure-prediction precision with sub-second anomaly-detection latency using PyTorch and time-series models."
+    }
+  ],
+
+  "education_history": [
+    {
+      "school": "New York University, Tandon School of Engineering",
+      "degree": "Master of Science",
+      "field": "Computer Science",
+      "location": "Brooklyn, NY",
+      "start_month": "09",
+      "start_year": "2024",
+      "end_month": "05",
+      "end_year": "2026",
+      "current": false,
+      "gpa": "3.667"
+    },
+    {
+      "school": "Savitribai Phule Pune University (PVGCOET)",
+      "degree": "Bachelor of Engineering",
+      "field": "Computer Science",
+      "location": "Pune, India",
+      "start_month": "08",
+      "start_year": "2020",
+      "end_month": "05",
+      "end_year": "2024",
+      "current": false,
+      "gpa": "9.01/10"
+    }
+  ]
+}
