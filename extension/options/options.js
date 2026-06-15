@@ -21,6 +21,7 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     document.getElementById(PAGES[page]).style.display = '';
     if (page === 'memory')  loadMemory();
     if (page === 'tracker') loadTracker();
+    if (page === 'resume')  loadResumePreview();
   });
 });
 
@@ -173,7 +174,10 @@ async function loadSettings() {
 
   // Resume
   const { resume_b64 } = await chrome.storage.local.get('resume_b64');
-  if (resume_b64) document.getElementById('resumeFileName').textContent = 'Resume loaded ✓';
+  if (resume_b64) {
+    document.getElementById('resumeFileName').textContent = 'Resume loaded ✓';
+    renderResumePDF(resume_b64);
+  }
 }
 
 function setVal(id, val) {
@@ -378,9 +382,32 @@ function loadResumeFile(file) {
     const b64 = e.target.result.split(',')[1];
     await chrome.storage.local.set({ resume_b64: b64 });
     document.getElementById('resumeFileName').textContent = `✓ ${file.name} (${Math.round(file.size / 1024)} KB)`;
+    renderResumePDF(b64);
   };
   reader.readAsDataURL(file);
 }
+
+let _resumeBlobUrl = null;
+
+function renderResumePDF(b64) {
+  // Revoke previous blob to avoid memory leaks
+  if (_resumeBlobUrl) URL.revokeObjectURL(_resumeBlobUrl);
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  _resumeBlobUrl = URL.createObjectURL(blob);
+  const iframe = document.getElementById('resumePreview');
+  iframe.src = _resumeBlobUrl + '#toolbar=1&navpanes=0&scrollbar=1';
+  document.getElementById('resumePreviewCard').style.display = '';
+}
+
+document.getElementById('btnDeleteResume').addEventListener('click', async () => {
+  if (!confirm('Remove saved resume?')) return;
+  await chrome.storage.local.remove('resume_b64');
+  if (_resumeBlobUrl) { URL.revokeObjectURL(_resumeBlobUrl); _resumeBlobUrl = null; }
+  document.getElementById('resumePreview').src = '';
+  document.getElementById('resumePreviewCard').style.display = 'none';
+  document.getElementById('resumeFileName').textContent = '';
+});
 
 // ─── Memory viewer ────────────────────────────────────────────────────────────
 
@@ -447,6 +474,13 @@ async function loadTracker() {
   });
   html += '</tbody></table>';
   container.innerHTML = html;
+}
+
+// ─── Resume preview loader (called when tab clicked) ──────────────────────────
+
+async function loadResumePreview() {
+  const { resume_b64 } = await chrome.storage.local.get('resume_b64');
+  if (resume_b64 && !_resumeBlobUrl) renderResumePDF(resume_b64);
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
