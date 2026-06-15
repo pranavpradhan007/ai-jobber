@@ -100,6 +100,11 @@ const LABEL_ALIASES = {
   "cloud platforms":          "skills_by_category.cloud_devops",
   "cloud":                    "skills_by_category.cloud_devops",
   "devops tools":             "skills_by_category.cloud_devops",
+  "current company":          "current_company",
+  "current employer":         "current_company",
+  "employer":                 "current_company",
+  "company":                  "current_company",
+  "organization":             "current_company",
   "bio":                      "bio",
   "about you":                "bio",
   "about yourself":           "bio",
@@ -233,14 +238,15 @@ function fuzzyMatchOption(value, options) {
 
 function normalizeLabel(text) {
   return text.toLowerCase().trim()
-    .replace(/[*:()\[\]{}]/g, '')
+    .replace(/[^\w\s]/g, '')   // strip ALL non-word, non-space chars (handles ✱ ❋ ＊ etc.)
     .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
     .trim();
 }
 
 function resolveAnswer(field, profile, memory) {
   const label = field.label_text.toLowerCase().trim();
-  const stripped = label.replace(/[*:()\[\]{}]/g, '').trim();
+  const stripped = label.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
 
   // Tier 1: alias table
   for (const probe of [label, stripped]) {
@@ -359,6 +365,30 @@ function fillRadio(field, value) {
   }
 }
 
+function fillAriaRadio(field, value) {
+  const target = value.toLowerCase().trim();
+  // Find the radiogroup by group_name label in the DOM
+  const groups = document.querySelectorAll('[role="radiogroup"]');
+  for (const rg of groups) {
+    const rgLabel = (rg.getAttribute('aria-label') || rg.innerText || '').toLowerCase();
+    if (!rgLabel.includes(field.group_name.toLowerCase().slice(0, 15))) continue;
+    const options = rg.querySelectorAll('[role="radio"]');
+    for (const opt of options) {
+      const optText = (opt.getAttribute('aria-label') || opt.innerText || opt.textContent || '').toLowerCase().trim();
+      if (optText === target || optText.includes(target) || target.includes(optText)) {
+        opt.click();
+        opt.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+      }
+    }
+    // Fallback: yes/truthy → first, no → last
+    if (options.length > 0) {
+      if (isTruthy(value)) { options[0].click(); return; }
+      if (/^no$/i.test(value.trim())) { options[options.length - 1].click(); return; }
+    }
+  }
+}
+
 async function uploadFile(el) {
   // Resume upload is handled via service_worker message (DataTransfer API)
   // Sending a message to content.js which knows the resume blob
@@ -419,6 +449,9 @@ async function fillField(field, value) {
       break;
     case 'radio':
       fillRadio(field, value);
+      break;
+    case 'aria_radio':
+      fillAriaRadio(field, value);
       break;
     case 'checkbox':
       el.checked = isTruthy(value);

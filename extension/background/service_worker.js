@@ -66,8 +66,9 @@ function parseBatchResponse(text, fields) {
 
 function normalizeLabel(text) {
   return text.toLowerCase().trim()
-    .replace(/[*:()\[\]{}]/g, '')
+    .replace(/[^\w\s]/g, '')   // strip ALL non-word, non-space chars (handles ✱ ❋ ＊ etc.)
     .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
     .trim();
 }
 

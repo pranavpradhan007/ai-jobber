@@ -81,8 +81,10 @@ function renderFields(fillResult, jobCtx) {
 
 function normalizeLabel(text) {
   return text.toLowerCase().trim()
-    .replace(/[*:()\[\]{}]/g, '')
-    .replace(/\s+/g, '_');
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .trim();
 }
 
 // ─── Navigation buttons ───────────────────────────────────────────────────────

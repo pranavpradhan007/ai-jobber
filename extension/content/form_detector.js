@@ -98,6 +98,40 @@ function detectFormFields() {
     for (const el of els) {
       processElement(el, domRoot || root);
     }
+
+    // Detect ARIA radio groups (Lever pronoun picker, Ashby custom selects)
+    // role="radiogroup" containers with role="radio" children
+    const radioGroups = root.querySelectorAll('[role="radiogroup"]');
+    for (const rg of radioGroups) {
+      const groupLabel = (rg.getAttribute('aria-label') ||
+        rg.getAttribute('aria-labelledby') && document.getElementById(rg.getAttribute('aria-labelledby'))?.innerText ||
+        rg.closest('[class*="question"],[class*="field"],[class*="group"]')
+          ?.querySelector('label,legend,[class*="label"]')?.innerText || '').trim();
+      if (!groupLabel) continue;
+      const dedupeKey = 'ariagroup:' + groupLabel;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      const options = Array.from(rg.querySelectorAll('[role="radio"]'))
+        .map(r => (r.getAttribute('aria-label') || r.innerText || r.textContent || '').trim())
+        .filter(Boolean);
+      if (options.length === 0) continue;
+      const firstRadio = rg.querySelector('[role="radio"]');
+      results.push({
+        selector: firstRadio ? buildSelector(firstRadio) : '[role="radiogroup"]',
+        label_text: groupLabel.toLowerCase(),
+        field_type: 'aria_radio',
+        name: groupLabel,
+        id: rg.id || '',
+        placeholder: '',
+        required: rg.getAttribute('aria-required') === 'true',
+        current_value: '',
+        radio_options: options,
+        select_options: [],
+        group_name: groupLabel,
+        _rg_el: rg,
+      });
+    }
+
     // Recurse into shadow roots (Workday compatibility)
     const all = root.querySelectorAll('*');
     for (const node of all) {

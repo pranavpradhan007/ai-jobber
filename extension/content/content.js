@@ -118,36 +118,63 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
         // Step 3: Detect fields
         const fields = detectFormFields();
-        showStatus(`Detected ${fields.length} fields. Getting answers...`, 'info');
+        showStatus(`Detected ${fields.length} fields, filling from profile...`, 'info');
 
-        // Step 4: Get answers (Claude or fallback)
-        let claudeAnswers = null;
-        try {
-          claudeAnswers = await chrome.runtime.sendMessage({
-            type: 'GET_ANSWERS',
-            fields: fields,
-            jobCtx: _currentJobCtx,
-          });
-        } catch(e) {
-          console.warn('JobberAI: GET_ANSWERS failed, using fallback', e);
-        }
+        // Step 4a: Immediate profile+memory fill (no Claude wait)
+        const fillResult = await autofillPage(profile, memory, null);
 
-        // Step 5: Fill the form
-        showStatus('Filling form...', 'info');
-        const fillResult = await autofillPage(profile, memory, claudeAnswers);
+        showStatus(`${fillResult.filled} filled from profile. Asking Claude for the rest...`, 'info');
 
-        showStatus(
-          `Filled ${fillResult.filled} fields (${fillResult.claude} via Claude). Review in side panel.`,
-          'success'
-        );
-
-        // Step 6: Update side panel
+        // Step 4b: Show partial results in sidepanel immediately
         chrome.runtime.sendMessage({
           type: 'FILL_COMPLETE',
           fillResult,
           jobCtx: _currentJobCtx,
-          claudeAnswers,
+          claudeAnswers: null,
         });
+
+        // Step 5: Claude fills remaining fields (non-blocking from user's perspective)
+        if (fillResult.needsClaude && fillResult.needsClaude.length > 0) {
+          let claudeAnswers = null;
+          try {
+            claudeAnswers = await chrome.runtime.sendMessage({
+              type: 'GET_ANSWERS',
+              fields: fillResult.needsClaude,
+              jobCtx: _currentJobCtx,
+            });
+          } catch(e) {
+            console.warn('JobberAI: Claude GET_ANSWERS failed', e);
+          }
+
+          if (claudeAnswers && Object.keys(claudeAnswers).length > 0) {
+            // Fill Claude's answers into remaining fields
+            for (const f of fillResult.needsClaude) {
+              const key = normalizeLabel(f.label_text);
+              const ans = claudeAnswers[key] || claudeAnswers[f.label_text];
+              if (ans) {
+                const ok = await fillField(f, ans);
+                if (ok) {
+                  fillResult.claude++;
+                  fillResult.filled++;
+                  fillResult.fields.push({ label: f.label_text, value: ans, source: 'claude' });
+                }
+              }
+            }
+            showStatus(`Done! ${fillResult.filled} filled (${fillResult.claude} via Claude).`, 'success');
+          } else {
+            showStatus(`Done! ${fillResult.filled} filled. Claude unavailable for ${fillResult.needsClaude.length} fields.`, 'warn');
+          }
+
+          // Update sidepanel with final results
+          chrome.runtime.sendMessage({
+            type: 'FILL_COMPLETE',
+            fillResult,
+            jobCtx: _currentJobCtx,
+            claudeAnswers,
+          });
+        } else {
+          showStatus(`Done! ${fillResult.filled} filled from profile.`, 'success');
+        }
 
       } catch(err) {
         console.error('JobberAI: autofill error', err);
