@@ -166,8 +166,9 @@ const QUESTION_BANK = [
   { re: /conflict.{0,15}interest/i,                                                                  key: "_no" },
   { re: /currently.{0,15}(active|hold).{0,15}security.{0,10}clearance/i,                           key: "_no" },
   { re: /security.{0,10}clearance/i,                                                                 key: "_no" },
-  { re: /previously.{0,15}(apply|applied|work).{0,20}(here|this company|with us)/i,                key: "_no" },
+  { re: /previously.{0,15}(apply|applied|work|employ).{0,20}(here|this company|with us|by us)/i,   key: "_no" },
   { re: /worked.{0,20}(here|this company|for us) before/i,                                         key: "_no" },
+  { re: /previously.{0,20}employed|formerly.{0,20}employed|ever.{0,20}employed.{0,20}by/i,         key: "_no" },
   { re: /contract.{0,10}(prevent|restrict|prohibit)|restrictive.{0,10}covenant/i,                  key: "_no" },
   { re: /currently.{0,15}employ|are you.{0,15}(currently.{0,5})?employ/i,                         key: "_no" },
   { re: /on.?call|available.{0,10}on.?call/i,                                                       key: "_yes" },
@@ -193,6 +194,10 @@ const QUESTION_BANK = [
   { re: /github|github.{0,10}url|github.{0,10}profile/i,                                            key: "github_url" },
   { re: /portfolio|personal.{0,10}website|website.{0,10}url/i,                                      key: "portfolio_url" },
   { re: /cover.{0,10}letter|additional.{0,15}comment|anything.{0,20}add/i,                          key: "cover_letter_default" },
+  // Demographic survey / location selects
+  { re: /what.{0,10}(is|is your).{0,10}location|demographic.{0,15}location|survey.{0,10}location/i, key: "address_state" },
+  // Consent / marketing checkboxes
+  { re: /consent.{0,20}(contact|reach|email|newsletter)|may.{0,15}contact.{0,15}(me|you)|future.{0,20}(job|opportun|position)/i, key: "_yes" },
   { re: /^gender$|gender.{0,10}identity/i,                                                           key: "_gender" },
   { re: /^race$|^ethnicity$|ethnic.{0,15}group|racial/i,                                            key: "eeo_ethnicity" },
   { re: /veteran|military.{0,15}status/i,                                                            key: "_no_veteran" },

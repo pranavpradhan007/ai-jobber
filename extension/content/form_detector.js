@@ -202,9 +202,44 @@ function detectFormFields() {
                        document.querySelector('input[type="radio"][id="' + groupName + '"]');
     const selector = firstInput ? buildSelector(firstInput)
                                 : 'input[type="radio"][name="' + groupName + '"]';
+
+    // Prefer the group-level question label over the first option's individual label.
+    // Walk up from the first radio to find a legend, or a parent label/heading that
+    // is NOT itself one of the radio option labels.
+    let groupLabel = '';
+    if (firstInput) {
+      const optionLabels = new Set(group.options.map(o => (o.label || '').toLowerCase().trim()));
+      let p = firstInput.parentElement;
+      let depth = 0;
+      while (p && depth < 10) {
+        // <fieldset> + <legend>
+        if (p.tagName === 'FIELDSET') {
+          const leg = p.querySelector(':scope > legend');
+          if (leg) { groupLabel = (leg.innerText || leg.textContent || '').trim(); break; }
+        }
+        // Direct child <label> of ancestor that is NOT an option label
+        const childLabel = p.querySelector(':scope > label');
+        if (childLabel) {
+          const t = (childLabel.innerText || childLabel.textContent || '').replace(/\s+/g, ' ').trim();
+          if (t && !optionLabels.has(t.toLowerCase())) { groupLabel = t; break; }
+        }
+        // <div role="group"> aria-label
+        if (p.getAttribute('role') === 'group') {
+          const al = p.getAttribute('aria-label');
+          if (al) { groupLabel = al.trim(); break; }
+        }
+        p = p.parentElement;
+        depth++;
+      }
+    }
+    // Fallback: convert camelCase / snake_case name attribute to human label
+    if (!groupLabel) {
+      groupLabel = groupName.replace(/([A-Z])/g, ' $1').replace(/[_-]/g, ' ').trim();
+    }
+
     results.push({
       selector: selector,
-      label_text: group.label.toLowerCase(),
+      label_text: groupLabel.toLowerCase(),
       field_type: 'radio',
       name: groupName,
       id: '',

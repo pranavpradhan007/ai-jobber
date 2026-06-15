@@ -88,6 +88,36 @@ function showStatus(msg, type = 'info') {
   setTimeout(() => div.remove(), 5000);
 }
 
+// Long-lived port call — keeps service worker alive for 60-90s Claude calls
+function getAnswersViaPort(fields, jobCtx) {
+  return new Promise((resolve) => {
+    let port;
+    try {
+      port = chrome.runtime.connect({ name: 'claude_request' });
+    } catch(e) {
+      resolve({ ok: false, error: 'Port connect failed: ' + e.message, answers: {} });
+      return;
+    }
+    const timeout = setTimeout(() => {
+      try { port.disconnect(); } catch(e) {}
+      resolve({ ok: false, error: 'Claude timed out after 120s', source: 'timeout', answers: {} });
+    }, 120000);
+
+    port.onMessage.addListener((msg) => {
+      if (msg.type === 'GET_ANSWERS_RESULT') {
+        clearTimeout(timeout);
+        try { port.disconnect(); } catch(e) {}
+        resolve(msg.result);
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timeout);
+      resolve({ ok: false, error: 'Service worker disconnected', source: 'sw_disconnect', answers: {} });
+    });
+    port.postMessage({ type: 'GET_ANSWERS_VIA_PORT', fields, jobCtx });
+  });
+}
+
 // Main autofill handler
 chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
   if (msg.type === 'AUTOFILL_START') {
@@ -144,11 +174,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
           let result;
           try {
-            result = await chrome.runtime.sendMessage({
-              type: 'GET_ANSWERS',
-              fields: fillResult.needsClaude,
-              jobCtx: _currentJobCtx,
-            });
+            result = await getAnswersViaPort(fillResult.needsClaude, _currentJobCtx);
           } catch(e) {
             result = { ok: false, answers: null, error: 'Message send failed: ' + e.message, source: 'exception', fieldsCount: fillResult.needsClaude.length, reviewedBy: 'none' };
           }
@@ -222,7 +248,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
         if (fillResult.needsClaude?.length > 0) {
           let result;
           try {
-            result = await chrome.runtime.sendMessage({ type: 'GET_ANSWERS', fields: fillResult.needsClaude, jobCtx: _currentJobCtx });
+            result = await getAnswersViaPort(fillResult.needsClaude, _currentJobCtx);
           } catch(e) {
             result = { ok: false, error: e.message };
           }

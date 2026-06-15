@@ -75,46 +75,32 @@ function normalizeLabel(text) {
 // ─── Prompt builders ──────────────────────────────────────────────────────────
 
 function buildDraftPrompt(fields, jobCtx, profile) {
-  const workHighlights = (profile.work_history || []).slice(0, 4)
-    .map(w => `- ${w.title} @ ${w.company}: ${w.description}`).join('\n');
+  const workHighlights = (profile.work_history || []).slice(0, 3)
+    .map(w => `- ${w.title} @ ${w.company}: ${(w.description || '').slice(0, 120)}`).join('\n');
 
-  const skillsLine = profile.skills_short || profile.skills || '';
+  const skillsLine = (profile.skills_short || profile.skills || '').slice(0, 300);
 
   const fieldsList = fields.map(f => {
     const opts = f.radio_options?.length ? ` (options: ${f.radio_options.join(' | ')})` :
-                 f.select_options?.length ? ` (options: ${f.select_options.slice(0, 8).join(' | ')})` : '';
+                 f.select_options?.length ? ` (options: ${f.select_options.slice(0, 6).join(' | ')})` : '';
     return `"${normalizeLabel(f.label_text)}": "..."  // ${f.label_text}${opts}`;
   }).join('\n');
 
   return {
-    system: `You are filling a job application for ${jobCtx.company} — ${jobCtx.title}.
-Be specific, factual, and concise. Never invent facts not in the candidate profile.
-Return ONLY a valid JSON object with normalized field keys as keys and answers as string values.
-No explanation, no markdown outside the JSON block.`,
-    user: `Candidate: ${profile.full_name || 'Pranav Tushar Pradhan'} | ${profile.current_title || 'AI Research Engineer Intern'} | ${profile.education_degree} from ${profile.education_school}
-
+    system: `Fill a job application. Return ONLY valid JSON {key:answer}. No markdown, no explanation. Never invent facts.`,
+    user: `Job: ${jobCtx.company} — ${jobCtx.title}
+Candidate: ${profile.full_name || 'Pranav Tushar Pradhan'} | ${profile.current_title || 'AI Research Engineer Intern'} | ${profile.education_degree} from ${profile.education_school}
 Skills: ${skillsLine}
-
 Experience:
 ${workHighlights}
+JD: ${(jobCtx.jd_text || '').slice(0, 800)}
 
-Job description (excerpt):
-${(jobCtx.jd_text || '').slice(0, 2000)}
+Rules: specific+factual, under 100 words for open-ended, first person, no AI buzzwords (passionate/leverage/delve/synergy), no em dashes.
 
-Rules:
-1. Be specific: reference candidate's actual projects, companies, tools and real numbers
-2. Never invent facts (no fake companies, tools, or dates not in the profile)
-3. Open-ended answers: under 120 words, first person, slightly informal tone
-4. Yes/No questions: answer from profile facts
-5. Contact fields: use exact profile values
-6. NO em dashes (—) anywhere. Use commas or short sentences
-7. NO AI buzzwords: passionate, excited, leverage, delve, thrilled, dynamic, synergy, spearhead, cutting-edge, utilize, robust, transformative, seamlessly, empower
-8. Sound like a real recent grad, not a polished corporate template
-
-Fields to fill:
+Fields:
 ${fieldsList}
 
-Return JSON: { "field_key": "answer", ... }`
+JSON:`
   };
 }
 
@@ -292,11 +278,11 @@ async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
   const claudeFields = fields.filter(f => !STATIC_PROFILE_KEYS.has(normalizeLabel(f.label_text)));
   if (claudeFields.length === 0) return { ok: true, answers: {}, fieldsCount: 0, stage: 'skipped', reviewedBy: 'none' };
 
-  // Agent 1 — Drafter
+  // Agent 1 — Drafter (shorter prompt → faster Haiku response)
   let draftRaw;
   try {
     const { system: draftSys, user: draftUser } = buildDraftPrompt(claudeFields, jobCtx, profile);
-    draftRaw = await callClaude(apiKey, draftSys, draftUser, 1500);
+    draftRaw = await callClaude(apiKey, draftSys, draftUser, 800);
   } catch(err) {
     const msg = err.status === 429
       ? 'Rate limited by Claude API (resets in ~1 h)'
@@ -310,15 +296,15 @@ async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
     return { ok: false, answers: {}, error: `Drafter returned no parseable JSON. Raw: ${draftRaw.slice(0, 200)}`, stage: 'drafter_parse', fieldsCount: claudeFields.length, reviewedBy: 'none' };
   }
 
-  // Agent 2 — Reviewer
+  // Agent 2 — Reviewer: only run for small batches (≤6 fields) to stay within timeout
   let finalAnswers = draftAnswers;
   let reviewedBy = 'auto';
   const rateLimited = await isRateLimited();
 
-  if (!rateLimited) {
+  if (!rateLimited && claudeFields.length <= 6) {
     try {
       const { system: revSys, user: revUser } = buildReviewPrompt(draftAnswers, claudeFields, jobCtx, profile);
-      const reviewRaw = await callClaude(apiKey, revSys, revUser, 1200);
+      const reviewRaw = await callClaude(apiKey, revSys, revUser, 800);
       const reviewed = parseBatchResponse(reviewRaw, claudeFields);
       if (reviewed && Object.keys(reviewed).length > 0) {
         finalAnswers = reviewed;
@@ -334,7 +320,7 @@ async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
     }
   } else {
     finalAnswers = autoReview(draftAnswers, claudeFields, profile);
-    reviewedBy = 'auto (rate limited)';
+    reviewedBy = claudeFields.length > 6 ? 'auto (large batch)' : 'auto (rate limited)';
   }
 
   await learnFromAnswers(finalAnswers, claudeFields);
@@ -594,6 +580,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     default:
       return false;
   }
+});
+
+// ─── Long-lived port for Claude calls ────────────────────────────────────────
+// sendMessage has a ~5 min SW lifetime; long-lived ports keep the SW alive
+// for the full duration of the Claude API call (60-90s for Haiku on large batches).
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'claude_request') return;
+
+  port.onMessage.addListener(async (msg) => {
+    if (msg.type !== 'GET_ANSWERS_VIA_PORT') return;
+    try {
+      const result = await getAnswers(msg.fields, msg.jobCtx);
+      port.postMessage({ type: 'GET_ANSWERS_RESULT', result });
+    } catch(err) {
+      port.postMessage({ type: 'GET_ANSWERS_RESULT', result: {
+        ok: false, answers: {}, error: err.message, source: 'exception', fieldsCount: 0, reviewedBy: 'none',
+      }});
+    }
+  });
 });
 
 // On install or update — reload profile from data/profile.json
