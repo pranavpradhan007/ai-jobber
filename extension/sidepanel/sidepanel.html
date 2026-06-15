@@ -129,6 +129,7 @@
     line-height: 1.6;
   }
   .empty-icon { font-size: 36px; margin-bottom: 12px; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 </style>
 </head>
 <body>
@@ -145,6 +146,13 @@
   <span id="statFilled">0 filled</span>
   <span id="statClaude">0 via Claude</span>
   <span id="statSkipped">0 skipped</span>
+</div>
+<div id="claudeStatusBar" style="display:none;padding:7px 16px;font-size:11px;border-bottom:1px solid #e8eaed;display:flex;align-items:flex-start;gap:8px;flex-shrink:0">
+  <span id="claudeStatusDot" style="width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:3px;background:#bdbdbd"></span>
+  <div>
+    <div id="claudeStatusText" style="font-weight:600;color:#5f6368">Claude: waiting</div>
+    <div id="claudeStatusDetail" style="color:#80868b;margin-top:2px;line-height:1.4"></div>
+  </div>
 </div>
 <div class="scroll-area" id="scrollArea">
   <div id="tabFields">

@@ -126,31 +126,39 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
         showStatus(`${fillResult.filled} filled from profile. Asking Claude for the rest...`, 'info');
 
         // Step 4b: Show partial results in sidepanel immediately
+        const pendingStatus = fillResult.needsClaude?.length > 0
+          ? { ok: null, error: null, source: 'calling', fieldsCount: fillResult.needsClaude.length, reviewedBy: null, stage: 'calling' }
+          : { ok: true, error: null, source: 'none_needed', fieldsCount: 0, reviewedBy: 'none' };
         chrome.runtime.sendMessage({
           type: 'FILL_COMPLETE',
           fillResult,
           jobCtx: _currentJobCtx,
-          claudeAnswers: null,
+          claudeStatus: pendingStatus,
         });
 
-        // Step 5: Claude fills remaining fields (non-blocking from user's perspective)
+        // Step 5: Claude fills remaining fields
+        let claudeStatus = { ok: null, error: null, source: null, fieldsCount: 0, reviewedBy: null };
+
         if (fillResult.needsClaude && fillResult.needsClaude.length > 0) {
-          let claudeAnswers = null;
+          showStatus(`Sending ${fillResult.needsClaude.length} fields to Claude...`, 'info');
+
+          let result;
           try {
-            claudeAnswers = await chrome.runtime.sendMessage({
+            result = await chrome.runtime.sendMessage({
               type: 'GET_ANSWERS',
               fields: fillResult.needsClaude,
               jobCtx: _currentJobCtx,
             });
           } catch(e) {
-            console.warn('JobberAI: Claude GET_ANSWERS failed', e);
+            result = { ok: false, answers: null, error: 'Message send failed: ' + e.message, source: 'exception', fieldsCount: fillResult.needsClaude.length, reviewedBy: 'none' };
           }
 
-          if (claudeAnswers && Object.keys(claudeAnswers).length > 0) {
-            // Fill Claude's answers into remaining fields
+          claudeStatus = result || { ok: false, answers: null, error: 'No response from service worker', source: 'no_response', fieldsCount: fillResult.needsClaude.length, reviewedBy: 'none' };
+
+          if (result && result.ok && result.answers && Object.keys(result.answers).length > 0) {
             for (const f of fillResult.needsClaude) {
               const key = normalizeLabel(f.label_text);
-              const ans = claudeAnswers[key] || claudeAnswers[f.label_text];
+              const ans = result.answers[key] || result.answers[f.label_text];
               if (ans) {
                 const ok = await fillField(f, ans);
                 if (ok) {
@@ -160,21 +168,23 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
                 }
               }
             }
-            showStatus(`Done! ${fillResult.filled} filled (${fillResult.claude} via Claude).`, 'success');
+            showStatus(`Done! ${fillResult.filled} filled (${fillResult.claude} via Claude, reviewed by ${result.reviewedBy}).`, 'success');
           } else {
-            showStatus(`Done! ${fillResult.filled} filled. Claude unavailable for ${fillResult.needsClaude.length} fields.`, 'warn');
+            const errMsg = result?.error || 'No answers returned';
+            showStatus(`Claude failed: ${errMsg}`, 'error');
           }
-
-          // Update sidepanel with final results
-          chrome.runtime.sendMessage({
-            type: 'FILL_COMPLETE',
-            fillResult,
-            jobCtx: _currentJobCtx,
-            claudeAnswers,
-          });
         } else {
+          claudeStatus = { ok: true, error: null, source: 'none_needed', fieldsCount: 0, reviewedBy: 'none' };
           showStatus(`Done! ${fillResult.filled} filled from profile.`, 'success');
         }
+
+        // Final sidepanel update with full status
+        chrome.runtime.sendMessage({
+          type: 'FILL_COMPLETE',
+          fillResult,
+          jobCtx: _currentJobCtx,
+          claudeStatus,
+        });
 
       } catch(err) {
         console.error('JobberAI: autofill error', err);

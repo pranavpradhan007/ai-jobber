@@ -5,7 +5,74 @@ let _currentFillResult = null;
 
 // ─── Render fill results ──────────────────────────────────────────────────────
 
-function renderFields(fillResult, jobCtx) {
+function renderClaudeStatus(claudeStatus) {
+  const bar   = document.getElementById('claudeStatusBar');
+  const dot   = document.getElementById('claudeStatusDot');
+  const text  = document.getElementById('claudeStatusText');
+  const detail = document.getElementById('claudeStatusDetail');
+
+  bar.style.display = 'flex';
+
+  if (!claudeStatus) {
+    dot.style.background = '#bdbdbd';
+    text.textContent = 'Claude: not called';
+    text.style.color = '#80868b';
+    detail.textContent = '';
+    return;
+  }
+
+  if (claudeStatus.stage === 'calling') {
+    dot.style.background = '#fbbc04';
+    dot.style.animation = 'pulse 1s infinite';
+    text.textContent = `Claude: calling… (${claudeStatus.fieldsCount} fields)`;
+    text.style.color = '#e65100';
+    detail.textContent = 'Waiting for Haiku response via proxy…';
+    return;
+  }
+
+  const { ok, error, source, fieldsCount, reviewedBy } = claudeStatus;
+
+  if (source === 'none_needed') {
+    dot.style.background = '#34a853';
+    text.textContent = 'Claude: not needed';
+    text.style.color = '#2e7d32';
+    detail.textContent = 'All fields filled from profile/memory.';
+    return;
+  }
+
+  if (source === 'rate_limited') {
+    dot.style.background = '#fbbc04';
+    text.textContent = 'Claude: rate limited';
+    text.style.color = '#e65100';
+    detail.textContent = error || '';
+    return;
+  }
+
+  if (source === 'proxy_down') {
+    dot.style.background = '#ea4335';
+    text.textContent = 'Claude: proxy not running';
+    text.style.color = '#c62828';
+    detail.textContent = error || 'Start start_proxy.bat and try again.';
+    return;
+  }
+
+  if (!ok) {
+    dot.style.background = '#ea4335';
+    text.textContent = `Claude: error at "${claudeStatus.stage || 'unknown'}"`;
+    text.style.color = '#c62828';
+    detail.textContent = error || 'Unknown error';
+    return;
+  }
+
+  // Success
+  dot.style.background = '#34a853';
+  const answered = claudeStatus.answers ? Object.keys(claudeStatus.answers).length : 0;
+  text.textContent = `Claude: filled ${answered} field${answered !== 1 ? 's' : ''}`;
+  text.style.color = '#1b5e20';
+  detail.textContent = `${fieldsCount} sent · reviewed by ${reviewedBy} · via ${source}`;
+}
+
+function renderFields(fillResult, jobCtx, claudeStatus) {
   _currentFillResult = fillResult;
   _currentJobCtx = jobCtx;
 
@@ -21,6 +88,9 @@ function renderFields(fillResult, jobCtx) {
   document.getElementById('statClaude').textContent = `${fillResult.claude || 0} via Claude`;
   document.getElementById('statSkipped').textContent = `${fillResult.skipped || 0} skipped`;
   document.getElementById('statsBar').style.display = '';
+
+  // Claude status bar
+  renderClaudeStatus(claudeStatus || null);
 
   // Source badge
   const badge = document.getElementById('sourceBadge');
@@ -114,14 +184,14 @@ document.getElementById('btnSubmit').addEventListener('click', async () => {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'FILL_COMPLETE') {
-    renderFields(msg.fillResult, msg.jobCtx);
+    renderFields(msg.fillResult, msg.jobCtx, msg.claudeStatus);
   }
 });
 
 // ─── Load previous fill result on open ───────────────────────────────────────
 
-chrome.storage.local.get(['lastFillResult', 'lastJobCtx']).then(({ lastFillResult, lastJobCtx }) => {
+chrome.storage.local.get(['lastFillResult', 'lastJobCtx', 'lastClaudeStatus']).then(({ lastFillResult, lastJobCtx, lastClaudeStatus }) => {
   if (lastFillResult) {
-    renderFields(lastFillResult, lastJobCtx);
+    renderFields(lastFillResult, lastJobCtx, lastClaudeStatus);
   }
 });

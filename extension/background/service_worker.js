@@ -287,75 +287,96 @@ async function learnFromAnswers(answers, fields) {
 
 // ─── Three-agent pipeline ──────────────────────────────────────────────────────
 
+// Returns { ok, answers, error, stage, fieldsCount, reviewedBy }
 async function getLLMAnswers(apiKey, fields, jobCtx, profile) {
-  // Only pass fields that need Claude (filter out static/profile fields)
-  const claudeFields = fields.filter(f => {
-    const key = normalizeLabel(f.label_text);
-    return !STATIC_PROFILE_KEYS.has(key);
-  });
-
-  if (claudeFields.length === 0) return {};
+  const claudeFields = fields.filter(f => !STATIC_PROFILE_KEYS.has(normalizeLabel(f.label_text)));
+  if (claudeFields.length === 0) return { ok: true, answers: {}, fieldsCount: 0, stage: 'skipped', reviewedBy: 'none' };
 
   // Agent 1 — Drafter
-  const { system: draftSys, user: draftUser } = buildDraftPrompt(claudeFields, jobCtx, profile);
-  const draftRaw = await callClaude(apiKey, draftSys, draftUser, 1500);
-  const draftAnswers = parseBatchResponse(draftRaw, claudeFields);
+  let draftRaw;
+  try {
+    const { system: draftSys, user: draftUser } = buildDraftPrompt(claudeFields, jobCtx, profile);
+    draftRaw = await callClaude(apiKey, draftSys, draftUser, 1500);
+  } catch(err) {
+    const msg = err.status === 429
+      ? 'Rate limited by Claude API (resets in ~1 h)'
+      : `Drafter failed: ${err.message}`;
+    if (err.status === 429) await setRateLimited();
+    return { ok: false, answers: {}, error: msg, stage: 'drafter', fieldsCount: claudeFields.length, reviewedBy: 'none' };
+  }
 
-  // Agent 2 — Reviewer (Claude or Auto Reviewer fallback)
+  const draftAnswers = parseBatchResponse(draftRaw, claudeFields);
+  if (!draftAnswers || Object.keys(draftAnswers).length === 0) {
+    return { ok: false, answers: {}, error: `Drafter returned no parseable JSON. Raw: ${draftRaw.slice(0, 200)}`, stage: 'drafter_parse', fieldsCount: claudeFields.length, reviewedBy: 'none' };
+  }
+
+  // Agent 2 — Reviewer
   let finalAnswers = draftAnswers;
+  let reviewedBy = 'auto';
   const rateLimited = await isRateLimited();
 
-  if (!rateLimited && Object.keys(draftAnswers).length > 0) {
+  if (!rateLimited) {
     try {
       const { system: revSys, user: revUser } = buildReviewPrompt(draftAnswers, claudeFields, jobCtx, profile);
       const reviewRaw = await callClaude(apiKey, revSys, revUser, 1200);
       const reviewed = parseBatchResponse(reviewRaw, claudeFields);
-      if (Object.keys(reviewed).length > 0) finalAnswers = reviewed;
-    } catch(err) {
-      if (err.status === 429) {
-        await setRateLimited();
+      if (reviewed && Object.keys(reviewed).length > 0) {
+        finalAnswers = reviewed;
+        reviewedBy = 'claude';
+      } else {
         finalAnswers = autoReview(draftAnswers, claudeFields, profile);
+        reviewedBy = 'auto (reviewer returned no JSON)';
       }
+    } catch(err) {
+      if (err.status === 429) await setRateLimited();
+      finalAnswers = autoReview(draftAnswers, claudeFields, profile);
+      reviewedBy = `auto (reviewer error: ${err.message})`;
     }
   } else {
     finalAnswers = autoReview(draftAnswers, claudeFields, profile);
+    reviewedBy = 'auto (rate limited)';
   }
 
   await learnFromAnswers(finalAnswers, claudeFields);
-  return finalAnswers;
+  return { ok: true, answers: finalAnswers, fieldsCount: claudeFields.length, stage: 'done', reviewedBy };
 }
 
+// Returns { ok, answers, error, source, fieldsCount, reviewedBy }
 async function getAnswers(fields, jobCtx) {
   const { profile = {} } = await chrome.storage.local.get('profile');
   const { memory = {} } = await chrome.storage.local.get('memory');
 
   const rateLimited = await isRateLimited();
   if (rateLimited) {
-    // Claude hit rate limit recently — use profile+memory fallback
-    return null;
+    const { claudeRateLimitedAt } = await chrome.storage.local.get('claudeRateLimitedAt');
+    const mins = Math.ceil((RATE_LIMIT_TTL - (Date.now() - claudeRateLimitedAt)) / 60000);
+    return { ok: false, answers: null, error: `Rate limited — resets in ~${mins} min`, source: 'rate_limited', fieldsCount: 0, reviewedBy: 'none' };
   }
 
-  const apiKey = await getApiKey(); // null = use local proxy
+  const needsLLM = fields.filter(f => {
+    const key = normalizeLabel(f.label_text);
+    return !STATIC_PROFILE_KEYS.has(key) && !memory[key];
+  });
 
-  try {
-    // Only send fields that couldn't be resolved from profile/memory
-    const needsLLM = fields.filter(f => {
-      // Quick check: if resolveAnswer would return '_needs_claude', include it
-      const key = normalizeLabel(f.label_text);
-      return !STATIC_PROFILE_KEYS.has(key) && !memory[key];
-    });
+  if (needsLLM.length === 0) {
+    return { ok: true, answers: {}, error: null, source: 'none_needed', fieldsCount: 0, reviewedBy: 'none' };
+  }
 
-    if (needsLLM.length === 0) return null;
+  const apiKey = await getApiKey();
 
-    return await getLLMAnswers(apiKey, needsLLM, jobCtx, profile);
-  } catch(err) {
-    if (err.status === 429) {
-      await setRateLimited();
-      return null;
+  // Verify proxy is reachable before spending time on the call
+  if (!apiKey) {
+    try {
+      const ping = await fetch('http://localhost:3747/health', { signal: AbortSignal.timeout(2000) });
+      if (!ping.ok) throw new Error(`Proxy returned HTTP ${ping.status}`);
+    } catch(pingErr) {
+      return { ok: false, answers: null, error: `Proxy unreachable: ${pingErr.message} — run start_proxy.bat`, source: 'proxy_down', fieldsCount: needsLLM.length, reviewedBy: 'none' };
     }
-    console.error('JobberAI: getLLMAnswers error:', err);
-    return null;
   }
+
+  const result = await getLLMAnswers(apiKey, needsLLM, jobCtx, profile);
+  result.source = apiKey ? 'direct_api' : 'proxy';
+  return result;
 }
 
 // ─── Gmail proxy ──────────────────────────────────────────────────────────────
@@ -473,8 +494,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'GET_ANSWERS':
       getAnswers(msg.fields, msg.jobCtx)
-        .then(answers => sendResponse(answers))
-        .catch(err => { console.error(err); sendResponse(null); });
+        .then(result => sendResponse(result))
+        .catch(err => sendResponse({ ok: false, answers: null, error: err.message, source: 'exception', fieldsCount: 0, reviewedBy: 'none' }));
       return true;
 
     case 'GMAIL_SEARCH':
@@ -506,7 +527,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
 
     case 'FILL_COMPLETE':
-      chrome.storage.local.set({ lastFillResult: msg.fillResult, lastJobCtx: msg.jobCtx });
+      chrome.storage.local.set({ lastFillResult: msg.fillResult, lastJobCtx: msg.jobCtx, lastClaudeStatus: msg.claudeStatus || null });
       chrome.sidePanel.open({ tabId: sender.tab?.id }).catch(() => {});
       sendResponse({ ok: true });
       return true;
