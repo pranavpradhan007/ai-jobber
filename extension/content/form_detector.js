@@ -33,11 +33,18 @@ function detectFormFields() {
     let depth = 0;
     while (parent && depth < 5) {
       if (parent.tagName === 'LABEL') {
-        return (parent.innerText || parent.textContent || '').replace(/\s+/g, ' ');
+        // Strip nested input/select/textarea text so country lists don't leak into label
+        const clone = parent.cloneNode(true);
+        clone.querySelectorAll('input, select, textarea, button').forEach(c => c.remove());
+        const t = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t) return t;
       }
       const childLbl = parent.querySelector(':scope > label');
       if (childLbl) {
-        return (childLbl.innerText || childLbl.textContent || '').replace(/\s+/g, ' ');
+        const clone = childLbl.cloneNode(true);
+        clone.querySelectorAll('input, select, textarea, button').forEach(c => c.remove());
+        const t = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t) return t;
       }
       parent = parent.parentElement;
       depth++;
@@ -49,10 +56,9 @@ function detectFormFields() {
 
   function isVisible(el) {
     const elType = (el.type || '').toLowerCase();
-    // Radio and checkbox inputs are routinely visually-hidden behind styled labels
-    // (screen-reader accessibility pattern used by Ashby, Lever, Greenhouse, etc.)
+    // Radio, checkbox, and file inputs are routinely visually-hidden behind styled elements.
     // Don't apply bounding-box or opacity checks for them.
-    const isToggle = (elType === 'radio' || elType === 'checkbox');
+    const isToggle = (elType === 'radio' || elType === 'checkbox' || elType === 'file');
 
     try {
       const style = window.getComputedStyle(el);
@@ -146,9 +152,10 @@ function detectFormFields() {
     if (type === 'hidden') return;
     if (type === 'password') return;
     if (el.disabled) return;
-    // Allow tabindex=-1 on radio/checkbox (Ashby hides them with tabindex=-1 + CSS)
-    if (safeAttr(el, 'tabindex') === '-1' && type !== 'radio' && type !== 'checkbox') return;
-    if (!isVisible(el)) return;
+    // Allow tabindex=-1 on radio/checkbox/file (all are routinely hidden behind styled elements)
+    if (safeAttr(el, 'tabindex') === '-1' && type !== 'radio' && type !== 'checkbox' && type !== 'file') return;
+    // File inputs are always hidden (display:none / opacity:0) behind a styled upload button
+    if (type !== 'file' && !isVisible(el)) return;
 
     const label = (getLabel(el, domRoot) || '').trim().replace(/\s+/g, ' ');
     const dedupeKey = tag + ':' + (el.name || '') + ':' + (el.id || '') + ':' + label;

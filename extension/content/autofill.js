@@ -87,6 +87,10 @@ const LABEL_ALIASES = {
   "your location":                    "location",
   "city, state":                      "location",
   "city or state":                    "location",
+  "what is your location":            "address_country",
+  "location (country)":               "address_country",
+  "country of residence":             "address_country",
+  "country of location":              "address_country",
   "skills":                   "skills",
   "technical skills":         "skills",
   "key skills":               "skills",
@@ -115,6 +119,14 @@ const LABEL_ALIASES = {
   "notice period":            "notice_period",
   "available start date":     "start_date",
   "start date":               "start_date",
+  "previously worked here":   "previously_worked_here",
+  "have you worked here":     "previously_worked_here",
+  "have you previously worked here": "previously_worked_here",
+  "other website":            "portfolio_url",
+  "other websites":           "portfolio_url",
+  "other url":                "portfolio_url",
+  "other link":               "portfolio_url",
+  "additional links":         "portfolio_url",
   "strength":                 "strength",
   "greatest strength":        "strength",
   "address line 2":           null,
@@ -147,8 +159,21 @@ const QUESTION_BANK = [
   { re: /driver.{0,10}licen|driving.{0,10}licen|valid.{0,10}licen/i,                                key: "_yes" },
   { re: /18.{0,10}(years|or older)|over.{0,5}18|legal.{0,10}age|at least 18|18\+|over the age of 18/i, key: "_yes" },
 
-  // Pronouns / gender
+  // Pronouns — group label OR individual checkbox option labels
   { re: /pronoun/i,                                                                                   key: "_pronouns" },
+  // Individual pronoun checkbox options — check He/Him, skip all others
+  { re: /^he\s*[\/|]\s*him$/i,                                                                        key: "_yes" },
+  { re: /^she\s*[\/|]\s*her$/i,                                                                       key: "_no" },
+  { re: /^they\s*[\/|]\s*them$/i,                                                                     key: "_no" },
+  { re: /^xe\s*[\/|]\s*xem$/i,                                                                        key: "_no" },
+  { re: /^ze\s*[\/|]\s*hir$/i,                                                                        key: "_no" },
+  { re: /^ey\s*[\/|]\s*em$/i,                                                                         key: "_no" },
+  { re: /^hir\s*[\/|]\s*hir$/i,                                                                       key: "_no" },
+  { re: /^fae\s*[\/|]\s*faer$/i,                                                                      key: "_no" },
+  { re: /^hu\s*[\/|]\s*hu$/i,                                                                         key: "_no" },
+  { re: /^use\s+name\s+only$/i,                                                                        key: "_no" },
+  { re: /^custom$/i,                                                                                    key: "_no" },
+  { re: /^prefer not to say$|^no pronoun|^decline.*pronoun/i,                                         key: "_no" },
 
   // Today's date
   { re: /today.{0,10}date|current.{0,10}date|date.{0,10}today|date.{0,5}sign/i,                   key: "_today" },
@@ -166,12 +191,15 @@ const QUESTION_BANK = [
   { re: /conflict.{0,15}interest/i,                                                                  key: "_no" },
   { re: /currently.{0,15}(active|hold).{0,15}security.{0,10}clearance/i,                           key: "_no" },
   { re: /security.{0,10}clearance/i,                                                                 key: "_no" },
-  { re: /previously.{0,15}(apply|applied|work|employ).{0,20}(here|this company|with us|by us)/i,   key: "_no" },
-  { re: /worked.{0,20}(here|this company|for us) before/i,                                         key: "_no" },
-  { re: /previously.{0,20}employed|formerly.{0,20}employed|ever.{0,20}employed.{0,20}by/i,         key: "_no" },
+  // "Previously worked at [company]?" — broad pattern covers "here", named company, etc.
+  { re: /previously.{0,30}(work|employ).{0,40}(at|for|by|with|here|this company|with us|by us)|have you.{0,30}(work|been employ).{0,30}(at|for|by)|worked.{0,20}(here|for us|this company) before|ever.{0,20}work.{0,10}(at|for|here)/i, key: "previously_worked_here" },
+  { re: /formerly.{0,20}employed|ever.{0,20}employed.{0,20}by/i,                                   key: "previously_worked_here" },
   { re: /contract.{0,10}(prevent|restrict|prohibit)|restrictive.{0,10}covenant/i,                  key: "_no" },
   { re: /currently.{0,15}employ|are you.{0,15}(currently.{0,5})?employ/i,                         key: "_no" },
   { re: /on.?call|available.{0,10}on.?call/i,                                                       key: "_yes" },
+  // Employment-type checkboxes (e.g. Lever's 'Yes, full-time employment' / 'Yes, intern')
+  { re: /full.?time.{0,25}(employ|position|role|opportunit)/i,                                        key: "_yes" },
+  { re: /^intern(\.?ship)?$|yes.{0,10}intern|intern.{0,20}(employ|opportunit|role)/i,                key: "_no"  },
   { re: /overtime|willing.{0,10}(to work )?overtime/i,                                              key: "_yes" },
   { re: /willing.{0,15}travel|open.{0,10}travel|travel.{0,10}required/i,                           key: "_yes" },
   { re: /drug.{0,10}test|substance.{0,10}test|consent.{0,10}drug/i,                               key: "_yes" },
@@ -194,13 +222,13 @@ const QUESTION_BANK = [
   { re: /github|github.{0,10}url|github.{0,10}profile/i,                                            key: "github_url" },
   { re: /portfolio|personal.{0,10}website|website.{0,10}url/i,                                      key: "portfolio_url" },
   { re: /cover.{0,10}letter|additional.{0,15}comment|anything.{0,20}add/i,                          key: "cover_letter_default" },
-  // Demographic survey / location selects
-  { re: /what.{0,10}(is|is your).{0,10}location|demographic.{0,15}location|survey.{0,10}location/i, key: "address_state" },
+  // Demographic survey / location selects — country dropdown uses address_country, not state
+  { re: /what.{0,10}(is|is your).{0,10}location|demographic.{0,15}location|survey.{0,10}location/i, key: "address_country" },
   // Consent / marketing checkboxes
   { re: /consent.{0,20}(contact|reach|email|newsletter)|may.{0,15}contact.{0,15}(me|you)|future.{0,20}(job|opportun|position)/i, key: "_yes" },
-  { re: /^gender$|gender.{0,10}identity/i,                                                           key: "_gender" },
-  { re: /^race$|^ethnicity$|ethnic.{0,15}group|racial/i,                                            key: "eeo_ethnicity" },
-  { re: /veteran|military.{0,15}status/i,                                                            key: "_no_veteran" },
+  { re: /\bgender\b|gender.{0,10}identity|describe.{0,20}gender/i,                                  key: "_gender" },
+  { re: /\brace\b|\bethnicity\b|ethnic.{0,15}group|racial|race.{0,10}ethnic/i,                     key: "eeo_ethnicity" },
+  { re: /veteran|military.{0,15}(status|service|served)|served.{0,20}military/i,                   key: "_no_veteran" },
   { re: /disabilit/i,                                                                                 key: "_no_disability" },
   // Open-ended → Claude
   { re: /why.{0,20}(us|company|organization|firm)|interest.{0,20}(us|company)/i,                    key: "_claude" },
@@ -228,18 +256,40 @@ const STATIC_SYNTHETIC = {
   "_heard":      "Company career website",
   "_today":      _todayFormatted(),
   "_pronouns":   "He/Him",
-  "_gender":     "Male",
-  "_no_disability": "No, I do not have a disability",
-  "_no_veteran":    "I am not a protected veteran",
+  "_gender":     "Male",      // fuzzyMatchOption alias: male → Man
+  "_no_disability": "No",     // direct "No" — simpler and matches most forms
+  "_no_veteran":    "No",     // direct "No" instead of long string
+};
+
+// Common term aliases for fuzzy matching (handles "Male"→"Man", "Female"→"Woman", etc.)
+const OPTION_ALIASES = {
+  'male':   'man',
+  'female': 'woman',
+  'm':      'man',
+  'f':      'woman',
+  'prefer not to disclose': 'prefer not to disclose',
+  'decline to state':       'prefer not to disclose',
+  'i prefer not to answer': 'prefer not to disclose',
 };
 
 function fuzzyMatchOption(value, options) {
   if (!options || !options.length) return null;
   const target = value.toLowerCase().trim();
+  // 1. Exact match
   let m = options.find(o => o.toLowerCase().trim() === target);
   if (m) return m;
-  m = options.find(o => o.toLowerCase().includes(target) || target.includes(o.toLowerCase().trim()));
-  return m || null;
+  // 2. Substring match — option contains target (not the reverse: avoids "woman" matching "man")
+  m = options.find(o => o.toLowerCase().includes(target));
+  if (m) return m;
+  // 3. Alias table (male→man, female→woman, etc.) — exact match only
+  // substring check MUST NOT be used here: "woman".includes("man") is true,
+  // which would return "Woman" when looking for alias "man".
+  const alias = OPTION_ALIASES[target];
+  if (alias) {
+    m = options.find(o => o.toLowerCase().trim() === alias);
+    if (m) return m;
+  }
+  return null;
 }
 
 function normalizeLabel(text) {
@@ -275,9 +325,8 @@ function resolveAnswer(field, profile, memory) {
       if (key in STATIC_SYNTHETIC) {
         const synth = STATIC_SYNTHETIC[key];
         if (synth === null) return null; // _skip
-        // For select/radio — map Yes/No to the closest available option
-        if ((key === '_yes' || key === '_no') &&
-            (field.select_options?.length || field.radio_options?.length)) {
+        // Always fuzzy-match against available options (handles Male→Man, Yes→Ja, etc.)
+        if (field.select_options?.length || field.radio_options?.length) {
           const opts = field.select_options?.length ? field.select_options : field.radio_options;
           return fuzzyMatchOption(synth, opts) ?? synth;
         }
@@ -290,10 +339,63 @@ function resolveAnswer(field, profile, memory) {
   }
 
   // Tier 3: memory lookup — exact then fuzzy token overlap
+  // Guard: skip memory for labels shorter than 5 chars (e.g. "no", "yes", "ok")
+  // Also skip if memory answer is a "decline/prefer not" placeholder — let Tier 3.5 pick real EEO value
   const memKey = normalizeLabel(label);
-  if (memory[memKey]) return memory[memKey].answer;
-  const fuzzyHit = fuzzyMemoryLookup(label, memory);
-  if (fuzzyHit) return fuzzyHit.answer;
+  if (memKey.length >= 5 && memory[memKey]) {
+    const memAns = memory[memKey].answer;
+    if (!/prefer not|decline|not wish to answer|not want to/i.test(String(memAns))) {
+      return memAns;
+    }
+  }
+  const fuzzyHit = memKey.length >= 5 ? fuzzyMemoryLookup(label, memory) : null;
+  if (fuzzyHit) {
+    const fuzzyAns = fuzzyHit.answer;
+    if (!/prefer not|decline|not wish to answer|not want to/i.test(String(fuzzyAns))) {
+      return fuzzyAns;
+    }
+  }
+
+  // Tier 3.5: Infer EEO field type from options content (select_options OR radio_options).
+  // Lever EEO survey uses radio groups with UUID names — options live in radio_options, not select_options.
+  const _eeoOpts = (field.select_options && field.select_options.length > 0)
+    ? field.select_options
+    : (field.radio_options && field.radio_options.length > 0 ? field.radio_options : null);
+  if (_eeoOpts) {
+    console.log('[T3.5]', label.slice(0,50), '| opts:', _eeoOpts.slice(0,5));
+    const optText = _eeoOpts.map(o => o.toLowerCase()).join(' ');
+    let guess = null;
+    // Gender: has "woman" OR "female" OR "non-binary" — but NOT veteran/disability keywords
+    if (/\bwoman\b|\bnon.?binary\b|\bgenderqueer\b|\btransgender\b|\bfemale\b/.test(optText)
+        && !/\bveteran\b|\bdisabilit\b|\bprotected\b/.test(optText)) {
+      const genderVal = profile.eeo_gender || profile.gender || 'Male';
+      guess = fuzzyMatchOption(genderVal, _eeoOpts);
+      // Safety: if we got "Woman"/"Female" but eeo_gender is Male, something went wrong — skip
+      if (guess && /woman|female/i.test(guess) && /male|man/i.test(genderVal)) guess = null;
+    }
+    // Ethnicity: specific racial/ethnic group names
+    if (!guess && /\basian\b|\bhispanic\b|\bamerican indian\b|\bnative hawaiian\b|\bblack or african\b|\btwo or more races\b/.test(optText)) {
+      guess = fuzzyMatchOption(profile.eeo_ethnicity || 'Asian', _eeoOpts);
+    }
+    // Veteran: contains "veteran" or "military service" — not gender/ethnicity
+    if (!guess && /\bveteran\b|\bmilitary service\b|\bprotected veteran\b/.test(optText)
+        && !/\bgender\b|\bethnicit\b|\brace\b|\bwoman\b/.test(optText)) {
+      // Find "not a veteran" / "I am not" type option, fallback to last option (usually opt-out)
+      guess = _eeoOpts.find(o => /not.{0,10}(a |protected )?veteran|i am not/i.test(o))
+           || fuzzyMatchOption('No', _eeoOpts);
+    }
+    // Disability: contains "disability" — not gender/ethnicity
+    if (!guess && /\bdisabilit\b|\bdisabled\b/.test(optText)
+        && !/\bgender\b|\bethnicit\b|\brace\b/.test(optText)) {
+      guess = _eeoOpts.find(o => /no.{0,5}(,|i )?.{0,20}(don.t|do not|without|not have).{0,20}disabilit|i don.t have/i.test(o))
+           || fuzzyMatchOption('No', _eeoOpts);
+    }
+    // Unknown survey type with a "decline/choose not" option — pick it to stay safe
+    if (!guess && /prefer not|decline|choose not|wish not/i.test(optText)) {
+      guess = _eeoOpts.find(o => /prefer not|decline|choose not|wish not/i.test(o)) || null;
+    }
+    if (guess) return guess;
+  }
 
   // Tier 4: field-type fallback
   if (field.field_type === 'email') return profile.email || null;
@@ -317,9 +419,13 @@ function fillSelect(el, value) {
   // exact match first
   let opt = opts.find(o => o.text.toLowerCase().trim() === target);
   // partial match
-  if (!opt) opt = opts.find(o => o.text.toLowerCase().includes(target) || target.includes(o.text.toLowerCase()));
+  if (!opt) opt = opts.find(o => o.text.toLowerCase().includes(target) || target.includes(o.text.toLowerCase().trim()));
   // value attribute match
   if (!opt) opt = opts.find(o => o.value.toLowerCase() === target);
+  // Country select fallback: if 50+ options and looks like a country list, use United States
+  if (!opt && opts.length > 50 && opts.some(o => /^united states$/i.test(o.text.trim()))) {
+    opt = opts.find(o => /^united states$/i.test(o.text.trim()));
+  }
   if (opt) {
     el.value = opt.value;
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -412,6 +518,7 @@ async function uploadFile(el) {
   dt.items.add(file);
   el.files = dt.files;
   el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.dispatchEvent(new InputEvent('input', { bubbles: true }));
 }
 
 async function _fillText(el, value) {
@@ -457,17 +564,41 @@ async function _fillText(el, value) {
 }
 
 async function fillAutocomplete(el, value) {
-  // For Google Places / typeahead inputs — type the value to trigger suggestions,
-  // then accept the first suggestion via click or keyboard.
+  // Google Places / typeahead — must simulate real typing to trigger API lookup.
+  // execCommand('insertText') is the closest to native input that Places accepts.
   el.focus();
-  // Type just the first meaningful part (city name before comma)
-  const typeValue = value.split(',')[0].trim();
-  await _fillText(el, typeValue);
 
-  // Wait for autocomplete dropdown to populate
-  await sleep(1400);
+  // Clear any existing value first
+  const proto = el instanceof HTMLTextAreaElement
+    ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+  const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+  if (desc?.set) { desc.set.call(el, ''); }
+  else { el.value = ''; }
+  el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
 
-  // Try clicking the first suggestion in any known dropdown pattern
+  // Type character-by-character with real KeyboardEvents so Places API triggers
+  const typeValue = value; // use full "New York, NY" not just "New York"
+  for (const char of typeValue) {
+    const code = char.charCodeAt(0);
+    el.dispatchEvent(new KeyboardEvent('keydown',  { key: char, keyCode: code, which: code, bubbles: true, composed: true }));
+    el.dispatchEvent(new KeyboardEvent('keypress', { key: char, keyCode: code, which: code, bubbles: true, composed: true }));
+    // Append the character using native setter so React sees it
+    if (desc?.set) desc.set.call(el, el.value + char);
+    else el.value += char;
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: char, inputType: 'insertText' }));
+    el.dispatchEvent(new KeyboardEvent('keyup',    { key: char, keyCode: code, which: code, bubbles: true, composed: true }));
+    await sleep(60); // realistic typing speed
+  }
+
+  // Also try execCommand as a parallel path (works in some contexts)
+  try {
+    el.select?.();
+    document.execCommand('insertText', false, typeValue);
+  } catch(e) {}
+
+  // Wait for Places API response (needs network round-trip)
+  await sleep(2000);
+
   const dropdownSel = [
     '.pac-item', '[role="option"]', '[role="listbox"] [role="option"]',
     '.suggestions li', '.autocomplete-suggestion', '[data-testid*="suggestion"]',
@@ -476,19 +607,22 @@ async function fillAutocomplete(el, value) {
   const first = document.querySelector(dropdownSel);
   if (first) {
     first.click();
-    await sleep(300);
+    await sleep(400);
     return;
   }
 
-  // Fallback: ArrowDown to highlight first suggestion, Enter to select
+  // ArrowDown + Enter to accept first suggestion (keyboard-only forms)
   el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
+  await sleep(400);
+  el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
   await sleep(300);
-  el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter',     keyCode: 13, which: 13, bubbles: true }));
-  await sleep(200);
 
-  // Last resort: if still empty, just set the raw value (at least something is there)
-  if (!el.value || el.value.length < 2) {
-    await _fillText(el, value);
+  // Last resort: force the raw value if field is still empty
+  if (!el.value || el.value.trim().length < 2) {
+    if (desc?.set) { desc.set.call(el, value); }
+    else { el.value = value; }
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 }
 
@@ -540,10 +674,15 @@ async function fillField(field, value) {
     case 'aria_radio':
       fillAriaRadio(field, value);
       break;
-    case 'checkbox':
-      el.checked = isTruthy(value);
+    case 'checkbox': {
+      const wantChecked = isTruthy(value);
+      if (el.checked !== wantChecked) {
+        // Use click() — triggers React's synthetic onClick/onChange (direct el.checked= is ignored by React)
+        el.click();
+      }
       el.dispatchEvent(new Event('change', { bubbles: true }));
       break;
+    }
     case 'file':
       await uploadFile(el);
       break;
@@ -558,8 +697,19 @@ async function autofillPage(profile, memory, claudeAnswers) {
   const results = { filled: 0, skipped: 0, claude: 0, fields: [] };
 
   for (const f of fields) {
+    // File inputs: attempt resume upload directly (no resolveAnswer needed)
+    if (f.field_type === 'file') {
+      await fillField(f, '_file');
+      results.filled++;
+      results.fields.push({ label: f.label_text || 'resume', value: '📎 resume.pdf', source: 'storage' });
+      continue;
+    }
+
+    // Skip pre-filled text/textarea/autocomplete — but ALWAYS re-process selects/radios/checkboxes
+    // because their "current_value" may just be a placeholder default ("Prefer not to disclose", etc.)
     if (f.current_value && f.current_value.length > 2 &&
-        f.field_type !== 'radio' && f.field_type !== 'checkbox') {
+        f.field_type !== 'radio' && f.field_type !== 'checkbox' &&
+        f.field_type !== 'select' && f.field_type !== 'aria_radio') {
       results.skipped++;
       continue;
     }
@@ -569,7 +719,8 @@ async function autofillPage(profile, memory, claudeAnswers) {
       needsClaude.push(f);
       continue;
     }
-    if (ans === null) {
+    // Skip null, empty string, or whitespace-only answers — don't clear existing values
+    if (ans === null || String(ans).trim() === '') {
       results.skipped++;
       continue;
     }
@@ -675,4 +826,57 @@ function fuzzyMemoryLookup(label, memory) {
     }
   }
   return bestEntry;
+}
+
+// ─── DOM value inspection & retry helpers ─────────────────────────────────────
+
+function getFieldDomValue(field) {
+  let el = null;
+  try {
+    if (field.selector) el = document.querySelector(field.selector);
+    if (!el && field.id) el = document.getElementById(field.id);
+  } catch(e) {}
+  if (!el) return null; // element not in DOM — skip
+
+  if (field.field_type === 'radio') {
+    const name = field.group_name || (el.name || '');
+    const checked = name
+      ? document.querySelector(`input[type="radio"][name="${name}"]:checked`)
+      : (el.checked ? el : null);
+    return checked ? (checked.value || 'checked') : '';
+  }
+  if (field.field_type === 'aria_radio') {
+    // Consider aria radios as "filled enough" if the field is aria-based — hard to verify
+    return 'checked';
+  }
+  if (field.field_type === 'checkbox') return el.checked ? 'checked' : '';
+  if (field.field_type === 'select') {
+    if (!el.options || el.options.length === 0) return 'n/a';
+    const idx = el.selectedIndex;
+    if (idx < 0) return '';
+    const opt = el.options[idx];
+    // index 0 is usually placeholder "Select..." — treat as empty
+    return (opt && opt.value && opt.value !== '' && idx > 0) ? opt.value : '';
+  }
+  return (el.value || '').trim();
+}
+
+function isFieldRequired(field) {
+  // Label contains asterisk-style required marker
+  if (/[*✱＊❋★]/.test(field.label_text)) return true;
+  let el = null;
+  try { if (field.selector) el = document.querySelector(field.selector); } catch(e) {}
+  if (el && (el.required || el.getAttribute('aria-required') === 'true')) return true;
+  return false;
+}
+
+// Like resolveAnswer but also falls back to claudeAnswers dict
+function resolveAnswerForRetry(field, profile, memory, claudeAnswers) {
+  const ans = resolveAnswer(field, profile, memory);
+  if (ans !== null && ans !== '_needs_claude') return ans;
+  if (claudeAnswers) {
+    const key = normalizeLabel(field.label_text);
+    return claudeAnswers[key] || claudeAnswers[field.label_text] || null;
+  }
+  return null;
 }

@@ -1,6 +1,7 @@
 // Main orchestrator — runs in page context, wires autofill + login + Claude
 
 let _currentJobCtx = null;
+let _autoApplyStopped = false;
 
 function scrapeJobContext() {
   const titleSelectors = [
@@ -220,7 +221,15 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'AUTOAPPLY_STOP') {
+    _autoApplyStopped = true;
+    showStatus('Auto Apply stopped.', 'warn');
+    chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: 'Stopped by user.' });
+    return true;
+  }
+
   if (msg.type === 'AUTOAPPLY_START') {
+    _autoApplyStopped = false;
     (async () => {
       let pageNum = 1;
       const MAX_PAGES = 15;
@@ -231,6 +240,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
         chrome.runtime.sendMessage({ type: 'AUTOAPPLY_PROGRESS', text });
       }
 
+      // Fill current page with profile → Claude pipeline. Returns claudeAnswers for retry use.
       async function fillCurrentPage() {
         const stored = await chrome.storage.local.get(['profile', 'memory']);
         const profile = stored.profile || {};
@@ -245,6 +255,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
           : { ok: true, source: 'none_needed', fieldsCount: 0 };
         chrome.runtime.sendMessage({ type: 'FILL_COMPLETE', fillResult, jobCtx: _currentJobCtx, claudeStatus: pendingStatus });
 
+        let claudeAnswers = null;
         if (fillResult.needsClaude?.length > 0) {
           let result;
           try {
@@ -253,34 +264,92 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
             result = { ok: false, error: e.message };
           }
           if (result?.ok && result.answers) {
+            claudeAnswers = result.answers;
             for (const f of fillResult.needsClaude) {
               const ans = result.answers[normalizeLabel(f.label_text)] || result.answers[f.label_text];
-              if (ans) { const ok = await fillField(f, ans); if (ok) { fillResult.claude++; fillResult.filled++; fillResult.fields.push({ label: f.label_text, value: ans, source: 'claude' }); } }
+              if (ans) {
+                const ok = await fillField(f, ans);
+                if (ok) { fillResult.claude++; fillResult.filled++; fillResult.fields.push({ label: f.label_text, value: ans, source: 'claude' }); }
+              }
             }
           }
           chrome.runtime.sendMessage({ type: 'FILL_COMPLETE', fillResult, jobCtx: _currentJobCtx, claudeStatus: result || pendingStatus });
         }
 
-        progress(`Page ${pageNum}: ${fillResult.filled} filled (${fillResult.claude} via Claude). Looking for submit/next…`);
-        return fillResult;
+        progress(`Page ${pageNum}: ${fillResult.filled} filled (${fillResult.claude} via Claude). Verifying DOM…`);
+        return { fillResult, claudeAnswers, profile, memory };
+      }
+
+      // Re-scan DOM for empty fields; retry any that have an answer; return still-empty required fields.
+      async function verifyAndRetryEmpty(profile, memory, claudeAnswers) {
+        const fields = detectFormFields();
+        const stillEmpty = [];
+        let retried = 0;
+
+        for (const field of fields) {
+          if (field.field_type === 'file') continue; // can't programmatically verify file inputs
+          if (field.field_type === 'aria_radio') continue; // hard to verify; assume filled
+
+          const domVal = getFieldDomValue(field);
+          if (domVal === null || domVal !== '') continue; // not in DOM or already has a value
+
+          // Field is empty — find an answer and retry the fill
+          const ans = resolveAnswerForRetry(field, profile, memory, claudeAnswers);
+          if (ans && ans !== '_needs_claude') {
+            await fillField(field, ans);
+            await sleep(350); // let React settle
+            const afterVal = getFieldDomValue(field);
+            if (afterVal !== null && afterVal !== '') {
+              retried++;
+              continue;
+            }
+          }
+
+          // Still empty after retry (or no answer found)
+          if (isFieldRequired(field)) {
+            stillEmpty.push(field.label_text);
+          }
+        }
+
+        return { stillEmpty, retried };
       }
 
       try {
         for (let i = 0; i < MAX_PAGES; i++) {
-          await fillCurrentPage();
+          if (_autoApplyStopped) { progress('Stopped.'); break; }
+          const { fillResult, claudeAnswers, profile, memory } = await fillCurrentPage();
 
-          // Check for submit button first
+          // Let React finish re-rendering before inspecting DOM values
+          await sleep(500);
+          const { stillEmpty, retried } = await verifyAndRetryEmpty(profile, memory, claudeAnswers);
+
+          if (retried > 0) progress(`Page ${pageNum}: retried ${retried} empty field(s) — all good now.`);
+          if (stillEmpty.length > 0) {
+            progress(`Page ${pageNum}: ⚠ ${stillEmpty.length} required field(s) still empty: ${stillEmpty.slice(0, 4).join(', ')}${stillEmpty.length > 4 ? '…' : ''}`);
+          }
+
+          // Check for submit button
           const submitKeywords = ['submit', 'submit application', 'apply', 'send application', 'complete application'];
           const allBtns = Array.from(document.querySelectorAll('button, input[type=submit]'));
-          const submitBtn = allBtns.find(btn => submitKeywords.some(k => (btn.innerText || btn.value || '').toLowerCase().trim().includes(k)));
+          const submitBtn = allBtns.find(btn =>
+            !btn.disabled &&
+            submitKeywords.some(k => (btn.innerText || btn.value || '').toLowerCase().trim().includes(k))
+          );
+
           if (submitBtn) {
-            await new Promise(r => setTimeout(r, 600));
-            submitBtn.click();
-            submitted = true;
-            progress(`Submitted! Application complete.`);
-            chrome.runtime.sendMessage({ type: 'LOG_APPLICATION', jobCtx: _currentJobCtx, timestamp: new Date().toISOString() });
-            chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: `Submitted after page ${pageNum}!` });
-            showStatus('Application submitted!', 'success');
+            if (stillEmpty.length > 0) {
+              const msg2 = `Blocked submit — fill these required field(s) manually: ${stillEmpty.join(', ')}`;
+              progress(`⛔ ${msg2}`);
+              chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: msg2 });
+              showStatus(msg2, 'warn');
+              break;
+            }
+            // AUTO-SUBMIT DISABLED — highlight submit button and let user click manually
+            submitBtn.style.outline = '3px solid #34a853';
+            submitBtn.style.boxShadow = '0 0 8px #34a853';
+            progress(`✅ All fields filled — click Submit ▶ in the sidepanel or the highlighted button to submit.`);
+            chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: 'Ready to submit — review and click Submit.' });
+            showStatus('Ready — review fields then submit manually.', 'success');
             break;
           }
 
@@ -293,7 +362,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
           }
           pageNum++;
           progress(`Navigated to page ${pageNum}, waiting for form…`);
-          await new Promise(r => setTimeout(r, 2200));
+          await sleep(2200);
         }
         if (!submitted && pageNum >= MAX_PAGES) {
           chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: `Stopped after ${MAX_PAGES} pages.` });
@@ -333,6 +402,28 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
   if (msg.type === 'GET_FIELDS') {
     sendResponse({ fields: detectFormFields() });
+    return true;
+  }
+
+  // Manual field fill from sidepanel edit — find field by label and apply value to DOM
+  if (msg.type === 'FILL_FIELD') {
+    (async () => {
+      const fields = detectFormFields();
+      const lbl = (msg.label || '').toLowerCase().trim();
+      const target = fields.find(f =>
+        f.label_text === lbl ||
+        normalizeLabel(f.label_text) === normalizeLabel(lbl)
+      );
+      if (target) {
+        await fillField(target, msg.value);
+      } else if (msg.selector) {
+        // Fallback: try direct selector
+        try {
+          const el = document.querySelector(msg.selector);
+          if (el) await _fillText(el, msg.value);
+        } catch(e) {}
+      }
+    })();
     return true;
   }
 

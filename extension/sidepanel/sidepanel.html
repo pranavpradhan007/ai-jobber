@@ -120,6 +120,20 @@
   }
   .btn-auto-apply:hover { opacity: 0.88; }
   .btn-auto-apply:disabled { opacity: 0.5; cursor: default; }
+  .btn-stop {
+    display: none;
+    width: 100%;
+    padding: 11px;
+    border: none;
+    border-radius: 8px;
+    background: #ea4335;
+    color: white;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn-stop:hover { opacity: 0.88; }
   .footer-manual {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -189,6 +203,7 @@
 </div>
 <div class="footer">
   <button class="btn-auto-apply" id="btnAutoApply">⚡ Auto Apply</button>
+  <button class="btn-stop" id="btnStop">⏹ Stop</button>
   <div id="autoApplyProgress"></div>
   <div class="footer-manual">
     <button class="action-btn btn-prev" id="btnPrev">← Prev</button>

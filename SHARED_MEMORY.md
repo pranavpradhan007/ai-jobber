@@ -4,6 +4,23 @@ Claude Code appends an entry here at the end of every session. Most-recent first
 
 ---
 
+## 2026-06-15 (session 2) — Auto Apply persistence + country/demographic fixes
+
+**What was done:**
+- `content.js` — Auto Apply: added `verifyAndRetryEmpty()` — after fill, re-scans DOM for empty required fields, retries with profile/memory/Claude answers, **blocks submit** if required fields still empty; shows which fields need manual input. `fillCurrentPage()` now returns `claudeAnswers` so retry pass can use them.
+- `autofill.js` — Added `getFieldDomValue(field)`, `isFieldRequired(field)`, `resolveAnswerForRetry(field, …, claudeAnswers)` helper functions used by the retry loop.
+- `autofill.js` / `form_detector.js` — Fixed "what is your location?" country select: label extraction now strips nested select/input text so options list doesn't pollute label; `address_country` now mapped in LABEL_ALIASES + QUESTION_BANK; `fillSelect()` auto-detects 50+ option country dropdowns and selects "United States".
+- `autofill.js` — `fillSelect()` fallback: if value doesn't match any option but select has 50+ options including "United States", selects it (prevents "New York" being set on a country dropdown).
+- `sidepanel.js` + `content.js` — Manual edit push-to-DOM: when user edits a field value in sidepanel and blurs, sends `FILL_FIELD` to content script which re-fills the actual form element (select, radio, input) — so sidepanel edits actually stick.
+- `proxy_server.py` — Tighter Gmail receipt count query: `in:inbox`, exact `subject:` phrases, `-subject:newsletter -subject:update -subject:unsubscribe` exclusions to reduce 201→actual count.
+
+**Key pending issues:**
+- Pronouns: `he/him` showing as "true" (checkbox), `she/her`/`they/them`/`xe/xem` sent to Claude → empty strings returned (correct — don't check those). Visually check if he/him checkbox is actually checked in DOM.
+- Lever Google Places current location field: `fillAutocomplete()` types city name → waits 1.4s → clicks `.pac-item`. Still inconsistent if Places API is slow.
+- Resume file upload: not handled (file input needs DataTransfer API).
+
+---
+
 ## 2026-06-15 — Chrome Extension build (Phase 1 complete)
 
 **What was done:**

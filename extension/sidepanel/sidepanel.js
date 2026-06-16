@@ -209,7 +209,7 @@ function renderFields(fillResult, jobCtx, claudeStatus) {
       input.type = 'text';
     }
 
-    // Save edits to memory
+    // Save edits to memory and push to form DOM
     const fieldKey = normalizeLabel(f.label || '');
     input.addEventListener('blur', async () => {
       const newVal = input.value.trim();
@@ -221,6 +221,15 @@ function renderFields(fillResult, jobCtx, claudeStatus) {
           answer: newVal,
         });
         f.value = newVal;
+        // Also fill the actual form element so the edit sticks
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab) {
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'FILL_FIELD',
+            label: f.label,
+            value: newVal,
+          });
+        }
       }
     });
 
@@ -275,18 +284,39 @@ function normalizeLabel(text) {
 
 let _autoApplyRunning = false;
 
+function _setAutoApplyRunning(running) {
+  _autoApplyRunning = running;
+  const btnStart = document.getElementById('btnAutoApply');
+  const btnStop  = document.getElementById('btnStop');
+  if (running) {
+    btnStart.disabled = true;
+    btnStart.textContent = '⚡ Auto Applying…';
+    btnStop.style.display = 'block';
+  } else {
+    btnStart.disabled = false;
+    btnStart.textContent = '⚡ Auto Apply';
+    btnStop.style.display = 'none';
+  }
+}
+
 document.getElementById('btnAutoApply').addEventListener('click', async () => {
   if (_autoApplyRunning) return;
-  _autoApplyRunning = true;
-  const btn = document.getElementById('btnAutoApply');
+  _setAutoApplyRunning(true);
   const prog = document.getElementById('autoApplyProgress');
-  btn.disabled = true;
-  btn.textContent = '⚡ Auto Applying…';
   prog.textContent = 'Starting…';
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab) {
     await chrome.tabs.sendMessage(tab.id, { type: 'AUTOAPPLY_START' });
+  }
+});
+
+document.getElementById('btnStop').addEventListener('click', async () => {
+  const prog = document.getElementById('autoApplyProgress');
+  if (prog) prog.textContent = 'Stopping…';
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) {
+    await chrome.tabs.sendMessage(tab.id, { type: 'AUTOAPPLY_STOP' });
   }
 });
 
@@ -331,10 +361,8 @@ chrome.runtime.onMessage.addListener((msg) => {
     if (prog) prog.textContent = msg.text || '';
   }
   if (msg.type === 'AUTOAPPLY_DONE') {
-    _autoApplyRunning = false;
-    const btn = document.getElementById('btnAutoApply');
+    _setAutoApplyRunning(false);
     const prog = document.getElementById('autoApplyProgress');
-    if (btn) { btn.disabled = false; btn.textContent = '⚡ Auto Apply'; }
     if (prog) prog.textContent = msg.text || 'Done!';
   }
 });

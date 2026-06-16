@@ -265,6 +265,8 @@ async function learnFromAnswers(answers, fields) {
     const ans = answers[key];
     if (!ans || typeof ans !== 'string' || ans.length < 2) continue;
     if (STATIC_PROFILE_KEYS.has(key)) continue; // don't memorize static profile fields
+    // Don't cache EEO "decline/prefer not" answers — they pollute future fills
+    if (/prefer not|decline|not wish to answer/i.test(ans)) continue;
 
     if (!memory[key]) {
       memory[key] = {
@@ -376,7 +378,11 @@ async function getAnswers(fields, jobCtx) {
 
   const needsLLM = fields.filter(f => {
     const key = normalizeLabel(f.label_text);
-    return !STATIC_PROFILE_KEYS.has(key) && !memory[key];
+    if (STATIC_PROFILE_KEYS.has(key)) return false;
+    // If memory has a "decline/prefer not" answer, still send to Claude for a real answer
+    const memAns = memory[key]?.answer;
+    if (memAns && /prefer not|decline|not wish to answer/i.test(String(memAns))) return true;
+    return !memory[key];
   });
 
   if (needsLLM.length === 0) {
@@ -553,6 +559,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const today = new Date().toISOString().slice(0, 10);
         for (const f of (msg.fillResult?.fields || [])) {
           if (!f.label || !f.value) continue;
+          if (/prefer not|decline|not wish to answer/i.test(String(f.value))) continue;
           const key = normalizeLabel(f.label);
           if (!key || STATIC_PROFILE_KEYS.has(key)) continue;
           if (!memory[key]) {
@@ -624,8 +631,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'claude_request') return;
 
+  // Chrome MV3 kills service workers if no Chrome API call is in-flight for ~30s.
+  // fetch() alone doesn't count. Touch chrome.storage every 20s to keep the SW alive.
+  let _keepAliveTimer = null;
+  function startKeepAlive() {
+    _keepAliveTimer = setInterval(() => chrome.storage.local.get('_sw_ping'), 20000);
+  }
+  function stopKeepAlive() {
+    if (_keepAliveTimer) { clearInterval(_keepAliveTimer); _keepAliveTimer = null; }
+  }
+  port.onDisconnect.addListener(stopKeepAlive);
+
   port.onMessage.addListener(async (msg) => {
     if (msg.type !== 'GET_ANSWERS_VIA_PORT') return;
+    startKeepAlive();
     try {
       const result = await getAnswers(msg.fields, msg.jobCtx);
       port.postMessage({ type: 'GET_ANSWERS_RESULT', result });
@@ -633,6 +652,8 @@ chrome.runtime.onConnect.addListener((port) => {
       port.postMessage({ type: 'GET_ANSWERS_RESULT', result: {
         ok: false, answers: {}, error: err.message, source: 'exception', fieldsCount: 0, reviewedBy: 'none',
       }});
+    } finally {
+      stopKeepAlive();
     }
   });
 });

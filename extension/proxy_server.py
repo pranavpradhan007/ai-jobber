@@ -51,7 +51,7 @@ def call_claude_cli(system_prompt: str, user_prompt: str, max_tokens: int = 1500
 
         with open(tmp_path, "r", encoding="utf-8") as stdin_f:
             result = subprocess.run(
-                [CLAUDE_BIN, "-p", "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+                [CLAUDE_BIN, "--model", "claude-haiku-4-5-20251001", "-p"],
                 stdin=stdin_f,
                 capture_output=True,
                 text=True,
@@ -102,14 +102,18 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
 
         elif self.path == "/gmail/count-receipts":
-            # Use claude CLI (which has Gmail MCP) to count application receipt emails
+            # Use claude CLI (which has Gmail MCP) to count application receipt emails.
+            # Narrow query: inbox only, specific receipt subjects, exclude newsletters/updates.
             system = "You have access to Gmail via MCP. Search and count emails only. Return JSON only."
             prompt = (
-                "Use the Gmail MCP tool to search for job application receipt emails. "
-                "Search query: subject:(\"application received\" OR \"thank you for applying\" OR "
-                "\"we received your application\" OR \"application submitted\" OR \"your application\") "
+                "Use the Gmail MCP tool to count genuine job application receipt emails in my inbox. "
+                "Search query: in:inbox (subject:\"application received\" OR subject:\"thank you for applying\" OR "
+                "subject:\"we received your application\" OR subject:\"application submitted\" OR "
+                "subject:\"thanks for applying\") "
+                "-subject:newsletter -subject:update -subject:unsubscribe "
                 "newer_than:90d\n\n"
-                "Count how many emails match. "
+                "Count ONLY emails that confirm a specific job application was received (not promotional "
+                "emails, job alerts, or newsletters). "
                 "Return ONLY this JSON with no other text: {\"count\": <number>}"
             )
             try:
