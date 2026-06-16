@@ -184,8 +184,11 @@ const QUESTION_BANK = [
   { re: /spouse|domestic.{0,10}partner|significant.{0,10}other|partner.{0,10}(work|employ)/i,     key: "_no" },
   { re: /armed.{0,10}force|military.{0,10}(member|service|family)|active.{0,10}duty|serving.{0,10}military/i, key: "_no" },
   { re: /family.{0,15}(member|relative).{0,20}(armed|military|service)/i,                         key: "_no" },
-  { re: /refer.{0,15}(by|from)|referred.{0,10}by|who referred/i,                                   key: "_no" },
+  // Conditional follow-up text fields ("If yes, please provide…") — we always answer No to
+  // referral/contact questions, so these follow-ups should always be N/A.
+  { re: /^if yes[,\s]|^if so[,\s]|^if you answered yes|^if your answer is yes|^if applicable[,\s]/i, key: "_na" },
   { re: /provide.{0,30}name.{0,30}(employ|referr|staff|colleague)|name.{0,20}(employ|referr).{0,20}(refer|who)|referr.{0,20}employee.{0,20}name/i, key: "_na" },
+  { re: /refer.{0,15}(by|from)|referred.{0,10}by|who referred/i,                                   key: "_no" },
   { re: /non.?compete|non.?disclosure|nda.{0,20}(current|previous|prior)/i,                        key: "_no" },
   { re: /felony|criminal.{0,20}(record|conviction|charge)|convicted|been arrested/i,                key: "_no" },
   { re: /terminat.{0,20}(for cause|involuntary)|fired.{0,15}for.{0,15}cause/i,                    key: "_no" },
