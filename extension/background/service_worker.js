@@ -674,12 +674,17 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     console.error('JobberAI: failed to load profile.json', e);
   }
 
-  // Clean up stale EEO cache entries — "Woman"/"Female" cached when profile says Male
+  // Clean up stale EEO cache entries
+  // Purge: wrong gender ("Woman"/"Female"), stale ethnicity from UUID survey keys ("Asian", "Any other…")
   try {
     const { memory = {} } = await chrome.storage.local.get('memory');
     let purged = 0;
     for (const [key, entry] of Object.entries(memory)) {
-      if (/\bwoman\b|\bfemale\b/i.test(String(entry.answer || ''))) {
+      const ans = String(entry.answer || '');
+      const isUUIDSurveyKey = /surveys.*responses.*field/i.test(key);
+      const isBadEEO = /\bwoman\b|\bfemale\b/i.test(ans);
+      const isStaleEthnicity = isUUIDSurveyKey && /\basian\b|any other|bangladeshi|indian|hispanic|black/i.test(ans);
+      if (isBadEEO || isStaleEthnicity) {
         delete memory[key];
         purged++;
       }

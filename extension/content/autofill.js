@@ -341,14 +341,17 @@ function resolveAnswer(field, profile, memory) {
   // Tier 3: memory lookup — exact then fuzzy token overlap
   // Guard: skip memory for labels shorter than 5 chars (e.g. "no", "yes", "ok")
   // Also skip if memory answer is a "decline/prefer not" placeholder — let Tier 3.5 pick real EEO value
+  // Also skip for UUID survey fields (name like surveys[responses][uuid][field0]) — stale EEO cache
+  const isUUIDSurvey = /surveys.*responses.*field/i.test(field.group_name || '')
+                    || /surveys.*responses.*field/i.test(label);
   const memKey = normalizeLabel(label);
-  if (memKey.length >= 5 && memory[memKey]) {
+  if (!isUUIDSurvey && memKey.length >= 5 && memory[memKey]) {
     const memAns = memory[memKey].answer;
     if (!/prefer not|decline|not wish to answer|not want to/i.test(String(memAns))) {
       return memAns;
     }
   }
-  const fuzzyHit = memKey.length >= 5 ? fuzzyMemoryLookup(label, memory) : null;
+  const fuzzyHit = (!isUUIDSurvey && memKey.length >= 5) ? fuzzyMemoryLookup(label, memory) : null;
   if (fuzzyHit) {
     const fuzzyAns = fuzzyHit.answer;
     if (!/prefer not|decline|not wish to answer|not want to/i.test(String(fuzzyAns))) {
@@ -362,7 +365,7 @@ function resolveAnswer(field, profile, memory) {
     ? field.select_options
     : (field.radio_options && field.radio_options.length > 0 ? field.radio_options : null);
   if (_eeoOpts) {
-    console.log('[T3.5]', label.slice(0,50), '| opts:', _eeoOpts.slice(0,5));
+    console.log('[T3.5]', (field.group_name||label).slice(0,50), '| opts:', JSON.stringify(_eeoOpts.slice(0,6)));
     const optText = _eeoOpts.map(o => o.toLowerCase()).join(' ');
     let guess = null;
     // Gender: has "woman" OR "female" OR "non-binary" — but NOT veteran/disability keywords
@@ -409,7 +412,16 @@ function resolveAnswer(field, profile, memory) {
       guess = _eeoOpts.find(o => /no.{0,5}(,|i )?.{0,20}(don.t|do not|without|not have).{0,20}disabilit|i don.t have/i.test(o))
            || fuzzyMatchOption('No', _eeoOpts);
     }
-    // Unknown survey type with a "decline/choose not" option — pick it to stay safe
+    // Unknown survey type — if has Yes/No (e.g. veteran/disability 3-option), default "No"
+    // (covers "Are you a veteran?" when UUID label has no keywords and options have none either)
+    if (!guess && isUUIDSurvey) {
+      const hasYes = _eeoOpts.some(o => /^yes$/i.test(o.trim()));
+      const hasNo  = _eeoOpts.some(o => /^no$/i.test(o.trim()));
+      if (hasYes && hasNo) {
+        guess = _eeoOpts.find(o => /^no$/i.test(o.trim()));
+      }
+    }
+    // Last resort: pick "prefer not to disclose" if nothing matched
     if (!guess && /prefer not|decline|choose not|wish not/i.test(optText)) {
       guess = _eeoOpts.find(o => /prefer not|decline|choose not|wish not/i.test(o)) || null;
     }
@@ -452,17 +464,28 @@ function fillSelect(el, value) {
 }
 
 function _clickRadioInput(r) {
-  // Prefer clicking the associated label (works when input is visually hidden — Ashby, Lever, etc.)
+  // Step 1: use native checked setter to bypass React's property override
+  try {
+    const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
+    if (desc && desc.set) desc.set.call(r, true);
+  } catch(e) { r.checked = true; }
+
+  // Step 2: fire events — mousedown/mouseup/click order triggers React synthetic handlers
+  r.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+  r.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+
+  // Step 3: prefer clicking the associated label (visually hidden inputs — Ashby, Lever EEO)
   if (r.id) {
     const lbl = document.querySelector(`label[for="${r.id}"]`);
     if (lbl) { lbl.click(); return; }
   }
   const parentLbl = r.closest('label');
   if (parentLbl) { parentLbl.click(); return; }
-  // Fallback: directly check + fire events
-  r.checked = true;
-  r.dispatchEvent(new Event('click',  { bubbles: true }));
+
+  // Fallback: direct click + change on the input itself
+  r.dispatchEvent(new MouseEvent('click',  { bubbles: true, cancelable: true }));
   r.dispatchEvent(new Event('change', { bubbles: true }));
+  r.dispatchEvent(new Event('input',  { bubbles: true }));
 }
 
 function _getRadioLabel(r, domRoot) {

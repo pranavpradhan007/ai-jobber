@@ -230,6 +230,22 @@ function detectFormFields() {
           const t = (childLabel.innerText || childLabel.textContent || '').replace(/\s+/g, ' ').trim();
           if (t && !optionLabels.has(t.toLowerCase())) { groupLabel = t; break; }
         }
+        // Direct child heading (h1-h5) — Lever uses e.g. <h3 class="question-label">
+        for (const hTag of ['h1', 'h2', 'h3', 'h4', 'h5']) {
+          const h = p.querySelector(':scope > ' + hTag);
+          if (h) {
+            const ht = (h.innerText || h.textContent || '').replace(/\s+/g, ' ').trim();
+            if (ht && !optionLabels.has(ht.toLowerCase())) { groupLabel = ht; break; }
+          }
+          if (groupLabel) break;
+        }
+        if (groupLabel) break;
+        // aria-labelledby
+        const lblBy = p.getAttribute('aria-labelledby');
+        if (lblBy) {
+          const lbEl = document.getElementById(lblBy);
+          if (lbEl) { groupLabel = (lbEl.innerText || lbEl.textContent || '').replace(/\s+/g, ' ').trim(); if (groupLabel) break; }
+        }
         // <div role="group"> aria-label
         if (p.getAttribute('role') === 'group') {
           const al = p.getAttribute('aria-label');
