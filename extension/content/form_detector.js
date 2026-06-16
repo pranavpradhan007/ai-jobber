@@ -219,18 +219,52 @@ function detectFormFields() {
       let p = firstInput.parentElement;
       let depth = 0;
       while (p && depth < 10) {
-        // <fieldset> + <legend>
-        if (p.tagName === 'FIELDSET') {
-          const leg = p.querySelector(':scope > legend');
-          if (leg) { groupLabel = (leg.innerText || leg.textContent || '').trim(); break; }
-        }
-        // Direct child <label> of ancestor that is NOT an option label
+        // ── 1. Direct child <label> (most specific) ──────────────────────────
         const childLabel = p.querySelector(':scope > label');
         if (childLabel) {
           const t = (childLabel.innerText || childLabel.textContent || '').replace(/\s+/g, ' ').trim();
           if (t && !optionLabels.has(t.toLowerCase())) { groupLabel = t; break; }
         }
-        // Direct child heading (h1-h5) — Lever uses e.g. <h3 class="question-label">
+
+        // ── 2. Previous sibling is or contains the question label ─────────────
+        // Handles Lever's pattern: <label>Question?</label> then <ul>options</ul>
+        // where the label is a sibling of the options container, not its parent.
+        const prevSib = p.previousElementSibling;
+        if (prevSib) {
+          let sibText = '';
+          if (prevSib.tagName === 'LABEL' || /^H[1-6]$/.test(prevSib.tagName)) {
+            const clone = prevSib.cloneNode(true);
+            clone.querySelectorAll('input,select,textarea,button').forEach(c => c.remove());
+            sibText = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
+          } else {
+            // Look for a label/heading inside the sibling (one level deep)
+            const inner = prevSib.querySelector('label, h1, h2, h3, h4, h5');
+            if (inner) {
+              const clone = inner.cloneNode(true);
+              clone.querySelectorAll('input,select,textarea,button').forEach(c => c.remove());
+              sibText = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
+            }
+          }
+          if (sibText && sibText.length > 5 && !optionLabels.has(sibText.toLowerCase())) {
+            groupLabel = sibText;
+            break;
+          }
+        }
+
+        // ── 3. aria-labelledby ───────────────────────────────────────────────
+        const lblBy = p.getAttribute('aria-labelledby');
+        if (lblBy) {
+          const lbEl = document.getElementById(lblBy);
+          if (lbEl) { groupLabel = (lbEl.innerText || lbEl.textContent || '').replace(/\s+/g, ' ').trim(); if (groupLabel) break; }
+        }
+
+        // ── 4. <div role="group"> aria-label ────────────────────────────────
+        if (p.getAttribute('role') === 'group') {
+          const al = p.getAttribute('aria-label');
+          if (al) { groupLabel = al.trim(); break; }
+        }
+
+        // ── 5. Direct child heading (h1-h5) — section-level heading ─────────
         for (const hTag of ['h1', 'h2', 'h3', 'h4', 'h5']) {
           const h = p.querySelector(':scope > ' + hTag);
           if (h) {
@@ -240,17 +274,13 @@ function detectFormFields() {
           if (groupLabel) break;
         }
         if (groupLabel) break;
-        // aria-labelledby
-        const lblBy = p.getAttribute('aria-labelledby');
-        if (lblBy) {
-          const lbEl = document.getElementById(lblBy);
-          if (lbEl) { groupLabel = (lbEl.innerText || lbEl.textContent || '').replace(/\s+/g, ' ').trim(); if (groupLabel) break; }
+
+        // ── 6. <fieldset> + <legend> (least specific — section wrapper) ──────
+        if (p.tagName === 'FIELDSET') {
+          const leg = p.querySelector(':scope > legend');
+          if (leg) { groupLabel = (leg.innerText || leg.textContent || '').trim(); break; }
         }
-        // <div role="group"> aria-label
-        if (p.getAttribute('role') === 'group') {
-          const al = p.getAttribute('aria-label');
-          if (al) { groupLabel = al.trim(); break; }
-        }
+
         p = p.parentElement;
         depth++;
       }

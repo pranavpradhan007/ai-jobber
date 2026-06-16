@@ -248,6 +248,11 @@ function _todayFormatted() {
   return `${mm}/${dd}/${yyyy}`;  // MM/DD/YYYY — most common on US forms
 }
 
+// Per-fill counter for work_authorization Yes/No disambiguation.
+// First Yes/No match = eligibility question (→ Yes), second = sponsorship (→ No).
+// Reset at the start of each autofillPage call.
+let _workAuthYesNoCount = 0;
+
 const STATIC_SYNTHETIC = {
   "_yes":        "Yes",
   "_no":         "No",
@@ -363,8 +368,26 @@ function resolveAnswer(field, profile, memory) {
         const opts = field.select_options?.length ? field.select_options
                    : field.radio_options?.length  ? field.radio_options : null;
         if (opts) {
+          // Verbose option with "authorized to work" text (Greenhouse/Workday style)
           const authOpt = opts.find(o => /authorized.{0,20}work|do not require.{0,20}sponsor/i.test(o));
           if (authOpt) return authOpt;
+          // Yes/No radio (Lever work-auth section gives both questions the same section label).
+          // Distinguish strategy:
+          //   1. field index in name: field0 = eligible (→ Yes), field1 = sponsorship (→ No)
+          //   2. counter fallback: first encounter → Yes, second → No
+          const isYesNo = opts.some(o => /^yes$/i.test(o.trim()));
+          if (isYesNo) {
+            const yesOpt = opts.find(o => /^yes$/i.test(o.trim()));
+            const noOpt  = opts.find(o => /^no$/i.test(o.trim()));
+            const fieldIdxMatch = (field.group_name || field.name || '').match(/\[field(\d+)\]/i);
+            if (fieldIdxMatch) {
+              const fieldIdx = parseInt(fieldIdxMatch[1]);
+              return fieldIdx === 0 ? (yesOpt || opts[0]) : (noOpt || opts[opts.length - 1]);
+            }
+            // Different UUIDs but both field0 — use order-of-encounter counter
+            _workAuthYesNoCount++;
+            return _workAuthYesNoCount === 1 ? (yesOpt || opts[0]) : (noOpt || opts[opts.length - 1]);
+          }
           return fuzzyMatchOption(String(val), opts) ?? String(val);
         }
       }
@@ -802,6 +825,7 @@ async function fillField(field, value) {
 }
 
 async function autofillPage(profile, memory, claudeAnswers) {
+  _workAuthYesNoCount = 0; // reset per-page disambiguator
   const fields = detectFormFields();
   const needsClaude = [];
   const results = { filled: 0, skipped: 0, claude: 0, fields: [] };
@@ -978,10 +1002,33 @@ function getFieldDomValue(field) {
 }
 
 function isFieldRequired(field) {
-  // Label contains asterisk-style required marker
-  if (/[*✱＊❋★]/.test(field.label_text)) return true;
   let el = null;
   try { if (field.selector) el = document.querySelector(field.selector); } catch(e) {}
+
+  // Hidden / conditional field — even if marked required in HTML, skip it.
+  // getBoundingClientRect() returns all-zeros when any ancestor has display:none.
+  if (el) {
+    try {
+      const s = window.getComputedStyle(el);
+      if (s.display === 'none' || s.visibility === 'hidden') return false;
+    } catch(e) {}
+    try {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) return false;
+    } catch(e) {}
+    // Check ancestor display:none (getComputedStyle doesn't cascade display)
+    let p = el.parentElement;
+    while (p && p !== document.documentElement) {
+      try {
+        const ps = window.getComputedStyle(p);
+        if (ps.display === 'none' || ps.visibility === 'hidden') return false;
+      } catch(e) {}
+      if (p.getAttribute && p.getAttribute('aria-hidden') === 'true') return false;
+      p = p.parentElement;
+    }
+  }
+
+  if (/[*✱＊❋★]/.test(field.label_text)) return true;
   if (el && (el.required || el.getAttribute('aria-required') === 'true')) return true;
   return false;
 }
