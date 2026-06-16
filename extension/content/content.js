@@ -224,13 +224,15 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
   if (msg.type === 'AUTOAPPLY_STOP') {
     _autoApplyStopped = true;
+    sendResponse({ ok: true });
     showStatus('Auto Apply stopped.', 'warn');
-    chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: 'Stopped by user.' });
-    return true;
+    chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: 'Stopped by user.' }).catch(() => {});
+    return;
   }
 
   if (msg.type === 'AUTOAPPLY_START') {
     _autoApplyStopped = false;
+    sendResponse({ ok: true }); // resolve the sendMessage Promise immediately (async handler can't return true)
     (async () => {
       let pageNum = 1;
       const MAX_PAGES = 15;
@@ -389,7 +391,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
         await done(`Error: ${err.message}`);
       }
     })();
-    return true;
+    return; // sendResponse already called above
   }
 
   if (msg.type === 'NEXT_PAGE') {
