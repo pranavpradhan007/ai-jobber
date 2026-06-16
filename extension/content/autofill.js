@@ -773,8 +773,14 @@ async function autofillPage(profile, memory, claudeAnswers) {
   const results = { filled: 0, skipped: 0, claude: 0, fields: [] };
 
   for (const f of fields) {
-    // File inputs: attempt resume upload directly (no resolveAnswer needed)
+    // File inputs: upload resume — but skip cover letter file fields (not a PDF substitute)
     if (f.field_type === 'file') {
+      const lbl = (f.label_text || '').toLowerCase();
+      if (/cover.{0,10}letter|covering.{0,10}letter/.test(lbl)) {
+        results.skipped++;
+        results.fields.push({ label: f.label_text || 'cover letter', value: '(skipped — upload manually)', source: 'skip' });
+        continue;
+      }
       await fillField(f, '_file');
       results.filled++;
       results.fields.push({ label: f.label_text || 'resume', value: '📎 resume.pdf', source: 'storage' });
