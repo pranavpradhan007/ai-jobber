@@ -185,6 +185,7 @@ const QUESTION_BANK = [
   { re: /armed.{0,10}force|military.{0,10}(member|service|family)|active.{0,10}duty|serving.{0,10}military/i, key: "_no" },
   { re: /family.{0,15}(member|relative).{0,20}(armed|military|service)/i,                         key: "_no" },
   { re: /refer.{0,15}(by|from)|referred.{0,10}by|who referred/i,                                   key: "_no" },
+  { re: /provide.{0,30}name.{0,30}(employ|referr|staff|colleague)|name.{0,20}(employ|referr).{0,20}(refer|who)|referr.{0,20}employee.{0,20}name/i, key: "_na" },
   { re: /non.?compete|non.?disclosure|nda.{0,20}(current|previous|prior)/i,                        key: "_no" },
   { re: /felony|criminal.{0,20}(record|conviction|charge)|convicted|been arrested/i,                key: "_no" },
   { re: /terminat.{0,20}(for cause|involuntary)|fired.{0,15}for.{0,15}cause/i,                    key: "_no" },
@@ -264,6 +265,7 @@ const STATIC_SYNTHETIC = {
   "_gender":     "Male",      // fuzzyMatchOption alias: male → Man
   "_no_disability": "No",     // direct "No" — simpler and matches most forms
   "_no_veteran":    "No",     // direct "No" instead of long string
+  "_na":            "N/A",    // conditional follow-up fields ("if yes, who referred you?" when answer is No)
 };
 
 // Common term aliases for fuzzy matching (handles "Male"→"Man", "Female"→"Woman", etc.)
