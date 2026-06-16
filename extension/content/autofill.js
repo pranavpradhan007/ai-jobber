@@ -333,6 +333,23 @@ function resolveAnswer(field, profile, memory) {
         // Always fuzzy-match against available options (handles Male→Man, Yes→Ja, etc.)
         if (field.select_options?.length || field.radio_options?.length) {
           const opts = field.select_options?.length ? field.select_options : field.radio_options;
+          // _heard: "Company career website" rarely matches dropdown options exactly.
+          // Try several candidate strings in priority order until one matches.
+          if (key === '_heard') {
+            const heardCandidates = [
+              profile.referral_source || '',
+              'Company website', 'Company career website', 'Career website',
+              'Company career page', 'Career page', 'Company site',
+              'Website', 'Job board', 'LinkedIn', 'Indeed', 'Other',
+            ];
+            for (const c of heardCandidates) {
+              if (!c) continue;
+              const m = fuzzyMatchOption(c, opts);
+              if (m) return m;
+            }
+            // nothing matched — return first non-blank option as last resort
+            return opts.find(o => o.trim()) ?? synth;
+          }
           return fuzzyMatchOption(synth, opts) ?? synth;
         }
         return synth;
