@@ -315,7 +315,12 @@ function resolveAnswer(field, profile, memory) {
       return profile[parent]?.[child] ?? null;
     }
     const mappedKey = PROFILE_KEY_MAP[profileKey] || profileKey;
-    return profile[mappedKey] ?? profile[profileKey] ?? null;
+    const val = profile[mappedKey] ?? profile[profileKey];
+    // portfolio_url falls back to github_url if empty (website field should show GitHub if no portfolio)
+    if ((profileKey === 'portfolio_url' || mappedKey === 'portfolio_url') && !val) {
+      return profile.github_url || null;
+    }
+    return val ?? null;
   }
 
   // Tier 2: QUESTION_BANK regex — test both raw label AND stripped (handles "Phone *" → "phone")
