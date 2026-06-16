@@ -427,7 +427,8 @@ function resolveAnswer(field, profile, memory) {
   // Also skip if memory answer is a "decline/prefer not" placeholder — let Tier 3.5 pick real EEO value
   // Also skip for UUID survey fields (name like surveys[responses][uuid][field0]) — stale EEO cache
   const isUUIDSurvey = /surveys.*responses.*field/i.test(field.group_name || '')
-                    || /surveys.*responses.*field/i.test(label);
+                    || /surveys.*responses.*field/i.test(label)
+                    || /cards[0-9a-f]{8,}field\d+/i.test(normalizeLabel(field.group_name || field.label_text || ''));
   const memKey = normalizeLabel(label);
   if (!isUUIDSurvey && memKey.length >= 5 && memory[memKey]) {
     const memAns = memory[memKey].answer;

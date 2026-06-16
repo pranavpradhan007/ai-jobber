@@ -267,6 +267,9 @@ async function learnFromAnswers(answers, fields) {
     if (STATIC_PROFILE_KEYS.has(key)) continue; // don't memorize static profile fields
     // Don't cache EEO "decline/prefer not" answers — they pollute future fills
     if (/prefer not|decline|not wish to answer/i.test(ans)) continue;
+    // Don't memorize UUID-based Lever survey field names (cards[uuid][field0]).
+    // These keys are form-instance-specific and will never match on another page.
+    if (/cards[0-9a-f]{8,}field\d+/i.test(key)) continue;
 
     if (!memory[key]) {
       memory[key] = {
@@ -682,9 +685,11 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     for (const [key, entry] of Object.entries(memory)) {
       const ans = String(entry.answer || '');
       const isUUIDSurveyKey = /surveys.*responses.*field/i.test(key);
+      // UUID Lever cards field keys — never reusable, purge unconditionally
+      const isUUIDCardsKey = /cards[0-9a-f]{8,}field\d+/i.test(key);
       const isBadEEO = /\bwoman\b|\bfemale\b/i.test(ans);
       const isStaleEthnicity = isUUIDSurveyKey && /\basian\b|any other|bangladeshi|indian|hispanic|black/i.test(ans);
-      if (isBadEEO || isStaleEthnicity) {
+      if (isUUIDCardsKey || isBadEEO || isStaleEthnicity) {
         delete memory[key];
         purged++;
       }
