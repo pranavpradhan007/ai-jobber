@@ -375,15 +375,19 @@ function resolveAnswer(field, profile, memory) {
       if (guess && /woman|female/i.test(guess) && /male|man/i.test(genderVal)) { console.log('[T3.5 gender] safety discard'); guess = null; }
     }
     // Ethnicity: specific racial/ethnic group names
-    if (!guess && /\basian\b|\bhispanic\b|\bamerican indian\b|\bnative hawaiian\b|\bblack or african\b|\btwo or more races\b/.test(optText)) {
+    if (!guess && /\basian\b|\bhispanic\b|\bamerican indian\b|\bnative hawaiian\b|\bblack or african\b|\btwo or more races\b|\bblack or black british\b|\bmixed\b/.test(optText)) {
       // UK forms use "Asian/Asian British: Indian" style — prefer specific subcategory over "Any other"
       const isUKForm = /\bbritish\b/.test(optText);
-      const ethnVal = isUKForm
-        ? (profile.eeo_ethnicity_uk || 'Indian')
-        : (profile.eeo_ethnicity || 'Asian');
-      guess = fuzzyMatchOption(ethnVal, _eeoOpts);
-      // If UK subcategory search failed, fall back to base ethnicity
-      if (!guess && isUKForm) guess = fuzzyMatchOption(profile.eeo_ethnicity || 'Asian', _eeoOpts);
+      const ethnValSpecific = isUKForm ? (profile.eeo_ethnicity_uk || 'Indian') : null;
+      const ethnValBase    = profile.eeo_ethnicity || 'Asian';
+      // Try specific first (e.g. "Indian" → "Asian/Asian British: Indian"), then fall to base
+      if (ethnValSpecific) guess = fuzzyMatchOption(ethnValSpecific, _eeoOpts);
+      if (!guess) guess = fuzzyMatchOption(ethnValBase, _eeoOpts);
+      // If base matched "Any other" but a more specific option exists, prefer it
+      if (guess && /any other/i.test(guess) && ethnValSpecific) {
+        const betterGuess = fuzzyMatchOption(ethnValSpecific, _eeoOpts);
+        if (betterGuess && !/any other/i.test(betterGuess)) guess = betterGuess;
+      }
     }
     // Sexual orientation: heterosexual, gay, bisexual, lesbian — prefer "Heterosexual/Straight"
     if (!guess && /\bheterosexual\b|\bgay\b|\bbisexual\b|\blesbian\b/.test(optText)
@@ -484,31 +488,43 @@ function fillRadio(field, value) {
     radios = Array.from(document.querySelectorAll('input[type="radio"]'))
       .filter(r => r.name === field.group_name);
   }
-  console.log('[fillRadio]', field.group_name && field.group_name.slice(0,40), '| found:', radios.length, '| value:', value);
   if (!radios.length) return;
 
   const entries = radios.map(r => ({ el: r, lbl: _getRadioLabel(r) }));
   const labels  = entries.map(e => e.lbl);
-  console.log('[fillRadio] labels:', labels);
 
   // Pass 1: exact match on label text or value attribute
   const target = value.toLowerCase().trim();
   let entry = entries.find(e => e.lbl === target || e.el.value.toLowerCase() === target);
-  if (entry) { console.log('[fillRadio] P1 exact →', entry.lbl); _clickRadioInput(entry.el); return; }
+  if (entry) { _clickRadioInput(entry.el); return; }
 
   // Pass 2: fuzzyMatchOption — runs exact-first across ALL options, avoids "woman".includes("man")
   const bestLbl = fuzzyMatchOption(value, labels);
   if (bestLbl !== null) {
     entry = entries.find(e => e.lbl === bestLbl);
-    if (entry) { console.log('[fillRadio] P2 fuzzy →', bestLbl); _clickRadioInput(entry.el); return; }
+    if (entry) { _clickRadioInput(entry.el); return; }
   }
 
   // Pass 3: value-attribute fuzzy match (for radio buttons whose label detection failed)
   entry = entries.find(e => e.el.value.toLowerCase().includes(target) && !e.el.value.toLowerCase().includes('prefer'));
-  if (entry) { console.log('[fillRadio] P3 value-attr →', entry.el.value); _clickRadioInput(entry.el); return; }
+  if (entry) { _clickRadioInput(entry.el); return; }
+
+  // Pass 4: index-based match using field.radio_options (form-detector text labels)
+  // Lever EEO radio buttons have UUID value attributes — _getRadioLabel falls back to UUID,
+  // making text matching fail. Map by index using the labels form-detector collected.
+  const roLabels = (field.radio_options || []).map(o =>
+    (typeof o === 'string' ? o : (o.label || o.value || '')).toLowerCase().trim()
+  );
+  if (roLabels.length === radios.length) {
+    const bestRoLbl = fuzzyMatchOption(value, roLabels);
+    if (bestRoLbl !== null) {
+      const idx = roLabels.indexOf(bestRoLbl);
+      if (idx >= 0) { _clickRadioInput(radios[idx]); return; }
+    }
+  }
 
   // Fallback: isTruthy → first only (never pick "last" — it's often "Prefer not to disclose")
-  console.log('[fillRadio] no match for target:', target, '| labels:', labels);
+  console.warn('[fillRadio] no match', JSON.stringify({ value, labels, roLabels }));
   if (isTruthy(value)) { _clickRadioInput(radios[0]); return; }
 }
 
