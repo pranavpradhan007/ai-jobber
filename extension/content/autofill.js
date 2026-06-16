@@ -370,8 +370,9 @@ function resolveAnswer(field, profile, memory) {
         && !/\bveteran\b|\bdisabilit\b|\bprotected\b/.test(optText)) {
       const genderVal = profile.eeo_gender || profile.gender || 'Male';
       guess = fuzzyMatchOption(genderVal, _eeoOpts);
+      console.log('[T3.5 gender] genderVal:', genderVal, '| fuzz result:', guess);
       // Safety: if we got "Woman"/"Female" but eeo_gender is Male, something went wrong — skip
-      if (guess && /woman|female/i.test(guess) && /male|man/i.test(genderVal)) guess = null;
+      if (guess && /woman|female/i.test(guess) && /male|man/i.test(genderVal)) { console.log('[T3.5 gender] safety discard'); guess = null; }
     }
     // Ethnicity: specific racial/ethnic group names
     if (!guess && /\basian\b|\bhispanic\b|\bamerican indian\b|\bnative hawaiian\b|\bblack or african\b|\btwo or more races\b/.test(optText)) {
@@ -477,28 +478,37 @@ function _getRadioLabel(r, domRoot) {
 }
 
 function fillRadio(field, value) {
-  const radios = Array.from(document.querySelectorAll(`input[type="radio"][name="${field.group_name}"]`));
+  // Use JS property comparison as fallback — CSS selector with brackets in name can silently fail
+  let radios = Array.from(document.querySelectorAll(`input[type="radio"][name="${field.group_name}"]`));
+  if (!radios.length && field.group_name) {
+    radios = Array.from(document.querySelectorAll('input[type="radio"]'))
+      .filter(r => r.name === field.group_name);
+  }
+  console.log('[fillRadio]', field.group_name && field.group_name.slice(0,40), '| found:', radios.length, '| value:', value);
   if (!radios.length) return;
+
   const entries = radios.map(r => ({ el: r, lbl: _getRadioLabel(r) }));
   const labels  = entries.map(e => e.lbl);
+  console.log('[fillRadio] labels:', labels);
 
   // Pass 1: exact match on label text or value attribute
   const target = value.toLowerCase().trim();
   let entry = entries.find(e => e.lbl === target || e.el.value.toLowerCase() === target);
-  if (entry) { _clickRadioInput(entry.el); return; }
+  if (entry) { console.log('[fillRadio] P1 exact →', entry.lbl); _clickRadioInput(entry.el); return; }
 
   // Pass 2: fuzzyMatchOption — runs exact-first across ALL options, avoids "woman".includes("man")
   const bestLbl = fuzzyMatchOption(value, labels);
   if (bestLbl !== null) {
     entry = entries.find(e => e.lbl === bestLbl);
-    if (entry) { _clickRadioInput(entry.el); return; }
+    if (entry) { console.log('[fillRadio] P2 fuzzy →', bestLbl); _clickRadioInput(entry.el); return; }
   }
 
   // Pass 3: value-attribute fuzzy match (for radio buttons whose label detection failed)
   entry = entries.find(e => e.el.value.toLowerCase().includes(target) && !e.el.value.toLowerCase().includes('prefer'));
-  if (entry) { _clickRadioInput(entry.el); return; }
+  if (entry) { console.log('[fillRadio] P3 value-attr →', entry.el.value); _clickRadioInput(entry.el); return; }
 
   // Fallback: isTruthy → first only (never pick "last" — it's often "Prefer not to disclose")
+  console.log('[fillRadio] no match for target:', target, '| labels:', labels);
   if (isTruthy(value)) { _clickRadioInput(radios[0]); return; }
 }
 
