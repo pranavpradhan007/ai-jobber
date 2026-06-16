@@ -673,4 +673,22 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   } catch(e) {
     console.error('JobberAI: failed to load profile.json', e);
   }
+
+  // Clean up stale EEO cache entries — "Woman"/"Female" cached when profile says Male
+  try {
+    const { memory = {} } = await chrome.storage.local.get('memory');
+    let purged = 0;
+    for (const [key, entry] of Object.entries(memory)) {
+      if (/\bwoman\b|\bfemale\b/i.test(String(entry.answer || ''))) {
+        delete memory[key];
+        purged++;
+      }
+    }
+    if (purged > 0) {
+      await chrome.storage.local.set({ memory });
+      console.log(`JobberAI: purged ${purged} stale EEO cache entries`);
+    }
+  } catch(e) {
+    console.error('JobberAI: memory cleanup failed', e);
+  }
 });

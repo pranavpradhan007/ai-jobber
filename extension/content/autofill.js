@@ -375,17 +375,31 @@ function resolveAnswer(field, profile, memory) {
     }
     // Ethnicity: specific racial/ethnic group names
     if (!guess && /\basian\b|\bhispanic\b|\bamerican indian\b|\bnative hawaiian\b|\bblack or african\b|\btwo or more races\b/.test(optText)) {
-      guess = fuzzyMatchOption(profile.eeo_ethnicity || 'Asian', _eeoOpts);
+      // UK forms use "Asian/Asian British: Indian" style — prefer specific subcategory over "Any other"
+      const isUKForm = /\bbritish\b/.test(optText);
+      const ethnVal = isUKForm
+        ? (profile.eeo_ethnicity_uk || 'Indian')
+        : (profile.eeo_ethnicity || 'Asian');
+      guess = fuzzyMatchOption(ethnVal, _eeoOpts);
+      // If UK subcategory search failed, fall back to base ethnicity
+      if (!guess && isUKForm) guess = fuzzyMatchOption(profile.eeo_ethnicity || 'Asian', _eeoOpts);
     }
-    // Veteran: contains "veteran" or "military service" — not gender/ethnicity
-    if (!guess && /\bveteran\b|\bmilitary service\b|\bprotected veteran\b/.test(optText)
+    // Sexual orientation: heterosexual, gay, bisexual, lesbian — prefer "Heterosexual/Straight"
+    if (!guess && /\bheterosexual\b|\bgay\b|\bbisexual\b|\blesbian\b/.test(optText)
+        && !/\bgender identity\b|\bethnicit\b|\brace\b|\bveteran\b/.test(optText)) {
+      guess = _eeoOpts.find(o => /heterosexual|straight/i.test(o))
+           || _eeoOpts.find(o => /prefer not|decline|choose not/i.test(o));
+    }
+    // Veteran: options OR label has "veteran"/"military" keywords — not gender/ethnicity
+    const labelHasVeteran = /\bveteran\b|\bmilitary.{0,15}(service|served|status)|served.{0,20}military/i.test(label);
+    if (!guess && (/\bveteran\b|\bmilitary service\b|\bprotected veteran\b/.test(optText) || labelHasVeteran)
         && !/\bgender\b|\bethnicit\b|\brace\b|\bwoman\b/.test(optText)) {
-      // Find "not a veteran" / "I am not" type option, fallback to last option (usually opt-out)
       guess = _eeoOpts.find(o => /not.{0,10}(a |protected )?veteran|i am not/i.test(o))
            || fuzzyMatchOption('No', _eeoOpts);
     }
-    // Disability: contains "disability" — not gender/ethnicity
-    if (!guess && /\bdisabilit\b|\bdisabled\b/.test(optText)
+    // Disability: options OR label has "disability" keywords — not gender/ethnicity
+    const labelHasDisability = /\bdisabilit\b|\bdisabled\b/i.test(label);
+    if (!guess && (/\bdisabilit\b|\bdisabled\b/.test(optText) || labelHasDisability)
         && !/\bgender\b|\bethnicit\b|\brace\b/.test(optText)) {
       guess = _eeoOpts.find(o => /no.{0,5}(,|i )?.{0,20}(don.t|do not|without|not have).{0,20}disabilit|i don.t have/i.test(o))
            || fuzzyMatchOption('No', _eeoOpts);
@@ -463,20 +477,29 @@ function _getRadioLabel(r, domRoot) {
 }
 
 function fillRadio(field, value) {
+  const radios = Array.from(document.querySelectorAll(`input[type="radio"][name="${field.group_name}"]`));
+  if (!radios.length) return;
+  const entries = radios.map(r => ({ el: r, lbl: _getRadioLabel(r) }));
+  const labels  = entries.map(e => e.lbl);
+
+  // Pass 1: exact match on label text or value attribute
   const target = value.toLowerCase().trim();
-  const radios = document.querySelectorAll(`input[type="radio"][name="${field.group_name}"]`);
-  for (const r of radios) {
-    const lblText = _getRadioLabel(r);
-    if (lblText === target || lblText.includes(target) || r.value.toLowerCase() === target) {
-      _clickRadioInput(r);
-      return;
-    }
+  let entry = entries.find(e => e.lbl === target || e.el.value.toLowerCase() === target);
+  if (entry) { _clickRadioInput(entry.el); return; }
+
+  // Pass 2: fuzzyMatchOption — runs exact-first across ALL options, avoids "woman".includes("man")
+  const bestLbl = fuzzyMatchOption(value, labels);
+  if (bestLbl !== null) {
+    entry = entries.find(e => e.lbl === bestLbl);
+    if (entry) { _clickRadioInput(entry.el); return; }
   }
-  // fallback: yes-like → first radio, no-like → last radio
-  if (radios.length > 0) {
-    if (isTruthy(value))  { _clickRadioInput(radios[0]); return; }
-    if (/^no$/i.test(value.trim())) { _clickRadioInput(radios[radios.length - 1]); return; }
-  }
+
+  // Pass 3: value-attribute fuzzy match (for radio buttons whose label detection failed)
+  entry = entries.find(e => e.el.value.toLowerCase().includes(target) && !e.el.value.toLowerCase().includes('prefer'));
+  if (entry) { _clickRadioInput(entry.el); return; }
+
+  // Fallback: isTruthy → first only (never pick "last" — it's often "Prefer not to disclose")
+  if (isTruthy(value)) { _clickRadioInput(radios[0]); return; }
 }
 
 function fillAriaRadio(field, value) {
