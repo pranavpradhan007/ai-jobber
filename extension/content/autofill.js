@@ -576,9 +576,13 @@ function fillAriaRadio(field, value) {
 }
 
 async function uploadFile(el) {
-  // Resume upload is handled via service_worker message (DataTransfer API)
-  // Sending a message to content.js which knows the resume blob
-  const result = await chrome.runtime.sendMessage({ type: 'GET_RESUME_B64' });
+  // Resume upload via service_worker. 5 s timeout prevents hanging the auto-apply loop.
+  let result;
+  try {
+    const msgP = chrome.runtime.sendMessage({ type: 'GET_RESUME_B64' });
+    const timeoutP = new Promise(r => setTimeout(() => r(null), 5000));
+    result = await Promise.race([msgP, timeoutP]);
+  } catch(e) { return; }
   if (!result || !result.b64) return;
 
   const byteChars = atob(result.b64);

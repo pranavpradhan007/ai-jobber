@@ -283,6 +283,19 @@ function normalizeLabel(text) {
 // ─── Auto Apply ──────────────────────────────────────────────────────────────
 
 let _autoApplyRunning = false;
+let _autoApplyWatchdog = null;
+
+function _resetAutoApplyWatchdog() {
+  if (_autoApplyWatchdog) clearTimeout(_autoApplyWatchdog);
+  // If no AUTOAPPLY_PROGRESS or AUTOAPPLY_DONE received within 90s, force-reset
+  _autoApplyWatchdog = setTimeout(() => {
+    if (_autoApplyRunning) {
+      _setAutoApplyRunning(false);
+      const prog = document.getElementById('autoApplyProgress');
+      if (prog) prog.textContent = 'Timed out — no progress for 90s. Try again.';
+    }
+  }, 90000);
+}
 
 function _setAutoApplyRunning(running) {
   _autoApplyRunning = running;
@@ -292,10 +305,12 @@ function _setAutoApplyRunning(running) {
     btnStart.disabled = true;
     btnStart.textContent = '⚡ Auto Applying…';
     btnStop.style.display = 'block';
+    _resetAutoApplyWatchdog();
   } else {
     btnStart.disabled = false;
     btnStart.textContent = '⚡ Auto Apply';
     btnStop.style.display = 'none';
+    if (_autoApplyWatchdog) { clearTimeout(_autoApplyWatchdog); _autoApplyWatchdog = null; }
   }
 }
 
@@ -307,7 +322,13 @@ document.getElementById('btnAutoApply').addEventListener('click', async () => {
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab) {
-    await chrome.tabs.sendMessage(tab.id, { type: 'AUTOAPPLY_START' });
+    try {
+      await chrome.tabs.sendMessage(tab.id, { type: 'AUTOAPPLY_START' });
+    } catch(e) {
+      // Content script not ready (page still loading) — reset button
+      _setAutoApplyRunning(false);
+      if (prog) prog.textContent = 'Page not ready — try again in a moment.';
+    }
   }
 });
 
@@ -359,6 +380,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'AUTOAPPLY_PROGRESS') {
     const prog = document.getElementById('autoApplyProgress');
     if (prog) prog.textContent = msg.text || '';
+    if (_autoApplyRunning) _resetAutoApplyWatchdog(); // reset 90s timeout on each progress tick
   }
   if (msg.type === 'AUTOAPPLY_DONE') {
     _setAutoApplyRunning(false);

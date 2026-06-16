@@ -43,15 +43,16 @@ async function clickNext() {
     '[data-testid*=next]', '[data-automation-id*=next]',
     '[aria-label*="Next" i]', '[aria-label*="Continue" i]',
   ];
-  const keywords = ['next', 'continue', 'proceed', 'forward', 'save and continue'];
+  // "apply for this job" / "apply now" navigate from job description to application form
+  const keywords = ['next', 'continue', 'proceed', 'forward', 'save and continue', 'apply for this job', 'apply for job', 'start application', 'begin application'];
 
   for (const sel of nextSelectors) {
     const el = document.querySelector(sel);
     if (el && el.offsetParent !== null) { el.click(); return true; }
   }
-  const buttons = document.querySelectorAll('button');
+  const buttons = document.querySelectorAll('button, a[role=button], a.btn, a.button');
   for (const btn of buttons) {
-    const text = (btn.innerText || '').toLowerCase().trim();
+    const text = (btn.innerText || btn.textContent || '').toLowerCase().trim();
     if (keywords.some(k => text === k || text.startsWith(k))) { btn.click(); return true; }
   }
   return false;
@@ -237,8 +238,20 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
       function progress(text) {
         showStatus(text, 'info');
-        chrome.runtime.sendMessage({ type: 'AUTOAPPLY_PROGRESS', text });
+        chrome.runtime.sendMessage({ type: 'AUTOAPPLY_PROGRESS', text }).catch(() => {});
       }
+
+      // Send AUTOAPPLY_DONE reliably — retry once if first send fails
+      async function done(text) {
+        try { await chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text }); }
+        catch(e) {
+          await new Promise(r => setTimeout(r, 800));
+          try { await chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text }); } catch(e2) {}
+        }
+      }
+
+      // Immediate feedback so sidepanel escapes "Starting…" even before any fill
+      progress('Scanning form…');
 
       // Fill current page with profile → Claude pipeline. Returns claudeAnswers for retry use.
       async function fillCurrentPage() {
@@ -328,19 +341,23 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
             progress(`Page ${pageNum}: ⚠ ${stillEmpty.length} required field(s) still empty: ${stillEmpty.slice(0, 4).join(', ')}${stillEmpty.length > 4 ? '…' : ''}`);
           }
 
-          // Check for submit button
-          const submitKeywords = ['submit', 'submit application', 'apply', 'send application', 'complete application'];
+          // Check for submit button — use strict matching to avoid false-positives on
+          // "Apply for this job" (Greenhouse landing page) which should be a "Next" step
+          const submitKeywords = ['submit', 'submit application', 'send application', 'complete application', 'complete and submit'];
+          // "apply" alone only counts as submit when it's the EXACT button text
+          const applyExact = ['apply', 'apply now'];
           const allBtns = Array.from(document.querySelectorAll('button, input[type=submit]'));
-          const submitBtn = allBtns.find(btn =>
-            !btn.disabled &&
-            submitKeywords.some(k => (btn.innerText || btn.value || '').toLowerCase().trim().includes(k))
-          );
+          const submitBtn = allBtns.find(btn => {
+            if (btn.disabled) return false;
+            const t = (btn.innerText || btn.value || '').toLowerCase().trim();
+            return submitKeywords.some(k => t.includes(k)) || applyExact.includes(t);
+          });
 
           if (submitBtn) {
             if (stillEmpty.length > 0) {
               const msg2 = `Blocked submit — fill these required field(s) manually: ${stillEmpty.join(', ')}`;
               progress(`⛔ ${msg2}`);
-              chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: msg2 });
+              await done(msg2);
               showStatus(msg2, 'warn');
               break;
             }
@@ -348,7 +365,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
             submitBtn.style.outline = '3px solid #34a853';
             submitBtn.style.boxShadow = '0 0 8px #34a853';
             progress(`✅ All fields filled — click Submit ▶ in the sidepanel or the highlighted button to submit.`);
-            chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: 'Ready to submit — review and click Submit.' });
+            await done('Ready to submit — review and click Submit.');
             showStatus('Ready — review fields then submit manually.', 'success');
             break;
           }
@@ -356,7 +373,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
           // Try next button
           const clicked = await clickNext();
           if (!clicked) {
-            chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: `Stopped at page ${pageNum} — no Next/Submit found.` });
+            await done(`Stopped at page ${pageNum} — no Next/Submit found.`);
             showStatus('Auto Apply: no Next or Submit found.', 'warn');
             break;
           }
@@ -365,11 +382,11 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
           await sleep(2200);
         }
         if (!submitted && pageNum >= MAX_PAGES) {
-          chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: `Stopped after ${MAX_PAGES} pages.` });
+          await done(`Stopped after ${MAX_PAGES} pages.`);
         }
       } catch(err) {
-        chrome.runtime.sendMessage({ type: 'AUTOAPPLY_DONE', text: `Error: ${err.message}` });
         showStatus('Auto Apply error: ' + err.message, 'error');
+        await done(`Error: ${err.message}`);
       }
     })();
     return true;
