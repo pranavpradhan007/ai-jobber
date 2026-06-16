@@ -28,10 +28,10 @@ function detectFormFields() {
       if (lblEl) return (lblEl.innerText || lblEl.textContent || '').replace(/\s+/g, ' ');
     }
 
-    // 4. Closest <label> ancestor
+    // 4. Closest <label> ancestor (direct child or one level nested)
     let parent = el.parentElement;
     let depth = 0;
-    while (parent && depth < 5) {
+    while (parent && depth < 8) {
       if (parent.tagName === 'LABEL') {
         // Strip nested input/select/textarea text so country lists don't leak into label
         const clone = parent.cloneNode(true);
@@ -39,6 +39,7 @@ function detectFormFields() {
         const t = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
         if (t) return t;
       }
+      // Direct child <label>
       const childLbl = parent.querySelector(':scope > label');
       if (childLbl) {
         const clone = childLbl.cloneNode(true);
@@ -46,8 +47,37 @@ function detectFormFields() {
         const t = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
         if (t) return t;
       }
+      // One level deeper: label inside a direct-child div/header/p (Lever nests label in a header div)
+      // Exclude labels that wrap radio/checkbox options (inside <li>, or with class*=option/choice)
+      const nestedLbl = parent.querySelector(':scope > div > label, :scope > header > label, :scope > p > label');
+      if (nestedLbl) {
+        const closest_li = nestedLbl.closest('li');
+        if (!closest_li || !parent.contains(closest_li)) { // not an option label inside <li>
+          const clone = nestedLbl.cloneNode(true);
+          clone.querySelectorAll('input, select, textarea, button').forEach(c => c.remove());
+          const t = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
+          if (t && t.length > 3) return t;
+        }
+      }
       parent = parent.parentElement;
       depth++;
+    }
+
+    // 4b. Broader fallback: find the nearest question/field container and grab its first label
+    // Handles ATS platforms where the label is deeply nested (e.g. inside a .question-header div)
+    if (el.closest) {
+      const qContainer = el.closest('[class*="question"],[class*="Question"],[class*="field-group"],[class*="form-group"],[class*="fieldset"]');
+      if (qContainer) {
+        // Look for first <label> that doesn't wrap an input (i.e. not an option label)
+        const labels = qContainer.querySelectorAll('label');
+        for (const lbl of labels) {
+          if (lbl.querySelector('input[type=radio],input[type=checkbox]')) continue; // skip option labels
+          const clone = lbl.cloneNode(true);
+          clone.querySelectorAll('input,select,textarea,button').forEach(c => c.remove());
+          const t = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim();
+          if (t && t.length > 3) return t;
+        }
+      }
     }
 
     // 5. Fallback: placeholder or name

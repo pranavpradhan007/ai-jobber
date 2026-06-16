@@ -311,7 +311,29 @@ function normalizeLabel(text) {
 }
 
 function resolveAnswer(field, profile, memory) {
-  const label = field.label_text.toLowerCase().trim();
+  let label = field.label_text.toLowerCase().trim();
+
+  // For Lever UUID text fields where getLabel fell back to the field name (e.g.
+  // "cards[3246e883-7983-495e-93b5-6531e6be8609][field0]"), try to recover the
+  // actual question text from the DOM before running any matching logic.
+  if (/^cards\[[0-9a-f-]+\]\[field\d+\]/i.test(label) && field.field_type === 'text') {
+    try {
+      const el = document.querySelector(field.selector);
+      if (el) {
+        const qContainer = el.closest('[class*="question"],[class*="Question"],[class*="field-group"],[class*="form-group"]');
+        if (qContainer) {
+          const lblEl = qContainer.querySelector('label:not([class*="choice"]):not([class*="option"])');
+          if (lblEl && !lblEl.querySelector('input[type=radio],input[type=checkbox]')) {
+            const clone = lblEl.cloneNode(true);
+            clone.querySelectorAll('input,select,textarea,button').forEach(c => c.remove());
+            const recovered = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            if (recovered && recovered.length > 5 && recovered !== label) label = recovered;
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
   const stripped = label.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
 
   // Tier 1: alias table
