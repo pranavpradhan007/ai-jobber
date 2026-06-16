@@ -145,7 +145,7 @@ const PROFILE_KEY_MAP = {
 };
 
 const QUESTION_BANK = [
-  { re: /authorized.{0,30}work|right.{0,10}work|eligible.{0,15}work|legally.{0,15}work|lawfully/i, key: "work_authorization" },
+  { re: /authorized.{0,30}work|right.{0,10}work|eligible.{0,15}work|legally.{0,15}work|lawfully|work.{0,15}authoriz|work.{0,15}eligib|work.{0,15}(status|permit)|immigration.{0,20}(status|authoriz)/i, key: "work_authorization" },
   { re: /sponsor|visa.{0,20}sponsor|require.{0,10}sponsor|need.{0,10}sponsor/i,                     key: "requires_sponsorship" },
   { re: /us.{0,5}citizen|permanent.{0,5}resid|green.{0,5}card/i,                                    key: "us_citizen_or_pr" },
   { re: /salary|compensation|expected.{0,15}pay|desired.{0,10}pay|pay.{0,15}expect/i,               key: "salary_expectation" },
@@ -339,7 +339,19 @@ function resolveAnswer(field, profile, memory) {
       }
       const mappedKey = PROFILE_KEY_MAP[key] || key;
       const val = profile[mappedKey] ?? profile[key];
-      return val !== undefined ? String(val) : null;
+      if (val === undefined || val === null) return null;
+      // For work_authorization: if the field has options that include "authorized to work" and "sponsorship",
+      // always pick the "authorized" option (profile may not match option text exactly)
+      if (key === 'work_authorization') {
+        const opts = field.select_options?.length ? field.select_options
+                   : field.radio_options?.length  ? field.radio_options : null;
+        if (opts) {
+          const authOpt = opts.find(o => /authorized.{0,20}work|do not require.{0,20}sponsor/i.test(o));
+          if (authOpt) return authOpt;
+          return fuzzyMatchOption(String(val), opts) ?? String(val);
+        }
+      }
+      return String(val);
     }
   }
 
