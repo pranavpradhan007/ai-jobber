@@ -188,6 +188,8 @@ const QUESTION_BANK = [
   // referral/contact questions, so these follow-ups should always be N/A.
   { re: /^if yes[,\s]|^if so[,\s]|^if you answered yes|^if your answer is yes|^if applicable[,\s]/i, key: "_na" },
   { re: /provide.{0,30}name.{0,30}(employ|referr|staff|colleague)|name.{0,20}(employ|referr).{0,20}(refer|who)|referr.{0,20}employee.{0,20}name/i, key: "_na" },
+  // "Referral Details" section heading detected as field label — the text input below it wants N/A
+  { re: /^referral\s*(detail|info|section)?s?$/i,                                                    key: "_na" },
   { re: /refer.{0,15}(by|from)|referred.{0,10}by|who referred/i,                                   key: "_no" },
   { re: /non.?compete|non.?disclosure|nda.{0,20}(current|previous|prior)/i,                        key: "_no" },
   { re: /felony|criminal.{0,20}(record|conviction|charge)|convicted|been arrested/i,                key: "_no" },
