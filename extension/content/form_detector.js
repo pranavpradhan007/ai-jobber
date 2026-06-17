@@ -188,7 +188,11 @@ function detectFormFields() {
     if (type !== 'file' && !isVisible(el)) return;
 
     const label = (getLabel(el, domRoot) || '').trim().replace(/\s+/g, ' ');
-    const dedupeKey = tag + ':' + (el.name || '') + ':' + (el.id || '') + ':' + label;
+    // Dedupe by tag+name+id (not label) so same input with two different labels
+    // (e.g. Lever UUID field found as "referral details" then again by UUID name) only emits once.
+    // Fall back to label only when name AND id are both empty (avoids collapsing all anonymous inputs).
+    const nameOrId = (el.name || '') + ':' + (el.id || '');
+    const dedupeKey = tag + ':' + (nameOrId !== ':' ? nameOrId : label);
     if (seen.has(dedupeKey)) return;
     seen.add(dedupeKey);
 

@@ -315,22 +315,35 @@ function normalizeLabel(text) {
 function resolveAnswer(field, profile, memory) {
   let label = field.label_text.toLowerCase().trim();
 
-  // For Lever UUID text fields where getLabel fell back to the field name (e.g.
-  // "cards[3246e883-7983-495e-93b5-6531e6be8609][field0]"), try to recover the
-  // actual question text from the DOM before running any matching logic.
-  if (/^cards\[[0-9a-f-]+\]\[field\d+\]/i.test(label) && field.field_type === 'text') {
+  // For Lever UUID text fields where getLabel fell back to the field name,
+  // walk up the DOM to find the real question text before matching.
+  if (/^cards\[[0-9a-f-]{8,}\]\[field\d+\]|^surveys\[/i.test(label)) {
     try {
       const el = document.querySelector(field.selector);
       if (el) {
-        const qContainer = el.closest('[class*="question"],[class*="Question"],[class*="field-group"],[class*="form-group"]');
-        if (qContainer) {
-          const lblEl = qContainer.querySelector('label:not([class*="choice"]):not([class*="option"])');
-          if (lblEl && !lblEl.querySelector('input[type=radio],input[type=checkbox]')) {
-            const clone = lblEl.cloneNode(true);
+        // Walk up at most 8 ancestors; at each level scan for any non-option label
+        let p = el.parentElement;
+        for (let d = 0; d < 8 && p && p !== document.body; d++, p = p.parentElement) {
+          // All labels in this ancestor's direct or nested children
+          const lbls = p.querySelectorAll('label');
+          for (const lbl of lbls) {
+            // Skip radio/checkbox option wrappers
+            if (lbl.querySelector('input[type=radio],input[type=checkbox]')) continue;
+            const clone = lbl.cloneNode(true);
             clone.querySelectorAll('input,select,textarea,button').forEach(c => c.remove());
-            const recovered = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-            if (recovered && recovered.length > 5 && recovered !== label) label = recovered;
+            const t = (clone.innerText || clone.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            if (t && t.length > 8 && t !== label) { label = t; break; }
           }
+          if (label !== field.label_text.toLowerCase().trim()) break;
+          // Also check heading text (h1-h4) as question label
+          for (const hTag of ['h4','h3','h2','h1']) {
+            const h = p.querySelector(':scope > ' + hTag);
+            if (h) {
+              const t = (h.innerText || h.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+              if (t && t.length > 8 && t !== label) { label = t; break; }
+            }
+          }
+          if (label !== field.label_text.toLowerCase().trim()) break;
         }
       }
     } catch(e) {}
@@ -411,9 +424,16 @@ function resolveAnswer(field, profile, memory) {
             const fieldIdxMatch = (field.group_name || field.name || '').match(/\[field(\d+)\]/i);
             if (fieldIdxMatch) {
               const fieldIdx = parseInt(fieldIdxMatch[1]);
-              return fieldIdx === 0 ? (yesOpt || opts[0]) : (noOpt || opts[opts.length - 1]);
+              // field0 = "eligible to work?" → Yes — but ONLY for the first such group.
+              // A second field0 (different UUID card) is a different question (e.g. referral) → No.
+              if (fieldIdx === 0 && _workAuthYesNoCount === 0) {
+                _workAuthYesNoCount++;
+                return yesOpt || opts[0];
+              }
+              _workAuthYesNoCount++;
+              return noOpt || opts[opts.length - 1];
             }
-            // Different UUIDs but both field0 — use order-of-encounter counter
+            // No field index — use order-of-encounter counter
             _workAuthYesNoCount++;
             return _workAuthYesNoCount === 1 ? (yesOpt || opts[0]) : (noOpt || opts[opts.length - 1]);
           }
