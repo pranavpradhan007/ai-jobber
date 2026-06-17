@@ -688,7 +688,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       // UUID Lever cards field keys — never reusable, purge unconditionally
       const isUUIDCardsKey = /cards[0-9a-f]{8,}field\d+/i.test(key);
       // Section-heading keys that bleed into text field fills (e.g. "referral_details" → "No")
-      const isSectionHeadingKey = /^referral_details?$|^work_authorization_status$|^referral_info$/i.test(key);
+      const isSectionHeadingKey = /^referral_details?$|^work_authorization_status$|^referral_info$|^referred_by_a_|^referred_by_current/i.test(key);
       const isBadEEO = /\bwoman\b|\bfemale\b/i.test(ans);
       const isStaleEthnicity = isUUIDSurveyKey && /\basian\b|any other|bangladeshi|indian|hispanic|black/i.test(ans);
       if (isUUIDCardsKey || isSectionHeadingKey || isBadEEO || isStaleEthnicity) {

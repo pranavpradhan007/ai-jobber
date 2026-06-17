@@ -145,6 +145,9 @@ const PROFILE_KEY_MAP = {
 };
 
 const QUESTION_BANK = [
+  // "Referred by a [company] employee" — section heading or question. Must be BEFORE work_authorization
+  // to avoid "referred by a current lendbuzz employee" matching work.* or eligible.* patterns.
+  { re: /referred.{0,30}(current|existing).{0,20}employee|current.{0,20}employee.{0,20}refer|employee.{0,20}referral.{0,20}(section|program)?$/i, key: "_no" },
   { re: /authorized.{0,30}work|right.{0,10}work|eligible.{0,15}work|legally.{0,15}work|lawfully|work.{0,15}authoriz|work.{0,15}eligib|work.{0,15}(status|permit)|immigration.{0,20}(status|authoriz)/i, key: "work_authorization" },
   { re: /sponsor|visa.{0,20}sponsor|require.{0,10}sponsor|need.{0,10}sponsor/i,                     key: "requires_sponsorship" },
   { re: /us.{0,5}citizen|permanent.{0,5}resid|green.{0,5}card/i,                                    key: "us_citizen_or_pr" },
@@ -218,6 +221,7 @@ const QUESTION_BANK = [
   // Office attendance / hybrid questions
   { re: /work.{0,20}(from.{0,10}office|in.{0,10}office|on.?site)|office.{0,15}(days|hours|week)|days?.{0,10}(per|a).{0,5}week.{0,20}(office|in.person|on.site)/i, key: "_yes" },
   { re: /commut|onsite|in.person.{0,20}(require|expect|able)/i,                                    key: "_yes" },
+  { re: /comfortable.{0,40}(hybrid|in.?office|office.{0,10}require|work.{0,15}arrangement)|hybrid.{0,20}(work|arrangement|schedule|flexib)|in.?office.{0,20}(require|expect|able|meet|attend)/i, key: "_yes" },
   // Acknowledgment / legal checkboxes
   { re: /arbitration|i acknowledge|i confirm.{0,15}(read|above)|certify.{0,20}that|i have read.{0,20}(and|above)/i, key: "_yes" },
   { re: /agree.{0,20}(policy|above|statement)|accept.{0,20}(agreement|policy)/i,                   key: "_yes" },
