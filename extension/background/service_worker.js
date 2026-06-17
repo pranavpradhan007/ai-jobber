@@ -37,6 +37,7 @@ async function callClaude(apiKey, systemPrompt, userPrompt, maxTokens = 1500) {
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     }),
+    signal: AbortSignal.timeout(100000), // 100s — proxy subprocess times out at 90s
   });
 
   if (resp.status === 429) {

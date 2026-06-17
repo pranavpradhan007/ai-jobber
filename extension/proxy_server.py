@@ -127,6 +127,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(body)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                pass  # client disconnected before response — harmless
             except Exception as exc:
                 self._error(500, str(exc))
 
@@ -167,6 +169,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(resp_body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            pass  # client already disconnected
         except RuntimeError as exc:
             self._error(502, str(exc))
 
@@ -177,11 +181,14 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def _error(self, code: int, msg: str):
         body = json.dumps({"error": {"message": msg, "type": "proxy_error"}}).encode()
-        self.send_response(code)
-        self._cors()
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self._cors()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            pass  # client already disconnected — harmless
 
 
 if __name__ == "__main__":

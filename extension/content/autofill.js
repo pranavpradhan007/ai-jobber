@@ -234,6 +234,17 @@ const QUESTION_BANK = [
   { re: /cover.{0,10}letter|additional.{0,15}comment|anything.{0,20}add/i,                          key: "cover_letter_default" },
   // Demographic survey / location selects — country dropdown uses address_country, not state
   { re: /what.{0,10}(is|is your).{0,10}location|demographic.{0,15}location|survey.{0,10}location/i, key: "address_country" },
+  // Country questions (born-in vs currently-live must come before generic "country" alias)
+  { re: /born.{0,20}(in|country)|country.{0,20}(were you born|of birth|born in)|what country.{0,20}(born|birth)/i, key: "birth_country" },
+  { re: /currently live|country.{0,20}(do you live|reside|residing|currently|you live in)|live.{0,15}(in what country|country)/i, key: "address_country" },
+  // Years lived in current country (options like 1 2 3 … +10)
+  { re: /how many years.{0,30}(lived|living|reside|resided).{0,30}(current|this|your).{0,10}country|years.{0,20}(in|lived in).{0,20}(current|this|your).{0,10}country|years.{0,20}(of residence|in the us|in america|in united states)/i, key: "years_in_current_country" },
+  // U.S. State (disambiguate from generic "state" alias which also maps to address_state)
+  { re: /which.{0,15}(u\.?s\.?|united states).{0,15}state|state.{0,20}(based|located|reside|currently|you.{0,5}are)/i, key: "address_state" },
+  // English language proficiency
+  { re: /native.{0,25}(english|proficiency|speaker)|english.{0,25}(native|proficien|fluent)|proficien.{0,20}(u\.?s\.?.{0,5}english|english)/i, key: "_yes" },
+  // Full-time availability (hours-per-week phrasing — not covered by employment-type pattern above)
+  { re: /available.{0,20}(to work|for).{0,10}full.?time|full.?time.{0,20}(40 hours|hours.{0,10}week|\d+.hours)/i, key: "_yes" },
   // Consent / marketing checkboxes
   { re: /consent.{0,20}(contact|reach|email|newsletter)|may.{0,15}contact.{0,15}(me|you)|future.{0,20}(job|opportun|position)/i, key: "_yes" },
   { re: /\bgender\b|gender.{0,10}identity|describe.{0,20}gender/i,                                  key: "_gender" },
