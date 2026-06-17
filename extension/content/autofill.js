@@ -825,7 +825,9 @@ async function fillField(field, value) {
       el = xr.singleNodeValue;
     } catch(e) {}
   }
-  if (!el) return false;
+  // Radio/aria_radio fills use field.group_name, not el — don't abort if selector fails.
+  const isRadioType = field.field_type === 'radio' || field.field_type === 'aria_radio';
+  if (!el && !isRadioType) return false;
 
   switch (field.field_type) {
     case 'text':
