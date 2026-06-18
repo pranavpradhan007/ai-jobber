@@ -91,6 +91,9 @@ const LABEL_ALIASES = {
   "location (country)":               "address_country",
   "country of residence":             "address_country",
   "country of location":              "address_country",
+  "what is your preferred name":      "first_name",
+  "preferred name":                   "first_name",
+  "preferred first name":             "first_name",
   "skills":                   "skills",
   "technical skills":         "skills",
   "key skills":               "skills",
@@ -151,6 +154,8 @@ const QUESTION_BANK = [
   { re: /authorized.{0,30}work|right.{0,10}work|eligible.{0,15}work|legally.{0,15}work|lawfully|work.{0,15}authoriz|work.{0,15}eligib|work.{0,15}(status|permit)|immigration.{0,20}(status|authoriz)/i, key: "work_authorization" },
   { re: /sponsor|visa.{0,20}sponsor|require.{0,10}sponsor|need.{0,10}sponsor/i,                     key: "requires_sponsorship" },
   { re: /us.{0,5}citizen|permanent.{0,5}resid|green.{0,5}card/i,                                    key: "us_citizen_or_pr" },
+  // Compensation acknowledgment questions — must come BEFORE salary|compensation or they match wrong key
+  { re: /acknowledge.{0,50}(compensation|pay.{0,10}range|terms)|agree.{0,30}(compensation.{0,10}terms|pay.{0,10}range)|confirm.{0,30}(pay|compens).{0,20}(term|range|acknowledg)/i, key: "_yes" },
   { re: /salary|compensation|expected.{0,15}pay|desired.{0,10}pay|pay.{0,15}expect/i,               key: "salary_expectation" },
   { re: /years?.{0,10}experience|how.{0,15}years|experience.{0,10}years/i,                          key: "years_experience" },
   { re: /start.{0,10}date|available.{0,15}start|when.{0,15}start|earliest.{0,10}start/i,            key: "_start_date" },
@@ -190,6 +195,8 @@ const QUESTION_BANK = [
   // Conditional follow-up text fields ("If yes, please provide…") — we always answer No to
   // referral/contact questions, so these follow-ups should always be N/A.
   { re: /^if yes[,\s]|^if so[,\s]|^if you answered yes|^if your answer is yes|^if applicable[,\s]/i, key: "_na" },
+  // "If referred, please list the name…" — must be before the who-referred→_no pattern
+  { re: /if.{0,10}referred.{0,40}(list|name|provide|who|person)|list.{0,20}name.{0,20}(referr|who referred)/i, key: "_na" },
   { re: /provide.{0,30}name.{0,30}(employ|referr|staff|colleague)|name.{0,20}(employ|referr).{0,20}(refer|who)|referr.{0,20}employee.{0,20}name/i, key: "_na" },
   // "Referral Details" section heading detected as field label — the text input below it wants N/A
   { re: /^referral\s*(detail|info|section)?s?$/i,                                                    key: "_na" },
@@ -232,8 +239,12 @@ const QUESTION_BANK = [
   { re: /github|github.{0,10}url|github.{0,10}profile/i,                                            key: "github_url" },
   { re: /portfolio|personal.{0,10}website|website.{0,10}url/i,                                      key: "portfolio_url" },
   { re: /cover.{0,10}letter|additional.{0,15}comment|anything.{0,20}add/i,                          key: "cover_letter_default" },
+  // "Current location: city" / "location (city)" — must be BEFORE generic location→country
+  { re: /location.{0,10}:?.{0,5}city|current.{0,15}location.{0,20}city|city.{0,10}(field|location|where)/i, key: "address_city" },
   // Demographic survey / location selects — country dropdown uses address_country, not state
   { re: /what.{0,10}(is|is your).{0,10}location|demographic.{0,15}location|survey.{0,10}location/i, key: "address_country" },
+  // LGBTQ+ identification
+  { re: /\blgbtq\b|lgbtq\+|sexual.{0,20}orientat.{0,20}(identif|self)|identify.{0,20}lgbtq/i,      key: "_no" },
   // Country questions (born-in vs currently-live must come before generic "country" alias)
   { re: /born.{0,20}(in|country)|country.{0,20}(were you born|of birth|born in)|what country.{0,20}(born|birth)/i, key: "birth_country" },
   { re: /currently live|country.{0,20}(do you live|reside|residing|currently|you live in)|live.{0,15}(in what country|country)/i, key: "address_country" },
@@ -589,7 +600,13 @@ function fillSelect(el, value) {
     opt = opts.find(o => /^united states$/i.test(o.text.trim()));
   }
   if (opt) {
-    el.value = opt.value;
+    // Native property setter bypasses React's synthetic override so React state actually updates
+    try {
+      const desc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+      if (desc && desc.set) desc.set.call(el, opt.value);
+      else el.value = opt.value;
+    } catch(e) { el.value = opt.value; }
+    el.dispatchEvent(new Event('input',  { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 }
