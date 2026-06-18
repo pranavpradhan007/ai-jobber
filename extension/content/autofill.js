@@ -412,6 +412,15 @@ function resolveAnswer(field, profile, memory) {
             // nothing matched — return first non-blank option as last resort
             return opts.find(o => o.trim()) ?? synth;
           }
+          // _gender: hardcoded Male — explicit multi-candidate search, never Female.
+          if (key === '_gender') {
+            return opts.find(o => /^male$/i.test(o.trim()))
+                || opts.find(o => /^man$/i.test(o.trim()))
+                || opts.find(o => /\bmale\b/i.test(o) && !/female/i.test(o))
+                || opts.find(o => /\bman\b/i.test(o) && !/woman/i.test(o))
+                || opts.find(o => /^m$/i.test(o.trim()))
+                || 'Male';
+          }
           return fuzzyMatchOption(synth, opts) ?? synth;
         }
         return synth;
@@ -669,8 +678,17 @@ function fillRadio(field, value) {
   }
 
   // Fallback: isTruthy → first only (never pick "last" — it's often "Prefer not to disclose")
+  // Hard rule: if filling "Male"/"Man", NEVER fall back to a Female/Woman option.
   console.warn('[fillRadio] no match', JSON.stringify({ value, labels, roLabels }));
-  if (isTruthy(value)) { _clickRadioInput(radios[0]); return; }
+  if (isTruthy(value)) {
+    const isMaleTarget = /^(male|man|m)$/i.test(value.trim());
+    const safeFirst = isMaleTarget
+      ? radios.find(r => !/^(female|woman|f)$/i.test((r.value || '').trim()) &&
+                         !/^(female|woman)$/i.test((_getRadioLabel(r) || '').trim()))
+      : radios[0];
+    if (safeFirst) _clickRadioInput(safeFirst);
+    return;
+  }
 }
 
 function fillAriaRadio(field, value) {
