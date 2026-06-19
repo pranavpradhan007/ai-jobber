@@ -40,8 +40,10 @@
 
   "education_degree": "Master of Science in Computer Science",
   "education_school": "New York University, Tandon School of Engineering",
+  "education_field": "Computer Science",
   "education_gpa": "3.667",
   "graduation_year": "2026",
+  "spoken_languages": "English",
 
   "work_authorization": "I am authorized to work in the United States and do not require visa sponsorship at this time.",
   "requires_sponsorship": "No",
@@ -214,7 +216,7 @@
     {
       "school": "Savitribai Phule Pune University (PVGCOET)",
       "degree": "Bachelor of Engineering",
-      "field": "Computer Science",
+      "field": "Computer Engineering",
       "location": "Pune, India",
       "start_month": "08",
       "start_year": "2020",

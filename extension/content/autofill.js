@@ -101,7 +101,7 @@ const LABEL_ALIASES = {
   "tools":                    "skills",
   "tools & technologies":     "skills",
   "programming languages":    "skills_by_category.languages",
-  "languages":                "skills_by_category.languages",
+  "languages":                "spoken_languages",
   "frameworks":               "skills_by_category.ml_frameworks",
   "libraries":                "skills_by_category.ml_frameworks",
   "ml frameworks":            "skills_by_category.ml_frameworks",
@@ -135,6 +135,15 @@ const LABEL_ALIASES = {
   "address line 2":           null,
   "apartment":                null,
   "suite":                    null,
+  // Education sub-fields
+  "discipline":               "education_field",
+  "major":                    "education_field",
+  "field of study":           "education_field",
+  "area of study":            "education_field",
+  "concentration":            "education_field",
+  // Spoken languages (not programming languages)
+  "languages spoken":         "spoken_languages",
+  "spoken languages":         "spoken_languages",
 };
 
 // Profile key lookup map (maps address_* to profile flat keys)
@@ -338,7 +347,76 @@ function normalizeLabel(text) {
     .trim();
 }
 
+// ─── Tier 0: indexed experience/education block resolver ─────────────────────
+// Handles Greenhouse/Workday field names like:
+//   job_application[work_experiences_attributes][0][company]
+//   job_application[education_attributes][1][discipline_id]
+// Returns the correct profile value for that block index, or _TIER0_MISS to fall through.
+const _TIER0_MISS = Symbol('tier0_miss');
+
+function resolveIndexedSection(field, profile) {
+  const name = field.name || '';
+  if (!name) return _TIER0_MISS;
+
+  // Helper: strip parens and underscores from sub-key for easy matching
+  // 'start_date(1i)' → 'startdate1i',  'school_name_id' → 'schoolnameid'
+  function cleanKey(raw) {
+    return raw.toLowerCase().replace(/[()]/g, '').replace(/_/g, '').trim();
+  }
+
+  // ── Work experience block ──────────────────────────────────────────────────
+  const workM = name.match(/(?:work[_\s]*experience(?:[s]?(?:[_\s]*attributes)?)|employment[s]?)\]\[(\d+)\]\[([^\]]+)/i);
+  if (workM) {
+    const idx = parseInt(workM[1]);
+    const sub = cleanKey(workM[2]);
+    const job = (profile.work_history || [])[idx];
+    if (!job) return null; // index out of range — leave blank
+    if (/^company$|^employer$|^org$|companyname|employername/.test(sub)) return job.company || '';
+    if (/^title$|^position$|^role$|jobtitle|positiontitle/.test(sub))    return job.title   || '';
+    if (/description|summary|responsibilit|duties/.test(sub))            return job.description || '';
+    if (/startdate1i|startyear/.test(sub))  return job.start_year  || '';
+    if (/startdate2i|startmonth/.test(sub)) return job.start_month || '';
+    if (/enddate1i|endyear/.test(sub))      return job.current ? '' : (job.end_year  || '');
+    if (/enddate2i|endmonth/.test(sub))     return job.current ? '' : (job.end_month || '');
+    if (/currentemployer|stillwork|present|iscurrent/.test(sub)) return job.current ? '1' : '0';
+    if (/^location$|^city$/.test(sub))      return job.location || '';
+    return _TIER0_MISS; // unknown sub-key — let later tiers handle
+  }
+
+  // ── Education block ────────────────────────────────────────────────────────
+  const eduM = name.match(/education(?:[s]?(?:[_\s]*attributes?)?)?\]\[(\d+)\]\[([^\]]+)/i);
+  if (eduM) {
+    const idx = parseInt(eduM[1]);
+    const sub = cleanKey(eduM[2]);
+    const edu = (profile.education_history || [])[idx];
+    if (!edu) return null;
+    if (/schoolname|schoolid|institutionname|universityname|^school$/.test(sub)) return edu.school || '';
+    if (/^degree$|^degreeid$|degreelevel|degreetype/.test(sub)) {
+      // Return just the degree-level word — fillSelect partial match handles full option text
+      const deg = edu.degree || '';
+      if (/master/i.test(deg))    return "Master's";
+      if (/bachelor/i.test(deg))  return "Bachelor's";
+      if (/doctor|phd/i.test(deg)) return 'Doctoral';
+      if (/associate/i.test(deg)) return "Associate's";
+      return deg;
+    }
+    if (/discipline|fieldofstudy|major|concentration|^field$/.test(sub)) return edu.field || '';
+    if (/enddate1i|endyear|graduationyear/.test(sub))   return edu.end_year   || '';
+    if (/enddate2i|endmonth/.test(sub))                  return edu.end_month  || '';
+    if (/startdate1i|startyear/.test(sub))               return edu.start_year || '';
+    if (/startdate2i|startmonth/.test(sub))              return edu.start_month || '';
+    if (/^gpa$|gradepoint/.test(sub))                    return edu.gpa || '';
+    return _TIER0_MISS;
+  }
+
+  return _TIER0_MISS;
+}
+
 function resolveAnswer(field, profile, memory) {
+  // Tier 0: indexed work/education block (Greenhouse pattern [section][N][sub_key])
+  const t0 = resolveIndexedSection(field, profile);
+  if (t0 !== _TIER0_MISS) return t0;
+
   let label = field.label_text.toLowerCase().trim();
 
   // For Lever UUID text fields where getLabel fell back to the field name,
