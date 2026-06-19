@@ -144,9 +144,76 @@ const LABEL_ALIASES = {
   // Spoken languages (not programming languages)
   "languages spoken":         "spoken_languages",
   "spoken languages":         "spoken_languages",
+
+  // Workday-specific
+  "legal first name":         "first_name",
+  "legal last name":          "last_name",
+  "legal name - first":       "first_name",
+  "legal name - last":        "last_name",
+  "legal middle name":        null,
+  "preferred first name":     "first_name",
+  "country phone code":       "phone_country_code",
+  "phone device type":        null,
+  "how did you hear about us": "referral_source",
+  "how did you hear about this position": "referral_source",
+  "how did you hear about this job": "referral_source",
+  "pronoun":                  "pronouns",
+  "gender identity":          "eeo_gender",
+
+  // LinkedIn Easy Apply / generic
+  "mobile phone number":      "phone",
+  "city state zip code":      "location",
+  "your city state or country": "location",
+  "what is the city you live in": "address_city",
+  "current city":             "address_city",
+  "permanent address city":   "address_city",
+  "permanent address state":  "address_state",
+  "your linkedin profile url": "linkedin_url",
+  "linkedin profile url":     "linkedin_url",
+  "your github profile url":  "github_url",
+  "your portfolio or github":  "github_url",
+
+  // iCIMS / SmartRecruiters
+  "applicant name":           "full_name",
+  "current job title":        "current_title",
+  "most recent job title":    "current_title",
+  "most recent employer":     "current_company",
+  "recent employer":          "current_company",
+  "most recent company":      "current_company",
+  "current employer name":    "current_company",
+  "name of most recent employer": "current_company",
+  "most recent salary":       "salary_expectation",
+  "current salary":           "salary_expectation",
+  "desired compensation":     "salary_expectation",
+  "minimum salary":           "salary_expectation",
+  "preferred salary":         "salary_expectation",
+
+  // Greenhouse/Lever variants
+  "availability":             "_start_date",
+  "available to start":       "_start_date",
+  "earliest start date":      "_start_date",
+  "job title":                "current_title",
+  "position title":           "current_title",
+  "employment type":          null,
+
+  // ADP / Taleo
+  "applicant email":          "email",
+  "applicant phone":          "phone",
+  "home phone":               "phone",
+  "work phone":               "phone",
+  "daytime phone":            "phone",
+  "alternate phone":          null,
+  "emergency contact":        null,
+  "emergency contact phone":  null,
+  "middle name":              null,
+  "middle initial":           null,
+  "suffix":                   null,
+  "prefix":                   null,
+  "title":                    null,
+  "salutation":               null,
 };
 
-// Profile key lookup map (maps address_* to profile flat keys)
+// Profile key lookup map (maps address_* and alias keys to profile flat keys)
 const PROFILE_KEY_MAP = {
   "address_city":    "city",
   "address_state":   "state",
@@ -154,6 +221,9 @@ const PROFILE_KEY_MAP = {
   "address_country": "country",
   "address_line1":   "address",
   "location":        "location",
+  "referral_source": "referral_source",
+  "current_title":   "current_title",
+  "_start_date":     "_start_date",  // resolved via STATIC_SYNTHETIC
 };
 
 const QUESTION_BANK = [
@@ -220,7 +290,7 @@ const QUESTION_BANK = [
   { re: /previously.{0,30}(work|employ).{0,40}(at|for|by|with|here|this company|with us|by us)|have you.{0,30}(work|been employ).{0,30}(at|for|by)|worked.{0,20}(here|for us|this company) before|ever.{0,20}work.{0,10}(at|for|here)/i, key: "previously_worked_here" },
   { re: /formerly.{0,20}employed|ever.{0,20}employed.{0,20}by/i,                                   key: "previously_worked_here" },
   { re: /contract.{0,10}(prevent|restrict|prohibit)|restrictive.{0,10}covenant/i,                  key: "_no" },
-  { re: /currently.{0,15}employ|are you.{0,15}(currently.{0,5})?employ/i,                         key: "_no" },
+  { re: /currently.{0,15}employ|are you.{0,15}(currently.{0,5})?employ/i,                         key: "_yes" },
   { re: /on.?call|available.{0,10}on.?call/i,                                                       key: "_yes" },
   // Employment-type checkboxes (e.g. Lever's 'Yes, full-time employment' / 'Yes, intern')
   { re: /full.?time.{0,25}(employ|position|role|opportunit)/i,                                        key: "_yes" },
@@ -271,6 +341,41 @@ const QUESTION_BANK = [
   { re: /\brace\b|\bethnicity\b|ethnic.{0,15}group|racial|race.{0,10}ethnic/i,                     key: "eeo_ethnicity" },
   { re: /veteran|military.{0,15}(status|service|served)|served.{0,20}military/i,                   key: "_no_veteran" },
   { re: /disabilit/i,                                                                                 key: "_no_disability" },
+  // Currently employed → Yes (we have a current role at Hexbandit.io)
+  // Note: "currently employed?" appears above; this covers variants without "are you"
+  { re: /currently (working|at a company)|present.{0,10}employer|current.{0,5}role/i,               key: "_yes" },
+  // Notice period / availability
+  { re: /notice.{0,15}period|how soon.{0,20}(available|start)|how quickly.{0,15}start/i,            key: "_start_date" },
+  // Comfortable working in new city / relocation city question
+  { re: /comfortable.{0,30}(commut|on.?site|travel.{0,10}to (office|work))|willing.{0,20}commut/i,  key: "_yes" },
+  // Do you have X years of experience? (generic proficiency Qs)
+  { re: /do you have.{0,30}(experience|skill|knowledge|background|proficien)/i,                      key: "_yes" },
+  // At least N years of experience?
+  { re: /at least.{0,20}(year|yr).{0,10}(of )?(experience|exp)/i,                                   key: "_yes" },
+  // Authorized to use personal vehicle / own car
+  { re: /valid.{0,10}driver|personal.{0,10}vehicle|own.{0,5}car|use.{0,10}(own|personal).{0,10}(car|vehicle)/i, key: "_yes" },
+  // Willing to work weekends / flexible schedule
+  { re: /work.{0,15}weekend|flexible.{0,15}(schedule|hours)|varying.{0,10}(hour|shift)/i,           key: "_yes" },
+  // "How many total years" / "years of professional experience" (number field)
+  { re: /how many.{0,20}(total.{0,10})?years.{0,30}(professional|industry|relevant|work)/i,         key: "years_experience" },
+  // City / location questions
+  { re: /what.{0,10}city|city.{0,10}(you live|you're in|do you|based|located)/i,                   key: "address_city" },
+  { re: /what.{0,10}state|state.{0,10}(you live|you're in|do you|based|located)/i,                 key: "address_state" },
+  // Job title / most recent
+  { re: /most recent.{0,10}(job.?)?title|current.{0,10}job.?title|your.{0,10}(current|present).{0,10}title/i, key: "current_title" },
+  { re: /most recent.{0,15}(company|employer)|current.{0,10}company/i,                              key: "current_company" },
+  // Desired / minimum / expected salary variants
+  { re: /minimum.{0,20}salary|minimum.{0,10}pay|lowest.{0,10}(salary|compensation)/i,               key: "salary_expectation" },
+  { re: /maximum.{0,20}salary|maximum.{0,10}pay/i,                                                   key: "salary_expectation" },
+  // LinkedIn-specific EAL questions
+  { re: /proficien.{0,30}(python|java|c\+\+|javascript|typescript|sql|aws|docker|kubernetes|git|react)/i, key: "_yes" },
+  // Work type preference
+  { re: /job type|type of (work|employment|position)|employment.{0,10}type/i,                        key: "_full_time" },
+  // I agree / I certify / I acknowledge (broader)
+  { re: /i (certify|attest|represent).{0,40}(true|correct|accurate|complete)/i,                      key: "_yes" },
+  { re: /by submitting|by clicking.{0,20}submit|by applying/i,                                       key: "_yes" },
+  // Diversity / belonging
+  { re: /veteran.{0,20}status|military.{0,15}branch|branch.{0,15}service/i,                         key: "_no_veteran" },
   // Open-ended → Claude
   { re: /why.{0,20}(us|company|organization|firm)|interest.{0,20}(us|company)/i,                    key: "_claude" },
   { re: /why.{0,20}(role|position|job|this.{0,10}opport)/i,                                         key: "_claude" },
@@ -302,10 +407,11 @@ const STATIC_SYNTHETIC = {
   "_heard":      "Company career website",
   "_today":      _todayFormatted(),
   "_pronouns":   "He/Him",
-  "_gender":     "Male",      // fuzzyMatchOption alias: male → Man
-  "_no_disability": "No",     // direct "No" — simpler and matches most forms
-  "_no_veteran":    "No",     // direct "No" instead of long string
-  "_na":            "N/A",    // conditional follow-up fields ("if yes, who referred you?" when answer is No)
+  "_gender":     "Male",        // fuzzyMatchOption alias: male → Man
+  "_no_disability": "No",       // direct "No" — simpler and matches most forms
+  "_no_veteran":    "No",       // direct "No" instead of long string
+  "_na":            "N/A",      // conditional follow-up fields ("if yes, who referred you?" when answer is No)
+  "_full_time":     "Full-time", // employment type
 };
 
 // Common term aliases for fuzzy matching (handles "Male"→"Man", "Female"→"Woman", etc.)
@@ -664,6 +770,25 @@ function isTruthy(value) {
   return /^(yes|true|1|on|checked)$/i.test(String(value).trim());
 }
 
+const _MONTH_NAMES = ['january','february','march','april','may','june',
+                      'july','august','september','october','november','december'];
+const _MONTH_ABBR  = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+
+// US state full-name → abbreviation and vice-versa
+const _STATE_TO_ABBR = {
+  'alabama':'al','alaska':'ak','arizona':'az','arkansas':'ar','california':'ca',
+  'colorado':'co','connecticut':'ct','delaware':'de','florida':'fl','georgia':'ga',
+  'hawaii':'hi','idaho':'id','illinois':'il','indiana':'in','iowa':'ia','kansas':'ks',
+  'kentucky':'ky','louisiana':'la','maine':'me','maryland':'md','massachusetts':'ma',
+  'michigan':'mi','minnesota':'mn','mississippi':'ms','missouri':'mo','montana':'mt',
+  'nebraska':'ne','nevada':'nv','new hampshire':'nh','new jersey':'nj','new mexico':'nm',
+  'new york':'ny','north carolina':'nc','north dakota':'nd','ohio':'oh','oklahoma':'ok',
+  'oregon':'or','pennsylvania':'pa','rhode island':'ri','south carolina':'sc',
+  'south dakota':'sd','tennessee':'tn','texas':'tx','utah':'ut','vermont':'vt',
+  'virginia':'va','washington':'wa','west virginia':'wv','wisconsin':'wi','wyoming':'wy',
+};
+const _ABBR_TO_STATE = Object.fromEntries(Object.entries(_STATE_TO_ABBR).map(([k,v]) => [v,k]));
+
 function fillSelect(el, value) {
   const target = value.toLowerCase().trim();
   const opts = Array.from(el.options);
@@ -673,6 +798,37 @@ function fillSelect(el, value) {
   if (!opt) opt = opts.find(o => o.text.toLowerCase().includes(target) || target.includes(o.text.toLowerCase().trim()));
   // value attribute match
   if (!opt) opt = opts.find(o => o.value.toLowerCase() === target);
+
+  // Month number → name (e.g. Greenhouse [start_date(2i)] returns "01" but opts have "January")
+  if (!opt && /^(0?[1-9]|1[0-2])$/.test(value.trim())) {
+    const mIdx = parseInt(value.trim()) - 1;
+    const mName = _MONTH_NAMES[mIdx];
+    const mAbbr = _MONTH_ABBR[mIdx];
+    opt = opts.find(o => o.text.toLowerCase().trim() === mName)
+       || opts.find(o => o.text.toLowerCase().startsWith(mAbbr))
+       || opts.find(o => o.value.toLowerCase() === mName)
+       || opts.find(o => o.value === String(mIdx + 1))   // some selects use "1"–"12"
+       || opts.find(o => o.value === String(mIdx + 1).padStart(2, '0')); // or "01"–"12"
+  }
+
+  // State full name ↔ abbreviation bidirectional mapping
+  if (!opt) {
+    // Try "New York" → "NY" (for dropdowns with abbreviation options)
+    const abbr = _STATE_TO_ABBR[target];
+    if (abbr) {
+      opt = opts.find(o => o.text.toLowerCase().trim() === abbr)
+         || opts.find(o => o.value.toLowerCase() === abbr);
+    }
+  }
+  if (!opt) {
+    // Try "NY" → "New York" (for dropdowns with full-name options)
+    const full = _ABBR_TO_STATE[target];
+    if (full) {
+      opt = opts.find(o => o.text.toLowerCase().trim() === full)
+         || opts.find(o => o.value.toLowerCase() === full);
+    }
+  }
+
   // Country select fallback: if 50+ options and looks like a country list, use United States
   if (!opt && opts.length > 50 && opts.some(o => /^united states$/i.test(o.text.trim()))) {
     opt = opts.find(o => /^united states$/i.test(o.text.trim()));

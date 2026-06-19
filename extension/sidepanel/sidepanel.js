@@ -373,6 +373,8 @@ chrome.runtime.onMessage.addListener((msg) => {
       _activityLog = [];
     }
     renderFields(msg.fillResult, msg.jobCtx, msg.claudeStatus);
+    // Auto-refresh keyword tab if it's active, or queue for next open
+    if (msg.jobCtx?.jd_text) refreshKeywords(msg.jobCtx.jd_text);
   }
   if (msg.type === 'CLAUDE_PROGRESS') {
     updateClaudeProgress(msg);
@@ -389,11 +391,135 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
+// ─── Tab switching ────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.toggle('active', p.id === 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+    });
+    if (tab === 'history') renderHistory();
+    if (tab === 'keywords' && _currentJobCtx) refreshKeywords(_currentJobCtx.jd_text || '');
+  });
+});
+
+// ─── ATS keyword checker ──────────────────────────────────────────────────────
+
+async function refreshKeywords(jdText) {
+  if (!jdText) return;
+  const result = await chrome.runtime.sendMessage({ type: 'CHECK_ATS', jdText });
+  if (!result || !result.keywords || result.keywords.length === 0) return;
+
+  const present = result.keywords.filter(k => k.present);
+  const missing = result.keywords.filter(k => !k.present);
+
+  document.getElementById('kwEmptyState').style.display = 'none';
+
+  const pDiv = document.getElementById('kwPresent');
+  const mDiv = document.getElementById('kwMissing');
+  const pChips = document.getElementById('kwPresentChips');
+  const mChips = document.getElementById('kwMissingChips');
+
+  pDiv.style.display = present.length > 0 ? '' : 'none';
+  mDiv.style.display = missing.length > 0 ? '' : 'none';
+
+  pChips.innerHTML = present.map(k =>
+    `<span class="kw-chip present">✓ ${k.keyword}</span>`
+  ).join('');
+
+  mChips.innerHTML = missing.map(k =>
+    `<span class="kw-chip missing">✗ ${k.keyword}</span>`
+  ).join('');
+}
+
+// ─── Application history ──────────────────────────────────────────────────────
+
+async function renderHistory() {
+  const { applications = [] } = await chrome.storage.local.get('applications');
+  const el = document.getElementById('historyList');
+  const empty = document.getElementById('histEmptyState');
+
+  if (applications.length === 0) {
+    empty.style.display = '';
+    el.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Newest first
+  const sorted = [...applications].reverse();
+  el.innerHTML = sorted.map(a => {
+    const d = new Date(a.applied_at);
+    const dateStr = isNaN(d) ? a.applied_at : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const statusBg = a.status === 'confirmed' ? '#e8f5e9' : '#fafafa';
+    const statusColor = a.status === 'confirmed' ? '#1b5e20' : '#80868b';
+    return `<div class="history-row" style="background:${statusBg}">
+      <div class="h-company">${a.company || '—'}</div>
+      <div class="h-title">${a.title || '—'}</div>
+      <div class="h-date">${dateStr} · <span style="color:${statusColor}">${a.status || 'logged'}</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Cover letter ──────────────────────────────────────────────────────────────
+
+document.getElementById('btnGenCover').addEventListener('click', async () => {
+  if (!_currentJobCtx) {
+    document.getElementById('coverStatus').textContent = 'Autofill a job first to get the job context.';
+    return;
+  }
+  const statusEl = document.getElementById('coverStatus');
+  const btn = document.getElementById('btnGenCover');
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  statusEl.textContent = 'Calling Claude…';
+
+  const result = await chrome.runtime.sendMessage({ type: 'GENERATE_COVER_LETTER', jobCtx: _currentJobCtx });
+  btn.disabled = false;
+  btn.textContent = 'Generate';
+
+  if (result && result.text) {
+    document.getElementById('coverLetterText').value = result.text;
+    statusEl.textContent = 'Generated! Edit as needed, then Copy or Fill Form.';
+  } else {
+    statusEl.textContent = 'Generation failed — proxy may be offline.';
+  }
+});
+
+document.getElementById('btnCopyCover').addEventListener('click', () => {
+  const text = document.getElementById('coverLetterText').value;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    document.getElementById('coverStatus').textContent = 'Copied to clipboard!';
+    setTimeout(() => { document.getElementById('coverStatus').textContent = ''; }, 2000);
+  });
+});
+
+document.getElementById('btnFillCover').addEventListener('click', async () => {
+  const text = document.getElementById('coverLetterText').value;
+  if (!text) return;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) {
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'FILL_FIELD',
+      label: 'cover letter',
+      value: text,
+    });
+    document.getElementById('coverStatus').textContent = 'Filled! Check the form.';
+  }
+});
+
 // ─── Load previous fill result on open ───────────────────────────────────────
 
 chrome.storage.local.get(['lastFillResult', 'lastJobCtx', 'lastClaudeStatus']).then(({ lastFillResult, lastJobCtx, lastClaudeStatus }) => {
   if (lastFillResult) {
     renderFields(lastFillResult, lastJobCtx, lastClaudeStatus);
+  }
+  if (lastJobCtx) {
+    _currentJobCtx = lastJobCtx;
+    refreshKeywords(lastJobCtx.jd_text || '');
   }
 });
 

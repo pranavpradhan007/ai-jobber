@@ -39,22 +39,46 @@ function scrapeJobContext() {
 
 async function clickNext() {
   const nextSelectors = [
-    'button[type=submit]',
     '[data-testid*=next]', '[data-automation-id*=next]',
     '[aria-label*="Next" i]', '[aria-label*="Continue" i]',
   ];
-  // "apply for this job" / "apply now" navigate from job description to application form
-  const keywords = ['next', 'continue', 'proceed', 'forward', 'save and continue', 'apply for this job', 'apply for job', 'start application', 'begin application'];
+  const keywords = ['next', 'continue', 'proceed', 'forward', 'save and continue',
+                    'review your application', 'review application',
+                    'apply for this job', 'apply for job', 'start application', 'begin application'];
+
+  // Scope button search: prefer buttons inside LinkedIn Easy Apply modal
+  const modal = getEasyApplyModal();
+  const root  = modal || document;
 
   for (const sel of nextSelectors) {
-    const el = document.querySelector(sel);
-    if (el && el.offsetParent !== null) { el.click(); return true; }
+    const el = root.querySelector(sel) || document.querySelector(sel);
+    if (el && !el.disabled && el.offsetParent !== null) { el.click(); return true; }
   }
-  const buttons = document.querySelectorAll('button, a[role=button], a.btn, a.button');
-  for (const btn of buttons) {
-    const text = (btn.innerText || btn.textContent || '').toLowerCase().trim();
-    if (keywords.some(k => text === k || text.startsWith(k))) { btn.click(); return true; }
+
+  // Text-based button scan — prefer modal scope
+  for (const scope of modal ? [modal, document] : [document]) {
+    const buttons = scope.querySelectorAll('button, a[role=button], a.btn, a.button');
+    for (const btn of buttons) {
+      const text = (btn.innerText || btn.textContent || '').toLowerCase().trim();
+      if (!btn.disabled && keywords.some(k => text === k || text.startsWith(k))) {
+        btn.click();
+        return true;
+      }
+    }
+    if (scope !== document) continue; // don't double-scan if modal is null
+    break;
   }
+
+  // Workday "Next" — data-automation-id contains "nextButton" or "next"
+  const workdayNext = document.querySelector(
+    '[data-automation-id="nextButton"],[data-automation-id="bottom-navigation-next-btn"]'
+  );
+  if (workdayNext && !workdayNext.disabled) { workdayNext.click(); return true; }
+
+  // iCIMS "Next Step" button
+  const icimsNext = document.querySelector('.icims-Apply-step-btn,[class*="next-step"]');
+  if (icimsNext && !icimsNext.disabled) { icimsNext.click(); return true; }
+
   return false;
 }
 
@@ -120,6 +144,60 @@ function getAnswersViaPort(fields, jobCtx) {
   });
 }
 
+// ─── Conditional field watcher (MutationObserver) ────────────────────────────
+// Fires when new form inputs appear in the DOM after a fill (conditional questions,
+// lazy-loaded sections, LinkedIn Easy Apply page transitions, etc.)
+let _conditionalObserver = null;
+let _conditionalTimer = null;
+
+function startConditionalWatcher(profile, memory, claudeAnswers) {
+  if (_conditionalObserver) { _conditionalObserver.disconnect(); _conditionalObserver = null; }
+  _conditionalObserver = new MutationObserver(() => {
+    if (_conditionalTimer) clearTimeout(_conditionalTimer);
+    _conditionalTimer = setTimeout(async () => {
+      // Re-detect — if there are any empty required-looking fields, fill them
+      const fields = detectFormFields();
+      const unfilled = fields.filter(f => {
+        if (f.field_type === 'file' || f.field_type === 'aria_radio') return false;
+        const v = (f.current_value || '').trim();
+        return v === '' || v === 'Select...';
+      });
+      if (unfilled.length > 0) {
+        await autofillPage(profile, memory, claudeAnswers || {});
+      }
+    }, 700);
+  });
+  _conditionalObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function stopConditionalWatcher() {
+  if (_conditionalTimer) { clearTimeout(_conditionalTimer); _conditionalTimer = null; }
+  if (_conditionalObserver) { _conditionalObserver.disconnect(); _conditionalObserver = null; }
+}
+
+// ─── LinkedIn Easy Apply detection ───────────────────────────────────────────
+// LinkedIn Easy Apply modal: find buttons preferentially inside the dialog
+
+function isLinkedInEasyApply() {
+  return !!(
+    document.querySelector('.jobs-easy-apply-modal')              ||
+    document.querySelector('[aria-label*="Easy Apply"]')          ||
+    document.querySelector('div[data-test-modal*="easy-apply"]')  ||
+    (location.hostname === 'www.linkedin.com' &&
+     document.querySelector('[role="dialog"]'))
+  );
+}
+
+// Return the dialog container so we can scope button queries inside it
+function getEasyApplyModal() {
+  return document.querySelector('.jobs-easy-apply-modal')
+      || document.querySelector('[aria-label*="Easy Apply"]')
+      || document.querySelector('div[data-test-modal*="easy-apply"]')
+      || (location.hostname === 'www.linkedin.com'
+          ? document.querySelector('[role="dialog"]')
+          : null);
+}
+
 // Main autofill handler
 chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
   if (msg.type === 'AUTOFILL_START') {
@@ -154,6 +232,9 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
         // Step 4a: Immediate profile+memory fill (no Claude wait)
         const fillResult = await autofillPage(profile, memory, null);
+
+        // Start watching for conditional fields that appear after fills
+        startConditionalWatcher(profile, memory, null);
 
         showStatus(`${fillResult.filled} filled from profile. Asking Claude for the rest...`, 'info');
 

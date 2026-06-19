@@ -488,9 +488,9 @@ Write 3 short paragraphs. Pick experiences from above that match what this JD is
 // ─── ATS keyword checker ──────────────────────────────────────────────────────
 
 function extractKeywords(jdText) {
-  const TECH_TERMS = /\b(python|java|javascript|typescript|react|node|sql|nosql|aws|gcp|azure|docker|kubernetes|k8s|pytorch|tensorflow|jax|spark|kafka|redis|postgres|mongodb|graphql|rest|api|llm|gpt|bert|transformer|ci\/cd|git|linux|agile|scrum)\b/gi;
+  const TECH_TERMS = /\b(python|java|javascript|typescript|react|angular|vue|node\.?js|node|sql|nosql|aws|gcp|azure|docker|kubernetes|k8s|pytorch|tensorflow|jax|keras|sklearn|scikit.learn|spark|pyspark|kafka|redis|postgres|postgresql|mysql|mongodb|graphql|rest|fastapi|flask|django|llm|gpt|bert|transformer|huggingface|langchain|llamaindex|rag|ci\/cd|git|github|linux|bash|agile|scrum|mlflow|airflow|hadoop|databricks|snowflake|dbt|pandas|numpy|opencv|nltk|spacy|cuda|distributed|vector.?database|qdrant|pinecone|faiss|reinforcement.?learning|computer.?vision|nlp|a\/b.?test|etl|data.?pipeline|microservices|terraform|ansible|jenkins|circleci|github.?actions|selenium|playwright|jupyter|tableau|power.?bi|excel|matlab|r\b|scala|go\b|rust|c\+\+|c#|\.net|spring|rails|laravel|solidity|blockchain|unity|unreal)\b/gi;
   const matches = jdText.match(TECH_TERMS) || [];
-  return [...new Set(matches.map(m => m.toLowerCase()))];
+  return [...new Set(matches.map(m => m.toLowerCase().replace(/[\s\-]/g, '')))];
 }
 
 function checkATSKeywords(jdText, profile) {

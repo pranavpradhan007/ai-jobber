@@ -169,6 +169,80 @@
   }
   .empty-icon { font-size: 36px; margin-bottom: 12px; }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+  /* Tabs */
+  .tab-bar {
+    display: flex;
+    border-bottom: 1px solid #e8eaed;
+    background: white;
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 8px 4px;
+    border: none;
+    background: none;
+    font-size: 11px;
+    font-weight: 600;
+    color: #80868b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tab-btn.active { color: #1a73e8; border-bottom-color: #1a73e8; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ATS keyword chip */
+  .kw-row { display: flex; flex-wrap: wrap; gap: 5px; padding: 12px; }
+  .kw-chip {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+  }
+  .kw-chip.present { background: #e8f5e9; color: #1b5e20; }
+  .kw-chip.missing { background: #fce8e6; color: #c62828; }
+  .kw-section-title { font-size: 10px; color: #80868b; padding: 10px 12px 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* History rows */
+  .history-row {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f1f3f4;
+    font-size: 12px;
+  }
+  .history-row .h-company { font-weight: 600; color: #202124; }
+  .history-row .h-title   { color: #5f6368; margin-top: 1px; }
+  .history-row .h-date    { font-size: 10px; color: #80868b; margin-top: 2px; }
+
+  /* Cover letter area */
+  #coverLetterText {
+    width: 100%;
+    min-height: 160px;
+    font-size: 12px;
+    line-height: 1.6;
+    border: 1px solid #e8eaed;
+    border-radius: 6px;
+    padding: 10px;
+    resize: vertical;
+    font-family: inherit;
+    color: #202124;
+  }
+  .cover-btns { display: flex; gap: 6px; margin-bottom: 8px; }
+  .cover-btns button {
+    flex: 1;
+    padding: 7px;
+    border: none;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .cover-btns button:hover { opacity: 0.85; }
+  #btnGenCover  { background: #7b1fa2; color: white; }
+  #btnCopyCover { background: #1a73e8; color: white; }
+  #btnFillCover { background: #0f9d58; color: white; }
 </style>
 </head>
 <body>
@@ -193,12 +267,55 @@
   </div>
   <div id="claudeActivityLog" style="font-size:10px;font-family:monospace;line-height:1.6;color:#5f6368;max-height:90px;overflow-y:auto;padding-left:16px"></div>
 </div>
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="fields">Fields</button>
+  <button class="tab-btn" data-tab="keywords">Keywords</button>
+  <button class="tab-btn" data-tab="cover">Cover Letter</button>
+  <button class="tab-btn" data-tab="history">History</button>
+</div>
 <div class="scroll-area" id="scrollArea">
-  <div id="tabFields">
+  <!-- Fields tab -->
+  <div id="tabFields" class="tab-panel active">
     <div class="empty-state">
       <div class="empty-icon">✨</div>
       Click <b>Autofill</b> on a job application page to start.
     </div>
+  </div>
+
+  <!-- Keywords tab -->
+  <div id="tabKeywords" class="tab-panel">
+    <div class="empty-state" id="kwEmptyState">
+      <div class="empty-icon">🔑</div>
+      Autofill a job to see ATS keyword matches.
+    </div>
+    <div id="kwPresent" style="display:none">
+      <div class="kw-section-title">In Your Profile</div>
+      <div class="kw-row" id="kwPresentChips"></div>
+    </div>
+    <div id="kwMissing" style="display:none">
+      <div class="kw-section-title">Missing — Add to Resume</div>
+      <div class="kw-row" id="kwMissingChips"></div>
+    </div>
+  </div>
+
+  <!-- Cover Letter tab -->
+  <div id="tabCover" class="tab-panel" style="padding:12px">
+    <div class="cover-btns">
+      <button id="btnGenCover">Generate</button>
+      <button id="btnCopyCover">Copy</button>
+      <button id="btnFillCover">Fill Form</button>
+    </div>
+    <textarea id="coverLetterText" placeholder="Click Generate to draft a tailored cover letter for this job…"></textarea>
+    <div id="coverStatus" style="font-size:10px;color:#80868b;margin-top:4px"></div>
+  </div>
+
+  <!-- History tab -->
+  <div id="tabHistory" class="tab-panel">
+    <div class="empty-state" id="histEmptyState">
+      <div class="empty-icon">📋</div>
+      No applications logged yet.
+    </div>
+    <div id="historyList"></div>
   </div>
 </div>
 <div class="footer">
