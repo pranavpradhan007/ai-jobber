@@ -10,7 +10,37 @@ function detectFormFields() {
     try { return el.getAttribute(name) || ''; } catch(e) { return ''; }
   }
 
+  // Workday data-automation-id → human label (covers Workday's non-standard form structure)
+  const _WORKDAY_LABEL_MAP = {
+    'legalNameSection_firstName': 'first name', 'legalName_firstName': 'first name',
+    'legalNameSection_lastName': 'last name',  'legalName_lastName': 'last name',
+    'preferredName_firstName': 'preferred first name', 'preferredName_lastName': 'preferred last name',
+    'email': 'email', 'emailAddress': 'email',
+    'phone-number': 'phone', 'phoneNumber': 'phone', 'phone': 'phone',
+    'address1': 'address', 'addressLine1': 'address line 1',
+    'city': 'city', 'addressCity': 'city',
+    'countryRegion': 'state', 'region': 'state',
+    'postalCode': 'zip code', 'zipCode': 'zip code',
+    'country': 'country', 'countryDropdown': 'country',
+    'linkedIn': 'linkedin url', 'linkedInUrl': 'linkedin url',
+    'website': 'website',
+    'howDidYouHear': 'how did you hear about us',
+    'jobTitle': 'job title', 'currentJobTitle': 'current job title',
+    'company': 'company', 'currentCompany': 'company',
+    'startDate': 'start date', 'endDate': 'end date',
+    'currentlyWorkHere': 'currently work here',
+    'jobDescription': 'description',
+    'school': 'school', 'schoolName': 'school',
+    'degree': 'degree', 'degreeType': 'degree',
+    'fieldOfStudy': 'field of study', 'major': 'major',
+    'graduationDate': 'graduation year', 'gpa': 'gpa',
+  };
+
   function getLabel(el, root) {
+    // 0. Workday data-automation-id → known label
+    const dataAuto = safeAttr(el, 'data-automation-id');
+    if (dataAuto && _WORKDAY_LABEL_MAP[dataAuto]) return _WORKDAY_LABEL_MAP[dataAuto];
+
     // 1. aria-label
     const al = safeAttr(el, 'aria-label');
     if (al) return al;

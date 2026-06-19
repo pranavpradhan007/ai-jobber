@@ -1160,8 +1160,60 @@ async function fillField(field, value) {
   return true;
 }
 
+// ─── Repeating section expander ──────────────────────────────────────────────
+// Greenhouse shows only 1 work-experience row by default.
+// Click "Add another position" for each additional entry we want to fill.
+async function prepareRepeatingSection(sectionType, profile) {
+  const cfg = sectionType === 'work' ? {
+    profileKey: 'work_history',
+    existingSel: [
+      'input[name*="work_experiences_attributes"][name*="company"]',
+      'input[name*="employment"][name*="company"]',
+      'input[name*="work_experience"][name*="title"]',
+    ],
+    addText: /add another (position|experience|job|work)|add (a )?position|add work/i,
+  } : {
+    profileKey: 'education_history',
+    existingSel: [
+      'input[name*="education_attributes"][name*="school"]',
+      'input[name*="education"][name*="school"]',
+    ],
+    addText: /add another (education|school|degree)|add (a )?degree|add education/i,
+  };
+
+  const desired = Math.min((profile[cfg.profileKey] || []).length, 4);
+  if (desired <= 1) return; // only one entry → nothing to expand
+
+  // Count how many rows currently exist
+  let existing = 0;
+  for (const sel of cfg.existingSel) {
+    const found = document.querySelectorAll(sel).length;
+    if (found > existing) existing = found;
+  }
+  if (existing === 0) existing = 1; // assume row 0 always exists
+
+  for (let i = existing; i < desired; i++) {
+    // Find "Add another" button by text
+    let addBtn = null;
+    const candidates = document.querySelectorAll('a, button, [role="button"]');
+    for (const el of candidates) {
+      if (el.offsetParent === null) continue; // invisible
+      const text = (el.innerText || el.textContent || '').trim();
+      if (cfg.addText.test(text)) { addBtn = el; break; }
+    }
+    if (!addBtn) break; // no button found — stop expanding
+    addBtn.click();
+    await sleep(700); // wait for DOM to update before checking/clicking again
+  }
+}
+
 async function autofillPage(profile, memory, claudeAnswers) {
   _workAuthYesNoCount = 0; // reset per-page disambiguator
+
+  // Pre-expand repeating sections so all rows exist in the DOM before field detection
+  await prepareRepeatingSection('work', profile);
+  await prepareRepeatingSection('edu', profile);
+
   const fields = detectFormFields();
   const needsClaude = [];
   const results = { filled: 0, skipped: 0, claude: 0, fields: [] };
@@ -1249,19 +1301,31 @@ const DIRECT_FILL_MAP = [
   // Full name variants
   { selectors: ['input[name="name"]', 'input[name="full_name"]', 'input[name="fullName"]', 'input[autocomplete="name"]'], key: 'full_name' },
   // First / last
-  { selectors: ['input[name="first_name"]', 'input[name="firstName"]', 'input[autocomplete="given-name"]'], key: 'first_name' },
-  { selectors: ['input[name="last_name"]', 'input[name="lastName"]', 'input[autocomplete="family-name"]'], key: 'last_name' },
+  { selectors: ['input[name="first_name"]', 'input[name="firstName"]', 'input[autocomplete="given-name"]',
+                 '[data-automation-id="legalNameSection_firstName"]', '[data-automation-id="legalName_firstName"]',
+                 '[data-automation-id="preferredName_firstName"]'], key: 'first_name' },
+  { selectors: ['input[name="last_name"]', 'input[name="lastName"]', 'input[autocomplete="family-name"]',
+                 '[data-automation-id="legalNameSection_lastName"]', '[data-automation-id="legalName_lastName"]',
+                 '[data-automation-id="preferredName_lastName"]'], key: 'last_name' },
   // Email
-  { selectors: ['input[type="email"]', 'input[name="email"]', 'input[autocomplete="email"]'], key: 'email' },
+  { selectors: ['input[type="email"]', 'input[name="email"]', 'input[autocomplete="email"]',
+                 '[data-automation-id="email"]', '[data-automation-id="emailAddress"]'], key: 'email' },
   // Phone
-  { selectors: ['input[type="tel"]', 'input[name="phone"]', 'input[name="phoneNumber"]', 'input[name="phone_number"]'], key: 'phone' },
-  // Company
-  { selectors: ['input[name="org"]', 'input[name="company"]', 'input[name="current_company"]', 'input[name="currentCompany"]'], key: 'current_company' },
-  // LinkedIn / GitHub
-  { selectors: ['input[name="linkedin"]', 'input[name="linkedin_url"]', 'input[name="linkedinUrl"]'], key: 'linkedin_url' },
+  { selectors: ['input[type="tel"]', 'input[name="phone"]', 'input[name="phoneNumber"]', 'input[name="phone_number"]',
+                 '[data-automation-id="phone-number"]', '[data-automation-id="phoneNumber"]', '[data-automation-id="phone"]'], key: 'phone' },
+  // City
+  { selectors: ['[data-automation-id="city"]', '[data-automation-id="addressCity"]'], key: 'city' },
+  // Zip
+  { selectors: ['[data-automation-id="postalCode"]', '[data-automation-id="zipCode"]'], key: 'zip_code' },
+  // LinkedIn
+  { selectors: ['input[name="linkedin"]', 'input[name="linkedin_url"]', 'input[name="linkedinUrl"]',
+                 '[data-automation-id="linkedIn"]', '[data-automation-id="linkedInUrl"]'], key: 'linkedin_url' },
+  // GitHub / Portfolio
   { selectors: ['input[name="github"]', 'input[name="github_url"]', 'input[name="githubUrl"]'], key: 'github_url' },
-  // Portfolio
-  { selectors: ['input[name="portfolio"]', 'input[name="portfolio_url"]', 'input[name="website"]'], key: 'portfolio_url' },
+  { selectors: ['input[name="portfolio"]', 'input[name="portfolio_url"]', 'input[name="website"]',
+                 '[data-automation-id="website"]', '[data-automation-id="portfolioUrl"]'], key: 'portfolio_url' },
+  // Company (current)
+  { selectors: ['input[name="org"]', 'input[name="company"]', 'input[name="current_company"]', 'input[name="currentCompany"]'], key: 'current_company' },
 ];
 
 async function directPortalFill(profile) {

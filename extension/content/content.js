@@ -1,4 +1,8 @@
 // Main orchestrator — runs in page context, wires autofill + login + Claude
+// all_frames:true means this script runs inside iframes too (e.g. Greenhouse embedded forms).
+// Guard top-frame-only operations (sidepanel, status badge, login handler) with IS_TOP_FRAME.
+
+const IS_TOP_FRAME = window === window.top;
 
 let _currentJobCtx = null;
 let _autoApplyStopped = false;
@@ -96,6 +100,7 @@ async function clickSubmit() {
 }
 
 function showStatus(msg, type = 'info') {
+  if (!IS_TOP_FRAME) return; // don't inject status badge inside iframes
   const colors = { info: '#1a73e8', success: '#0f9d58', error: '#d93025', warn: '#f57c00' };
   const existing = document.getElementById('jobberai-status');
   if (existing) existing.remove();
@@ -211,16 +216,18 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
         const memory = stored.memory || {};
         const passwordSeed = stored.password_seed || 'jobberai2024';
 
-        // Step 1: Handle login wall
-        const loginResult = await handleLoginWall(profile, portalAccounts, passwordSeed);
-        if (loginResult === 'account_created') {
-          showStatus('Account created! Checking email verification...', 'info');
-          const domain = new URL(location.href).hostname;
-          await checkEmailVerification(domain, 60000);
-          await new Promise(r => setTimeout(r, 1500));
-        } else if (loginResult === 'logged_in') {
-          showStatus('Logged in!', 'success');
-          await new Promise(r => setTimeout(r, 1500));
+        // Step 1: Handle login wall (top frame only — iframes don't have login walls)
+        if (IS_TOP_FRAME) {
+          const loginResult = await handleLoginWall(profile, portalAccounts, passwordSeed);
+          if (loginResult === 'account_created') {
+            showStatus('Account created! Checking email verification...', 'info');
+            const domain = new URL(location.href).hostname;
+            await checkEmailVerification(domain, 60000);
+            await new Promise(r => setTimeout(r, 1500));
+          } else if (loginResult === 'logged_in') {
+            showStatus('Logged in!', 'success');
+            await new Promise(r => setTimeout(r, 1500));
+          }
         }
 
         // Step 2: Scrape job context
@@ -238,16 +245,18 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
         showStatus(`${fillResult.filled} filled from profile. Asking Claude for the rest...`, 'info');
 
-        // Step 4b: Show partial results in sidepanel immediately
+        // Step 4b: Show partial results in sidepanel immediately (top frame only)
         const pendingStatus = fillResult.needsClaude?.length > 0
           ? { ok: null, error: null, source: 'calling', fieldsCount: fillResult.needsClaude.length, reviewedBy: null, stage: 'calling' }
           : { ok: true, error: null, source: 'none_needed', fieldsCount: 0, reviewedBy: 'none' };
-        chrome.runtime.sendMessage({
-          type: 'FILL_COMPLETE',
-          fillResult,
-          jobCtx: _currentJobCtx,
-          claudeStatus: pendingStatus,
-        });
+        if (IS_TOP_FRAME) {
+          chrome.runtime.sendMessage({
+            type: 'FILL_COMPLETE',
+            fillResult,
+            jobCtx: _currentJobCtx,
+            claudeStatus: pendingStatus,
+          });
+        }
 
         // Step 5: Claude fills remaining fields
         let claudeStatus = { ok: null, error: null, source: null, fieldsCount: 0, reviewedBy: null };
@@ -287,13 +296,15 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
           showStatus(`Done! ${fillResult.filled} filled from profile.`, 'success');
         }
 
-        // Final sidepanel update with full status
-        chrome.runtime.sendMessage({
-          type: 'FILL_COMPLETE',
-          fillResult,
-          jobCtx: _currentJobCtx,
-          claudeStatus,
-        });
+        // Final sidepanel update with full status (top frame only)
+        if (IS_TOP_FRAME) {
+          chrome.runtime.sendMessage({
+            type: 'FILL_COMPLETE',
+            fillResult,
+            jobCtx: _currentJobCtx,
+            claudeStatus,
+          });
+        }
 
       } catch(err) {
         console.error('JobberAI: autofill error', err);
