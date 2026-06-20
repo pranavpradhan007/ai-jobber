@@ -149,6 +149,33 @@ function getAnswersViaPort(fields, jobCtx) {
   });
 }
 
+// Verification pass — sends all current DOM values to Claude for a sanity check
+function verifyViaPort(fields, jobCtx) {
+  return new Promise((resolve) => {
+    let port;
+    try { port = chrome.runtime.connect({ name: 'claude_request' }); }
+    catch(e) { resolve({ ok: false, source: 'error', error: e.message, corrections: {}, emptyRequired: [] }); return; }
+
+    const timeout = setTimeout(() => {
+      try { port.disconnect(); } catch(e) {}
+      resolve({ ok: false, source: 'timeout', corrections: {}, emptyRequired: [] });
+    }, 45000);
+
+    port.onMessage.addListener((msg) => {
+      if (msg.type === 'VERIFY_FILLS_RESULT') {
+        clearTimeout(timeout);
+        try { port.disconnect(); } catch(e) {}
+        resolve(msg.result);
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timeout);
+      resolve({ ok: false, source: 'sw_disconnect', corrections: {}, emptyRequired: [] });
+    });
+    port.postMessage({ type: 'VERIFY_FILLS_VIA_PORT', fields, jobCtx });
+  });
+}
+
 // ─── Conditional field watcher (MutationObserver) ────────────────────────────
 // Fires when new form inputs appear in the DOM after a fill (conditional questions,
 // lazy-loaded sections, LinkedIn Easy Apply page transitions, etc.)
@@ -243,27 +270,21 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
         // Start watching for conditional fields that appear after fills
         startConditionalWatcher(profile, memory, null);
 
-        showStatus(`${fillResult.filled} filled from profile. Asking Claude for the rest...`, 'info');
-
         // Step 4b: Show partial results in sidepanel immediately (top frame only)
-        const pendingStatus = fillResult.needsClaude?.length > 0
+        const hasPending = fillResult.needsClaude?.length > 0;
+        const pendingStatus = hasPending
           ? { ok: null, error: null, source: 'calling', fieldsCount: fillResult.needsClaude.length, reviewedBy: null, stage: 'calling' }
-          : { ok: true, error: null, source: 'none_needed', fieldsCount: 0, reviewedBy: 'none' };
+          : { ok: null, error: null, source: 'verifying', fieldsCount: 0, reviewedBy: null, stage: 'verifying' };
         if (IS_TOP_FRAME) {
-          chrome.runtime.sendMessage({
-            type: 'FILL_COMPLETE',
-            fillResult,
-            jobCtx: _currentJobCtx,
-            claudeStatus: pendingStatus,
-          });
+          chrome.runtime.sendMessage({ type: 'FILL_COMPLETE', fillResult, jobCtx: _currentJobCtx, claudeStatus: pendingStatus });
         }
+
+        showStatus(`Manual autofill done — ${hasPending ? 'sending ' + fillResult.needsClaude.length + ' fields to Claude…' : 'verifying with Claude…'}`, 'info');
 
         // Step 5: Claude fills remaining fields
         let claudeStatus = { ok: null, error: null, source: null, fieldsCount: 0, reviewedBy: null };
 
-        if (fillResult.needsClaude && fillResult.needsClaude.length > 0) {
-          showStatus(`Sending ${fillResult.needsClaude.length} fields to Claude...`, 'info');
-
+        if (hasPending) {
           let result;
           try {
             result = await getAnswersViaPort(fillResult.needsClaude, _currentJobCtx);
@@ -273,27 +294,71 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
           claudeStatus = result || { ok: false, answers: null, error: 'No response from service worker', source: 'no_response', fieldsCount: fillResult.needsClaude.length, reviewedBy: 'none' };
 
-          if (result && result.ok && result.answers && Object.keys(result.answers).length > 0) {
+          if (result?.ok && result.answers && Object.keys(result.answers).length > 0) {
             for (const f of fillResult.needsClaude) {
               const key = normalizeLabel(f.label_text);
               const ans = result.answers[key] || result.answers[f.label_text];
               if (ans) {
-                const ok = await fillField(f, ans);
-                if (ok) {
+                const ok2 = await fillField(f, ans);
+                if (ok2) {
                   fillResult.claude++;
                   fillResult.filled++;
                   fillResult.fields.push({ label: f.label_text, value: ans, source: 'claude' });
                 }
               }
             }
-            showStatus(`Done! ${fillResult.filled} filled (${fillResult.claude} via Claude, reviewed by ${result.reviewedBy}).`, 'success');
-          } else {
-            const errMsg = result?.error || 'No answers returned';
-            showStatus(`Claude failed: ${errMsg}`, 'error');
+          } else if (!result?.ok) {
+            const isRateLimit = /rate.?limit|rate_limited/i.test(result?.error || '') || result?.source === 'rate_limited';
+            claudeStatus.source = isRateLimit ? 'rate_limited' : (result?.source || 'error');
           }
         } else {
-          claudeStatus = { ok: true, error: null, source: 'none_needed', fieldsCount: 0, reviewedBy: 'none' };
-          showStatus(`Done! ${fillResult.filled} filled from profile.`, 'success');
+          claudeStatus = { ok: null, error: null, source: 'verifying', fieldsCount: 0, stage: 'verifying' };
+        }
+
+        // Step 6: Claude verification pass — scan ALL current DOM values
+        showStatus('Verifying all fills with Claude…', 'info');
+        const verifyResult = await verifyViaPort(
+          detectFormFields().map(f => ({ ...f, dom_value: getFieldDomValue(f) ?? '' })),
+          _currentJobCtx
+        );
+
+        if (verifyResult?.ok) {
+          // Apply any corrections
+          const correctionFields = detectFormFields();
+          for (const f of correctionFields) {
+            const key = normalizeLabel(f.label_text);
+            const correction = verifyResult.corrections?.[key];
+            if (correction && correction !== (getFieldDomValue(f) || '')) {
+              await fillField(f, correction);
+              fillResult.fields.push({ label: f.label_text, value: correction, source: 'verified' });
+            }
+          }
+
+          const corrCount = Object.keys(verifyResult.corrections || {}).length;
+          const emptyReq = verifyResult.emptyRequired || [];
+          claudeStatus = {
+            ok: true,
+            source: 'verified',
+            fieldsCount: fillResult.filled,
+            reviewedBy: claudeStatus.reviewedBy || 'claude',
+            correctionCount: corrCount,
+            emptyRequired: emptyReq,
+          };
+
+          if (emptyReq.length > 0) {
+            showStatus(`⚠ ${emptyReq.length} required field(s) still empty — fill manually: ${emptyReq.slice(0,2).join(', ')}`, 'warn');
+          } else {
+            showStatus(`Verified ✓ — ${fillResult.filled} fields confirmed${corrCount > 0 ? ', ' + corrCount + ' correction(s) applied' : ''}`, 'success');
+          }
+        } else {
+          const isRateLimit = verifyResult?.source === 'rate_limited';
+          claudeStatus.source = isRateLimit ? 'rate_limited' : (claudeStatus.source || 'unverified');
+          claudeStatus.ok = false;
+          if (isRateLimit) {
+            showStatus('⚠ Claude rate limit hit — please verify before applying', 'warn');
+          } else {
+            showStatus(`Manual autofill complete — please verify before applying`, 'warn');
+          }
         }
 
         // Final sidepanel update with full status (top frame only)
@@ -302,7 +367,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
             type: 'FILL_COMPLETE',
             fillResult,
             jobCtx: _currentJobCtx,
-            claudeStatus,
+            claudeStatus: { ...claudeStatus, verifyResult },
           });
         }
 

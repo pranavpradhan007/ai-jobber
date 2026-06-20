@@ -3,331 +3,370 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JobberAI Panel</title>
+<title>JobberAI</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #f8f9fa;
-    color: #202124;
-    font-size: 13px;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .header {
-    background: #1a73e8;
-    color: white;
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  .header h1 { font-size: 15px; font-weight: 600; flex: 1; }
-  .source-badge {
-    font-size: 10px;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: rgba(255,255,255,0.25);
-  }
-  .job-info {
-    background: white;
-    border-bottom: 1px solid #e8eaed;
-    padding: 10px 16px;
-    flex-shrink: 0;
-  }
-  .job-title { font-size: 14px; font-weight: 600; color: #202124; }
-  .job-company { font-size: 12px; color: #5f6368; margin-top: 2px; }
-  .stats-bar {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    padding: 8px 16px;
-    background: #e8f5e9;
-    border-bottom: 1px solid #c8e6c9;
-    flex-shrink: 0;
-  }
-  .scroll-area {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
-  }
-  /* Fields tab */
-  .field-row {
-    background: white;
-    border: 1px solid #e8eaed;
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin-bottom: 8px;
-  }
-  .field-label {
-    font-size: 11px;
-    color: #80868b;
-    margin-bottom: 4px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .field-source {
-    font-size: 9px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    background: #e8f0fe;
-    color: #1a73e8;
-  }
-  .field-source.claude { background: #f3e5f5; color: #7b1fa2; }
-  .field-value {
-    font-size: 13px;
-    color: #202124;
-    width: 100%;
-    border: none;
-    outline: none;
-    background: transparent;
-    resize: vertical;
-    font-family: inherit;
-    padding: 0;
-  }
-  .field-value:focus {
-    background: #f8f9fa;
-    padding: 4px;
-    border-radius: 4px;
-    margin: -4px;
-  }
-  /* Footer actions */
-  .footer {
-    padding: 10px 16px;
-    background: white;
-    border-top: 1px solid #e8eaed;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-  .btn-auto-apply {
-    width: 100%;
-    padding: 11px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 700;
-    background: linear-gradient(135deg, #7b1fa2, #1a73e8);
-    color: white;
-    letter-spacing: 0.3px;
-    transition: opacity 0.15s;
-  }
-  .btn-auto-apply:hover { opacity: 0.88; }
-  .btn-auto-apply:disabled { opacity: 0.5; cursor: default; }
-  .btn-stop {
-    display: none;
-    width: 100%;
-    padding: 11px;
-    border: none;
-    border-radius: 8px;
-    background: #ea4335;
-    color: white;
-    font-weight: 600;
-    font-size: 13px;
-    cursor: pointer;
-    transition: opacity 0.15s;
-  }
-  .btn-stop:hover { opacity: 0.88; }
-  .footer-manual {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 6px;
-  }
-  .action-btn {
-    padding: 8px 4px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    transition: all 0.15s;
-  }
-  .btn-prev { background: #f1f3f4; color: #5f6368; }
-  .btn-next { background: #1a73e8; color: white; }
-  .btn-submit { background: #0f9d58; color: white; }
-  .btn-prev:hover { background: #e8eaed; }
-  .btn-next:hover { background: #1557b0; }
-  .btn-submit:hover { background: #0b7a45; }
-  #autoApplyProgress {
-    font-size: 10px;
-    color: #5f6368;
-    text-align: center;
-    min-height: 14px;
-  }
-  .empty-state {
-    text-align: center;
-    color: #80868b;
-    padding: 40px 20px;
-    font-size: 13px;
-    line-height: 1.6;
-  }
-  .empty-icon { font-size: 36px; margin-bottom: 12px; }
-  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f1f3f4;
+  color: #202124;
+  font-size: 13px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
-  /* Tabs */
-  .tab-bar {
-    display: flex;
-    border-bottom: 1px solid #e8eaed;
-    background: white;
-    flex-shrink: 0;
-  }
-  .tab-btn {
-    flex: 1;
-    padding: 8px 4px;
-    border: none;
-    background: none;
-    font-size: 11px;
-    font-weight: 600;
-    color: #80868b;
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.15s;
-  }
-  .tab-btn.active { color: #1a73e8; border-bottom-color: #1a73e8; }
-  .tab-panel { display: none; }
-  .tab-panel.active { display: block; }
+/* ── Header ── */
+.header {
+  background: #1a73e8;
+  color: white;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.header-logo { font-size: 16px; }
+.header-title { font-size: 14px; font-weight: 700; flex: 1; letter-spacing: -0.2px; }
+.header-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #81c995; flex-shrink: 0;
+}
+.header-dot.yellow { background: #fdd663; animation: pulse 1.2s infinite; }
+.header-dot.red    { background: #f28b82; }
 
-  /* ATS keyword chip */
-  .kw-row { display: flex; flex-wrap: wrap; gap: 5px; padding: 12px; }
-  .kw-chip {
-    font-size: 10px;
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-weight: 600;
-  }
-  .kw-chip.present { background: #e8f5e9; color: #1b5e20; }
-  .kw-chip.missing { background: #fce8e6; color: #c62828; }
-  .kw-section-title { font-size: 10px; color: #80868b; padding: 10px 12px 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+/* ── Job info strip ── */
+.job-strip {
+  background: white;
+  border-bottom: 1px solid #dadce0;
+  padding: 8px 14px;
+  flex-shrink: 0;
+  display: none;
+}
+.job-strip-title { font-size: 13px; font-weight: 600; color: #202124; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-strip-co    { font-size: 11px; color: #5f6368; margin-top: 1px; }
 
-  /* History rows */
-  .history-row {
-    padding: 10px 12px;
-    border-bottom: 1px solid #f1f3f4;
-    font-size: 12px;
-  }
-  .history-row .h-company { font-weight: 600; color: #202124; }
-  .history-row .h-title   { color: #5f6368; margin-top: 1px; }
-  .history-row .h-date    { font-size: 10px; color: #80868b; margin-top: 2px; }
+/* ── Verification status banner ── */
+.verify-banner {
+  padding: 10px 14px;
+  display: none;
+  flex-shrink: 0;
+  border-bottom: 1px solid transparent;
+}
+.verify-banner.state-filling  { background: #e8f0fe; border-bottom-color: #c5d9fb; }
+.verify-banner.state-verifying { background: #fef7e0; border-bottom-color: #fde599; }
+.verify-banner.state-ok       { background: #e6f4ea; border-bottom-color: #b7dfbf; }
+.verify-banner.state-warn     { background: #fef3e2; border-bottom-color: #fcd588; }
+.verify-banner.state-error    { background: #fce8e6; border-bottom-color: #f5c2be; }
 
-  /* Cover letter area */
-  #coverLetterText {
-    width: 100%;
-    min-height: 160px;
-    font-size: 12px;
-    line-height: 1.6;
-    border: 1px solid #e8eaed;
-    border-radius: 6px;
-    padding: 10px;
-    resize: vertical;
-    font-family: inherit;
-    color: #202124;
-  }
-  .cover-btns { display: flex; gap: 6px; margin-bottom: 8px; }
-  .cover-btns button {
-    flex: 1;
-    padding: 7px;
-    border: none;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.15s;
-  }
-  .cover-btns button:hover { opacity: 0.85; }
-  #btnGenCover  { background: #7b1fa2; color: white; }
-  #btnCopyCover { background: #1a73e8; color: white; }
-  #btnFillCover { background: #0f9d58; color: white; }
+.verify-banner-row { display: flex; align-items: center; gap: 8px; }
+.verify-icon { font-size: 15px; flex-shrink: 0; }
+.verify-text { font-size: 12px; font-weight: 600; color: #202124; flex: 1; }
+.verify-sub  { font-size: 10px; color: #5f6368; margin-top: 2px; padding-left: 23px; }
+
+/* ── Progress dots (3 steps) ── */
+.fill-steps {
+  display: flex; gap: 6px; align-items: center;
+  padding: 8px 14px 0;
+  display: none;
+}
+.fill-step {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 10px; color: #80868b; font-weight: 500;
+}
+.fill-step-dot {
+  width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-size: 8px; font-weight: 700;
+  background: #dadce0; color: #80868b;
+  flex-shrink: 0;
+}
+.fill-step.done .fill-step-dot  { background: #34a853; color: white; }
+.fill-step.active .fill-step-dot { background: #fbbc04; color: white; animation: pulse 1.2s infinite; }
+.fill-step-sep { flex: 1; height: 1px; background: #dadce0; max-width: 20px; }
+
+/* ── Tabs ── */
+.tab-bar {
+  display: flex; background: white; border-bottom: 1px solid #dadce0;
+  flex-shrink: 0; padding: 0 4px;
+}
+.tab-btn {
+  flex: 1; padding: 9px 4px 7px; border: none; background: none;
+  font-size: 11px; font-weight: 600; color: #80868b; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: all 0.15s;
+}
+.tab-btn.active { color: #1a73e8; border-bottom-color: #1a73e8; }
+.tab-btn:hover  { color: #202124; background: #f1f3f4; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Scroll area ── */
+.scroll-area { flex: 1; overflow-y: auto; overflow-x: hidden; }
+
+/* ── Empty required warning ── */
+.empty-required-section {
+  background: #fce8e6; border-radius: 6px; margin: 10px 10px 4px;
+  overflow: hidden; display: none;
+}
+.empty-required-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; cursor: pointer;
+  font-size: 12px; font-weight: 700; color: #c62828;
+}
+.empty-required-header .badge {
+  background: #ea4335; color: white; font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 10px;
+}
+.empty-field-item {
+  padding: 6px 10px 6px 26px; font-size: 11px; color: #c62828;
+  border-top: 1px solid #f5c2be;
+}
+
+/* ── Field rows ── */
+.fields-section { padding: 4px 10px 10px; }
+.fields-group-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+  color: #80868b; padding: 8px 2px 4px; margin-top: 4px;
+}
+.field-row {
+  display: flex; align-items: flex-start; gap: 0;
+  background: white; border: 1px solid #e8eaed; border-radius: 6px;
+  margin-bottom: 4px; overflow: hidden; transition: border-color 0.15s;
+}
+.field-row:hover { border-color: #1a73e8; }
+.field-row.verified   { border-left: 3px solid #34a853; }
+.field-row.corrected  { border-left: 3px solid #fbbc04; }
+.field-row.from-claude { border-left: 3px solid #7b1fa2; }
+
+.field-meta { flex: 1; padding: 8px 8px 8px 10px; min-width: 0; }
+.field-lbl {
+  font-size: 10px; color: #80868b; margin-bottom: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.field-val {
+  font-size: 12px; color: #202124; line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.field-val.multiline { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.field-badge {
+  font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+  margin-left: 4px; flex-shrink: 0; align-self: flex-start; margin-top: 8px;
+  margin-right: 8px;
+}
+.badge-profile  { background: #e8f0fe; color: #1557b0; }
+.badge-claude   { background: #f3e5f5; color: #7b1fa2; }
+.badge-memory   { background: #e8f5e9; color: #1b5e20; }
+.badge-verified { background: #e6f4ea; color: #1b5e20; }
+.badge-corrected { background: #fef7e0; color: #e37400; }
+.badge-skip     { background: #f1f3f4; color: #80868b; }
+
+/* Editable field on click */
+.field-edit-input {
+  display: none; width: 100%; border: none; outline: none; background: #f8f9fa;
+  font-size: 12px; color: #202124; padding: 6px 8px; resize: vertical;
+  font-family: inherit; border-top: 1px solid #e8eaed;
+}
+.field-row.editing .field-edit-input { display: block; }
+.field-row.editing { flex-direction: column; }
+.field-row.editing .field-meta { cursor: default; }
+
+/* ── Keywords tab ── */
+.kw-section { padding: 10px; }
+.kw-section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+  color: #80868b; margin-bottom: 6px; margin-top: 10px;
+}
+.kw-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.kw-chip {
+  font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 12px;
+  cursor: default;
+}
+.kw-chip.present { background: #e6f4ea; color: #1b5e20; }
+.kw-chip.missing { background: #fce8e6; color: #c62828; }
+.kw-empty { font-size: 12px; color: #80868b; padding: 20px; text-align: center; }
+
+/* ── Cover letter tab ── */
+.cover-section { padding: 10px; }
+.cover-btns { display: flex; gap: 6px; margin-bottom: 8px; }
+.cover-btns button {
+  flex: 1; padding: 8px 4px; border: none; border-radius: 6px;
+  font-size: 11px; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+}
+.cover-btns button:hover { opacity: 0.85; }
+#btnGenCover  { background: #7b1fa2; color: white; }
+#btnCopyCover { background: #1a73e8; color: white; }
+#btnFillCover { background: #0f9d58; color: white; }
+#coverLetterText {
+  width: 100%; min-height: 180px; font-size: 12px; line-height: 1.6;
+  border: 1px solid #e8eaed; border-radius: 6px; padding: 10px;
+  resize: vertical; font-family: inherit; color: #202124;
+}
+#coverStatus { font-size: 10px; color: #80868b; margin-top: 4px; }
+
+/* ── History tab ── */
+.history-row { padding: 10px 12px; border-bottom: 1px solid #f1f3f4; font-size: 12px; }
+.history-row .h-co    { font-weight: 600; color: #202124; }
+.history-row .h-title { color: #5f6368; margin-top: 1px; font-size: 11px; }
+.history-row .h-date  { font-size: 10px; color: #bdbdbd; margin-top: 2px; }
+.hist-empty { font-size: 12px; color: #80868b; padding: 30px; text-align: center; }
+
+/* ── Activity log ── */
+.activity-log {
+  font-size: 10px; font-family: monospace; line-height: 1.6; color: #5f6368;
+  max-height: 80px; overflow-y: auto; background: #fafafa;
+  border-top: 1px solid #e8eaed; padding: 6px 12px;
+  display: none;
+}
+
+/* ── Footer ── */
+.footer {
+  background: white; border-top: 1px solid #dadce0;
+  padding: 10px 12px 12px; flex-shrink: 0;
+}
+.btn-autoapply {
+  width: 100%; padding: 12px; border: none; border-radius: 8px; cursor: pointer;
+  font-size: 14px; font-weight: 700; letter-spacing: 0.2px;
+  background: linear-gradient(135deg, #7b1fa2, #1a73e8);
+  color: white; transition: opacity 0.15s; margin-bottom: 8px;
+}
+.btn-autoapply:hover    { opacity: 0.9; }
+.btn-autoapply:disabled { opacity: 0.45; cursor: default; }
+.btn-stop {
+  width: 100%; padding: 12px; border: none; border-radius: 8px;
+  background: #ea4335; color: white; font-weight: 700; font-size: 14px;
+  cursor: pointer; display: none; margin-bottom: 8px; transition: opacity 0.15s;
+}
+.btn-stop:hover { opacity: 0.9; }
+.progress-text {
+  font-size: 11px; color: #5f6368; text-align: center; min-height: 15px; margin-bottom: 8px;
+}
+.nav-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.nav-btn {
+  padding: 8px 4px; border: none; border-radius: 6px;
+  font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.btn-prev   { background: #f1f3f4; color: #5f6368; }
+.btn-next   { background: #1a73e8; color: white; }
+.btn-submit { background: #0f9d58; color: white; }
+.btn-prev:hover   { background: #e8eaed; }
+.btn-next:hover   { background: #1557b0; }
+.btn-submit:hover { background: #0b7a45; }
+
+/* ── Empty state ── */
+.empty-state { text-align: center; color: #80868b; padding: 36px 20px; }
+.empty-icon  { font-size: 32px; margin-bottom: 10px; }
+.empty-text  { font-size: 13px; line-height: 1.6; }
+
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
 </style>
 </head>
 <body>
+
+<!-- Header -->
 <div class="header">
-  <span>🤖</span>
-  <h1 id="panelTitle">JobberAI</h1>
-  <span class="source-badge" id="sourceBadge">Ready</span>
+  <span class="header-logo">🤖</span>
+  <span class="header-title">JobberAI</span>
+  <span class="header-dot" id="headerDot"></span>
 </div>
-<div class="job-info" id="jobInfo" style="display:none">
-  <div class="job-title" id="jobTitle"></div>
-  <div class="job-company" id="jobCompany"></div>
+
+<!-- Job info -->
+<div class="job-strip" id="jobStrip">
+  <div class="job-strip-title" id="jobTitle">—</div>
+  <div class="job-strip-co"    id="jobCompany">—</div>
 </div>
-<div class="stats-bar" id="statsBar" style="display:none">
-  <span id="statApplied" style="font-size:18px;font-weight:700;color:#1b5e20">—</span>
-  <span style="font-size:11px;color:#2e7d32;align-self:flex-end;padding-bottom:1px">Applied (Gmail confirmed)</span>
-  <span id="statAppliedSub" style="font-size:10px;color:#80868b;margin-left:auto;align-self:flex-end"></span>
-</div>
-<div id="claudeStatusBar" style="display:none;padding:8px 16px;border-bottom:1px solid #e8eaed;flex-shrink:0;background:#fafafa">
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-    <span id="claudeStatusDot" style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#bdbdbd"></span>
-    <div id="claudeStatusText" style="font-weight:600;color:#5f6368;font-size:11px">Claude: waiting</div>
+
+<!-- Verification status banner -->
+<div class="verify-banner" id="verifyBanner">
+  <div class="verify-banner-row">
+    <span class="verify-icon" id="verifyIcon">⏳</span>
+    <span class="verify-text" id="verifyText">Starting…</span>
   </div>
-  <div id="claudeActivityLog" style="font-size:10px;font-family:monospace;line-height:1.6;color:#5f6368;max-height:90px;overflow-y:auto;padding-left:16px"></div>
+  <div class="verify-sub" id="verifySub"></div>
 </div>
+
+<!-- Activity log (collapsed by default, shown during Claude calls) -->
+<div class="activity-log" id="activityLog"></div>
+
+<!-- Tabs -->
 <div class="tab-bar">
   <button class="tab-btn active" data-tab="fields">Fields</button>
-  <button class="tab-btn" data-tab="keywords">Keywords</button>
-  <button class="tab-btn" data-tab="cover">Cover Letter</button>
-  <button class="tab-btn" data-tab="history">History</button>
+  <button class="tab-btn"        data-tab="keywords">Keywords</button>
+  <button class="tab-btn"        data-tab="cover">Cover Letter</button>
+  <button class="tab-btn"        data-tab="history">History</button>
 </div>
-<div class="scroll-area" id="scrollArea">
+
+<!-- Scroll area -->
+<div class="scroll-area">
+
   <!-- Fields tab -->
   <div id="tabFields" class="tab-panel active">
-    <div class="empty-state">
+    <div class="empty-state" id="fieldsEmpty">
       <div class="empty-icon">✨</div>
-      Click <b>Autofill</b> on a job application page to start.
+      <div class="empty-text">Click <b>Auto Apply</b> on a job application page to start filling.</div>
     </div>
+
+    <!-- Empty required warning (shown when verification finds gaps) -->
+    <div class="empty-required-section" id="emptyRequiredSection">
+      <div class="empty-required-header" id="emptyRequiredHeader">
+        <span>⚠</span>
+        <span>Required fields still empty</span>
+        <span class="badge" id="emptyRequiredCount">0</span>
+      </div>
+      <div id="emptyRequiredList"></div>
+    </div>
+
+    <!-- Field rows -->
+    <div class="fields-section" id="fieldsList"></div>
   </div>
 
   <!-- Keywords tab -->
   <div id="tabKeywords" class="tab-panel">
-    <div class="empty-state" id="kwEmptyState">
-      <div class="empty-icon">🔑</div>
-      Autofill a job to see ATS keyword matches.
-    </div>
-    <div id="kwPresent" style="display:none">
-      <div class="kw-section-title">In Your Profile</div>
-      <div class="kw-row" id="kwPresentChips"></div>
-    </div>
-    <div id="kwMissing" style="display:none">
-      <div class="kw-section-title">Missing — Add to Resume</div>
-      <div class="kw-row" id="kwMissingChips"></div>
+    <div class="kw-section">
+      <div class="kw-empty" id="kwEmpty">Autofill a job to see ATS keyword matches.</div>
+      <div id="kwPresentSection" style="display:none">
+        <div class="kw-section-title">✓ In Your Profile</div>
+        <div class="kw-row" id="kwPresentChips"></div>
+      </div>
+      <div id="kwMissingSection" style="display:none">
+        <div class="kw-section-title">✗ Missing — Add to Resume</div>
+        <div class="kw-row" id="kwMissingChips"></div>
+      </div>
     </div>
   </div>
 
-  <!-- Cover Letter tab -->
-  <div id="tabCover" class="tab-panel" style="padding:12px">
-    <div class="cover-btns">
-      <button id="btnGenCover">Generate</button>
-      <button id="btnCopyCover">Copy</button>
-      <button id="btnFillCover">Fill Form</button>
+  <!-- Cover letter tab -->
+  <div id="tabCover" class="tab-panel">
+    <div class="cover-section">
+      <div class="cover-btns">
+        <button id="btnGenCover">Generate</button>
+        <button id="btnCopyCover">Copy</button>
+        <button id="btnFillCover">Fill Form</button>
+      </div>
+      <textarea id="coverLetterText" placeholder="Click Generate to draft a tailored cover letter…"></textarea>
+      <div id="coverStatus"></div>
     </div>
-    <textarea id="coverLetterText" placeholder="Click Generate to draft a tailored cover letter for this job…"></textarea>
-    <div id="coverStatus" style="font-size:10px;color:#80868b;margin-top:4px"></div>
   </div>
 
   <!-- History tab -->
   <div id="tabHistory" class="tab-panel">
-    <div class="empty-state" id="histEmptyState">
-      <div class="empty-icon">📋</div>
-      No applications logged yet.
-    </div>
+    <div class="hist-empty" id="histEmpty">No applications logged yet.</div>
     <div id="historyList"></div>
   </div>
+
 </div>
+
+<!-- Footer -->
 <div class="footer">
-  <button class="btn-auto-apply" id="btnAutoApply">⚡ Auto Apply</button>
-  <button class="btn-stop" id="btnStop">⏹ Stop</button>
-  <div id="autoApplyProgress"></div>
-  <div class="footer-manual">
-    <button class="action-btn btn-prev" id="btnPrev">← Prev</button>
-    <button class="action-btn btn-next" id="btnNext">Next →</button>
-    <button class="action-btn btn-submit" id="btnSubmit">Submit ▶</button>
+  <button class="btn-autoapply" id="btnAutoApply">⚡ Auto Apply</button>
+  <button class="btn-stop"      id="btnStop">⏹ Stop</button>
+  <div class="progress-text" id="progressText"></div>
+  <div class="nav-btns">
+    <button class="nav-btn btn-prev"   id="btnPrev">← Back</button>
+    <button class="nav-btn btn-next"   id="btnNext">Next →</button>
+    <button class="nav-btn btn-submit" id="btnSubmit">Submit ▶</button>
   </div>
 </div>
+
 <script src="sidepanel.js"></script>
 </body>
 </html>

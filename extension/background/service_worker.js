@@ -410,6 +410,76 @@ async function getAnswers(fields, jobCtx) {
   return result;
 }
 
+// ─── Verification pass ───────────────────────────────────────────────────────
+// After all fills, Claude scans every field's current DOM value and returns:
+//   corrections: { field_key: corrected_value }
+//   emptyRequired: ["label 1", "label 2"]
+
+async function verifyFills(fields, jobCtx) {
+  if (await isRateLimited()) {
+    const { claudeRateLimitedAt } = await chrome.storage.local.get('claudeRateLimitedAt');
+    const mins = Math.ceil((RATE_LIMIT_TTL - (Date.now() - claudeRateLimitedAt)) / 60000);
+    return { ok: false, source: 'rate_limited', error: `Rate limited — resets in ~${mins} min`, corrections: {}, emptyRequired: [] };
+  }
+
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    try {
+      const ping = await fetch('http://localhost:3747/health', { signal: AbortSignal.timeout(2000) });
+      if (!ping.ok) throw new Error(`HTTP ${ping.status}`);
+    } catch(pingErr) {
+      return { ok: false, source: 'proxy_down', error: `Proxy unreachable — run start_proxy.bat`, corrections: {}, emptyRequired: [] };
+    }
+  }
+
+  const { profile = {} } = await chrome.storage.local.get('profile');
+
+  // Only send non-trivial fields that aren't purely static contact data
+  const verifyFields = fields.filter(f => f.field_type !== 'file');
+  const fieldLines = verifyFields.map(f => {
+    const val = f.dom_value || '';
+    const isEmpty = !val || val.toLowerCase() === 'select...' || val === '';
+    const req = f.required ? ' [REQUIRED]' : '';
+    return `"${normalizeLabel(f.label_text)}": ${isEmpty ? '(empty)' : JSON.stringify(String(val).slice(0, 120))}${req}  // ${f.label_text}`;
+  }).join('\n');
+
+  const systemPrompt = `You are a QA agent checking a job application for ${jobCtx.company || 'a company'} — ${jobCtx.title || 'a role'}.
+Candidate: ${profile.full_name || ''} | ${profile.email || ''} | ${profile.current_title || ''} at ${profile.current_company || ''}.
+Return ONLY valid JSON {"corrections":{"key":"value"},"emptyRequired":["label"]}. No markdown.`;
+
+  const userPrompt = `Current field values after autofill:
+${fieldLines}
+
+Rules:
+1. If a REQUIRED field is empty → add its label text to emptyRequired
+2. If a value looks clearly wrong for this job (wrong name, obvious typo, "N/A" in a text field that needs real content) → add to corrections with the right value
+3. If a value looks correct → do NOT include it in corrections
+4. Keep corrections minimal — only fix clearly broken things
+5. DO NOT re-verify contact/EEO fields unless obviously wrong
+
+Return JSON:`;
+
+  try {
+    broadcastProgress({ stage: 'verify_start', fieldsCount: verifyFields.length });
+    const raw = await callClaude(apiKey, systemPrompt, userPrompt, 500);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { ok: true, source: 'verified', corrections: {}, emptyRequired: [] };
+    let parsed;
+    try { parsed = JSON.parse(jsonMatch[0]); } catch(e) { parsed = {}; }
+    const result = {
+      ok: true,
+      source: 'verified',
+      corrections: parsed.corrections || {},
+      emptyRequired: Array.isArray(parsed.emptyRequired) ? parsed.emptyRequired : [],
+    };
+    broadcastProgress({ stage: 'verify_done', correctionCount: Object.keys(result.corrections).length, emptyCount: result.emptyRequired.length });
+    return result;
+  } catch(err) {
+    if (err.status === 429) await setRateLimited();
+    return { ok: false, source: err.status === 429 ? 'rate_limited' : 'error', error: err.message, corrections: {}, emptyRequired: [] };
+  }
+}
+
 // ─── Gmail proxy ──────────────────────────────────────────────────────────────
 
 async function gmailSearch(query) {
@@ -605,6 +675,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
       return true;
 
+    case 'VERIFY_FILLS':
+      verifyFills(msg.fields, msg.jobCtx)
+        .then(result => sendResponse(result))
+        .catch(err => sendResponse({ ok: false, source: 'exception', error: err.message, corrections: {}, emptyRequired: [] }));
+      return true;
+
     case 'CLEAR_RATE_LIMIT':
       clearRateLimited().then(() => sendResponse({ ok: true }));
       return true;
@@ -647,17 +723,30 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(stopKeepAlive);
 
   port.onMessage.addListener(async (msg) => {
-    if (msg.type !== 'GET_ANSWERS_VIA_PORT') return;
-    startKeepAlive();
-    try {
-      const result = await getAnswers(msg.fields, msg.jobCtx);
-      port.postMessage({ type: 'GET_ANSWERS_RESULT', result });
-    } catch(err) {
-      port.postMessage({ type: 'GET_ANSWERS_RESULT', result: {
-        ok: false, answers: {}, error: err.message, source: 'exception', fieldsCount: 0, reviewedBy: 'none',
-      }});
-    } finally {
-      stopKeepAlive();
+    if (msg.type === 'GET_ANSWERS_VIA_PORT') {
+      startKeepAlive();
+      try {
+        const result = await getAnswers(msg.fields, msg.jobCtx);
+        port.postMessage({ type: 'GET_ANSWERS_RESULT', result });
+      } catch(err) {
+        port.postMessage({ type: 'GET_ANSWERS_RESULT', result: {
+          ok: false, answers: {}, error: err.message, source: 'exception', fieldsCount: 0, reviewedBy: 'none',
+        }});
+      } finally {
+        stopKeepAlive();
+      }
+    } else if (msg.type === 'VERIFY_FILLS_VIA_PORT') {
+      startKeepAlive();
+      try {
+        const result = await verifyFills(msg.fields, msg.jobCtx);
+        port.postMessage({ type: 'VERIFY_FILLS_RESULT', result });
+      } catch(err) {
+        port.postMessage({ type: 'VERIFY_FILLS_RESULT', result: {
+          ok: false, source: 'exception', error: err.message, corrections: {}, emptyRequired: [],
+        }});
+      } finally {
+        stopKeepAlive();
+      }
     }
   });
 });
